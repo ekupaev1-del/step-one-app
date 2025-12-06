@@ -19,7 +19,7 @@ export const dynamic = 'force-dynamic';
  */
 export async function PATCH(
   req: Request,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
   try {
     const supabase = createClient(
@@ -27,7 +27,8 @@ export async function PATCH(
       process.env.SUPABASE_SERVICE_ROLE_KEY!
     );
 
-    const mealId = Number(params.id);
+    const { id } = await params;
+    const mealId = Number(id);
     if (!Number.isFinite(mealId) || mealId <= 0) {
       return NextResponse.json(
         { ok: false, error: "ID должен быть положительным числом" },
@@ -92,7 +93,7 @@ export async function PATCH(
  */
 export async function DELETE(
   req: Request,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
   try {
     const supabase = createClient(
@@ -100,7 +101,8 @@ export async function DELETE(
       process.env.SUPABASE_SERVICE_ROLE_KEY!
     );
 
-    const mealId = Number(params.id);
+    const { id } = await params;
+    const mealId = Number(id);
     if (!Number.isFinite(mealId) || mealId <= 0) {
       return NextResponse.json(
         { ok: false, error: "ID должен быть положительным числом" },
