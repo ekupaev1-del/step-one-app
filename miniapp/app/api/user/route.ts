@@ -24,10 +24,10 @@ export async function GET(req: Request) {
     return NextResponse.json({ ok: false, error: "userId должен быть числом" }, { status: 400 });
   }
 
-  // Получаем данные пользователя
+  // Получаем данные пользователя (полный профиль)
   const { data: user, error } = await supabase
     .from("users")
-    .select("calories, protein, fat, carbs")
+    .select("weight, height, goal, calories, protein, fat, carbs, water_goal_ml")
     .eq("id", numericId)
     .maybeSingle();
 
@@ -40,6 +40,18 @@ export async function GET(req: Request) {
     return NextResponse.json({ ok: false, error: "Пользователь не найден" }, { status: 404 });
   }
 
-  return NextResponse.json({ ok: true, ...user });
+  // Формируем ответ в нужном формате
+  return NextResponse.json({
+    ok: true,
+    name: null, // Имя/ник пока не хранится в БД
+    weightKg: user.weight ? Number(user.weight) : null,
+    heightCm: user.height ? Number(user.height) : null,
+    goal: user.goal || null,
+    caloriesGoal: user.calories ? Number(user.calories) : null,
+    proteinGoal: user.protein ? Number(user.protein) : null,
+    fatGoal: user.fat ? Number(user.fat) : null,
+    carbsGoal: user.carbs ? Number(user.carbs) : null,
+    waterGoalMl: user.water_goal_ml ? Number(user.water_goal_ml) : null
+  });
 }
 

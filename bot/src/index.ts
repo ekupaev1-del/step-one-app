@@ -210,6 +210,9 @@ bot.start(async (ctx) => {
             { text: "👤 Личный кабинет" }
           ],
           [
+            { text: "⏰ Напомнить о приёме пищи" }
+          ],
+          [
             { text: "💡 Рекомендации" }
           ]
         ],
@@ -307,12 +310,15 @@ bot.on("message", async (ctx, next) => {
                     [
                       { text: "📋 Получить отчет", web_app: { url: reportUrl } }
                     ],
-                    [
-                      { text: "👤 Личный кабинет" }
-                    ],
-                    [
-                      { text: "💡 Рекомендации" }
-                    ]
+        [
+          { text: "👤 Личный кабинет" }
+        ],
+        [
+          { text: "⏰ Напомнить о приёме пищи" }
+        ],
+        [
+          { text: "💡 Рекомендации" }
+        ]
                   ],
                   resize_keyboard: true,
                   one_time_keyboard: false
@@ -880,7 +886,7 @@ bot.on("text", async (ctx) => {
 
       // Валидация времени
       if (!validateTime(text)) {
-        return ctx.reply("❌ Некорректный формат времени. Используйте формат ЧЧ:ММ (например, 08:30)");
+        return ctx.reply("❌ Не получилось распознать время, введите в формате ЧЧ:ММ, например 08:30");
       }
 
       // Получаем userId
@@ -901,22 +907,68 @@ bot.on("text", async (ctx) => {
         const typeText = reminderContext.type === 'food' ? 'о приёме пищи' : 'про воду';
         const emoji = reminderContext.type === 'food' ? '🍽' : '💧';
         
-        await ctx.reply(`✅ Готово! Я буду напоминать ${typeText} в ${text} ${emoji}`);
+        // Получаем обновленный список напоминаний для показа
+        const reminders = await getUserReminders(user.id);
+        const foodReminders = reminders.filter(r => r.type === 'food').map(r => r.time);
+        const waterReminders = reminders.filter(r => r.type === 'water').map(r => r.time);
+
+        let message = `✅ Готово! Я буду напоминать ${typeText} в ${text} ${emoji}\n\n`;
+        message += "🔔 <b>Уведомления</b>\n\n";
         
-        // Показываем обновленный экран уведомлений
-        await showNotificationsScreen(ctx, user.id);
+        message += "🍽 <b>Напоминания о еде:</b>\n";
+        if (foodReminders.length === 0) {
+          message += "Нет напоминаний\n";
+        } else {
+          foodReminders.forEach(time => {
+            message += `• ${time}\n`;
+          });
+        }
+        
+        message += "\n💧 <b>Напоминания о воде:</b>\n";
+        if (waterReminders.length === 0) {
+          message += "Нет напоминаний\n";
+        } else {
+          waterReminders.forEach(time => {
+            message += `• ${time}\n`;
+          });
+        }
+
+        // Создаем inline keyboard для управления
+        const keyboard: any[] = [];
+        keyboard.push([
+          { text: "➕ Добавить напоминание по еде", callback_data: "add_reminder_food" }
+        ]);
+        keyboard.push([
+          { text: "➕ Добавить напоминание по воде", callback_data: "add_reminder_water" }
+        ]);
+        reminders.forEach(reminder => {
+          const typeEmoji = reminder.type === 'food' ? '🍽' : '💧';
+          keyboard.push([
+            { 
+              text: `❌ Удалить ${typeEmoji} ${reminder.time}`, 
+              callback_data: `delete_reminder_${reminder.id}` 
+            }
+          ]);
+        });
+
+        await ctx.reply(message, {
+          parse_mode: "HTML",
+          reply_markup: {
+            inline_keyboard: keyboard
+          }
+        });
       } catch (error: any) {
         console.error("[bot] Ошибка создания напоминания:", error);
-        return ctx.reply(`❌ ${error.message || "Ошибка создания напоминания"}`);
+        return ctx.reply(`❌ Не получилось сохранить напоминание, попробуйте ещё раз позже`);
       }
       return;
     }
 
     if (text === "👤 Личный кабинет") {
-      // Получаем данные пользователя
+      // Получаем userId для создания ссылки на Mini App
       const { data: user, error: userError } = await supabase
         .from("users")
-        .select("id, weight, height, goal, calories, protein, fat, carbs, water_goal_ml")
+        .select("id")
         .eq("telegram_id", telegram_id)
         .maybeSingle();
 
@@ -925,49 +977,96 @@ bot.on("text", async (ctx) => {
         return ctx.reply("❌ Ошибка: пользователь не найден. Используйте /start для регистрации.");
       }
 
-      // Формируем информацию о пользователе
-      let profileText = "👤 <b>Ваш личный кабинет</b>\n\n";
+      // Открываем Mini App на экране профиля
+      const profileUrl = `${MINIAPP_BASE_URL}/profile?id=${user.id}`;
       
-      if (user.weight) {
-        profileText += `⚖️ Вес: ${user.weight} кг\n`;
-      }
-      if (user.height) {
-        profileText += `📏 Рост: ${user.height} см\n`;
-      }
-      if (user.goal) {
-        const goalText = user.goal === "lose" ? "Похудение" : 
-                        user.goal === "gain" ? "Набор веса" : 
-                        "Поддержание веса";
-        profileText += `🎯 Цель: ${goalText}\n`;
-      }
-      
-      profileText += "\n<b>Ваши нормы:</b>\n";
-      if (user.calories) {
-        profileText += `🔥 Калории: ${user.calories} ккал\n`;
-      }
-      if (user.protein) {
-        profileText += `🥚 Белки: ${user.protein} г\n`;
-      }
-      if (user.fat) {
-        profileText += `🥥 Жиры: ${user.fat} г\n`;
-      }
-      if (user.carbs) {
-        profileText += `🍚 Углеводы: ${user.carbs} г\n`;
-      }
-      if (user.water_goal_ml) {
-        profileText += `💧 Вода: ${user.water_goal_ml} мл\n`;
-      }
-
-      await ctx.reply(profileText, {
-        parse_mode: "HTML",
+      await ctx.reply("Открываю личный кабинет...", {
         reply_markup: {
           inline_keyboard: [
             [
-              { text: "🔔 Уведомления", callback_data: "notifications" }
+              {
+                text: "👤 Открыть личный кабинет",
+                web_app: { url: profileUrl }
+              }
             ]
           ]
         }
       });
+      return;
+    }
+
+    if (text === "⏰ Напомнить о приёме пищи") {
+      // Получаем userId для показа экрана уведомлений
+      const { data: user, error: userError } = await supabase
+        .from("users")
+        .select("id")
+        .eq("telegram_id", telegram_id)
+        .maybeSingle();
+
+      if (userError || !user) {
+        console.error("[bot] Ошибка получения пользователя:", userError);
+        return ctx.reply("❌ Ошибка: пользователь не найден. Используйте /start для регистрации.");
+      }
+
+      // Показываем экран уведомлений
+      try {
+        const reminders = await getUserReminders(user.id);
+        
+        const foodReminders = reminders.filter(r => r.type === 'food').map(r => r.time);
+        const waterReminders = reminders.filter(r => r.type === 'water').map(r => r.time);
+
+        let message = "🔔 <b>Уведомления</b>\n\n";
+        
+        message += "🍽 <b>Напоминания о еде:</b>\n";
+        if (foodReminders.length === 0) {
+          message += "Нет напоминаний\n";
+        } else {
+          foodReminders.forEach(time => {
+            message += `• ${time}\n`;
+          });
+        }
+        
+        message += "\n💧 <b>Напоминания о воде:</b>\n";
+        if (waterReminders.length === 0) {
+          message += "Нет напоминаний\n";
+        } else {
+          waterReminders.forEach(time => {
+            message += `• ${time}\n`;
+          });
+        }
+
+        // Создаем inline keyboard
+        const keyboard: any[] = [];
+        
+        // Кнопки добавления напоминаний
+        keyboard.push([
+          { text: "➕ Добавить напоминание по еде", callback_data: "add_reminder_food" }
+        ]);
+        keyboard.push([
+          { text: "➕ Добавить напоминание по воде", callback_data: "add_reminder_water" }
+        ]);
+
+        // Кнопки удаления для каждого напоминания
+        reminders.forEach(reminder => {
+          const typeEmoji = reminder.type === 'food' ? '🍽' : '💧';
+          keyboard.push([
+            { 
+              text: `❌ Удалить ${typeEmoji} ${reminder.time}`, 
+              callback_data: `delete_reminder_${reminder.id}` 
+            }
+          ]);
+        });
+
+        await ctx.reply(message, {
+          parse_mode: "HTML",
+          reply_markup: {
+            inline_keyboard: keyboard
+          }
+        });
+      } catch (error: any) {
+        console.error("[bot] Ошибка показа уведомлений:", error);
+        return ctx.reply("❌ Ошибка загрузки уведомлений");
+      }
       return;
     }
 
@@ -1316,7 +1415,7 @@ bot.on("callback_query", async (ctx) => {
       
       const { data: user, error: userError } = await supabase
         .from("users")
-        .select("id, weight, height, goal, calories, protein, fat, carbs, water_goal_ml")
+        .select("id")
         .eq("telegram_id", telegram_id)
         .maybeSingle();
 
@@ -1324,44 +1423,17 @@ bot.on("callback_query", async (ctx) => {
         return ctx.editMessageText("❌ Ошибка: пользователь не найден.");
       }
 
-      let profileText = "👤 <b>Ваш личный кабинет</b>\n\n";
+      // Открываем Mini App на экране профиля
+      const profileUrl = `${MINIAPP_BASE_URL}/profile?id=${user.id}`;
       
-      if (user.weight) {
-        profileText += `⚖️ Вес: ${user.weight} кг\n`;
-      }
-      if (user.height) {
-        profileText += `📏 Рост: ${user.height} см\n`;
-      }
-      if (user.goal) {
-        const goalText = user.goal === "lose" ? "Похудение" : 
-                        user.goal === "gain" ? "Набор веса" : 
-                        "Поддержание веса";
-        profileText += `🎯 Цель: ${goalText}\n`;
-      }
-      
-      profileText += "\n<b>Ваши нормы:</b>\n";
-      if (user.calories) {
-        profileText += `🔥 Калории: ${user.calories} ккал\n`;
-      }
-      if (user.protein) {
-        profileText += `🥚 Белки: ${user.protein} г\n`;
-      }
-      if (user.fat) {
-        profileText += `🥥 Жиры: ${user.fat} г\n`;
-      }
-      if (user.carbs) {
-        profileText += `🍚 Углеводы: ${user.carbs} г\n`;
-      }
-      if (user.water_goal_ml) {
-        profileText += `💧 Вода: ${user.water_goal_ml} мл\n`;
-      }
-
-      await ctx.editMessageText(profileText, {
-        parse_mode: "HTML",
+      await ctx.editMessageText("Открываю личный кабинет...", {
         reply_markup: {
           inline_keyboard: [
             [
-              { text: "🔔 Уведомления", callback_data: "notifications" }
+              {
+                text: "👤 Открыть личный кабинет",
+                web_app: { url: profileUrl }
+              }
             ]
           ]
         }
