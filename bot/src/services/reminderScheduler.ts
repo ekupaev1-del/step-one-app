@@ -5,6 +5,7 @@
 import { Telegraf } from "telegraf";
 import { getRemindersForTime } from "./reminders.js";
 import { getDailyWaterSummary } from "./water.js";
+import { getDailyCaloriesSummary } from "./calories.js";
 
 // Хранилище для отслеживания отправленных напоминаний (чтобы избежать дубликатов)
 // Формат: `${userId}_${reminderId}_${HH:MM}` -> timestamp последней отправки
@@ -43,12 +44,28 @@ export async function sendRemindersForTime(bot: Telegraf, time: string): Promise
 
       try {
         if (reminder.type === 'food') {
-          // Напоминание о еде
-          await bot.telegram.sendMessage(
-            telegramId,
-            "Напоминаю: внесите приём пищи в дневник 🍽"
-          );
-          console.log(`[scheduler] ✅ Отправлено напоминание о еде пользователю ${telegramId}`);
+          // Напоминание о еде - получаем статистику за сегодня
+          try {
+            const { totalCalories, caloriesGoal } = await getDailyCaloriesSummary(reminder.user_id);
+            
+            let message: string;
+            if (caloriesGoal) {
+              message = `Напоминаю: внесите приём пищи 🍽\n\nСегодня вы уже съели ${totalCalories} из ${caloriesGoal} ккал`;
+            } else {
+              message = `Напоминаю: внесите приём пищи 🍽\n\nСегодня вы уже съели ${totalCalories} ккал`;
+            }
+            
+            await bot.telegram.sendMessage(telegramId, message);
+            console.log(`[scheduler] ✅ Отправлено напоминание о еде пользователю ${telegramId}`);
+          } catch (caloriesError: any) {
+            // Если не удалось получить статистику по калориям, отправляем простое сообщение
+            console.error(`[scheduler] Ошибка получения статистики по калориям для user ${reminder.user_id}:`, caloriesError);
+            await bot.telegram.sendMessage(
+              telegramId,
+              "Напоминаю: внесите приём пищи в дневник 🍽"
+            );
+            console.log(`[scheduler] ✅ Отправлено простое напоминание о еде пользователю ${telegramId}`);
+          }
         } else if (reminder.type === 'water') {
           // Напоминание о воде - получаем статистику за сегодня
           try {
