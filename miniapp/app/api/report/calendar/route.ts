@@ -18,16 +18,49 @@ export async function OPTIONS() {
 }
 
 /**
+ * Вычисляет статус дня на основе соотношения калорий
+ * @param actualCalories - фактически потребленные калории
+ * @param targetCalories - целевые калории
+ * @returns "green" | "yellow" | "red" | "none"
+ */
+function getDayStatus(actualCalories: number, targetCalories: number): "green" | "yellow" | "red" | "none" {
+  if (!targetCalories || targetCalories <= 0) {
+    return "none";
+  }
+
+  if (actualCalories <= 0) {
+    return "none";
+  }
+
+  // Зеленый: 0% - 110% от цели
+  if (actualCalories <= 1.1 * targetCalories) {
+    return "green";
+  }
+
+  // Желтый: 110% - 115% от цели
+  if (actualCalories <= 1.15 * targetCalories) {
+    return "yellow";
+  }
+
+  // Красный: > 115% от цели
+  return "red";
+}
+
+/**
  * GET /api/report/calendar
  * 
- * Календарь: возвращает массив дат, в которых есть записи
+ * Календарь: возвращает данные по дням с калориями и статусами
  * 
  * Параметры:
  * - userId: ID пользователя (из таблицы users)
  * - month: месяц в формате YYYY-MM (например, 2024-01)
  * 
  * Возвращает:
- * - dates: массив дат в формате YYYY-MM-DD, в которых есть записи
+ * - days: массив объектов с данными по дням:
+ *   - date: дата в формате YYYY-MM-DD
+ *   - actualCalories: сумма калорий за день
+ *   - targetCalories: целевые калории пользователя
+ *   - status: "green" | "yellow" | "red" | "none"
  */
 export async function GET(req: Request) {
   try {
@@ -55,10 +88,10 @@ export async function GET(req: Request) {
       );
     }
 
-    // Получаем пользователя
+    // Получаем пользователя и его целевую норму калорий
     const { data: user, error: userError } = await supabase
       .from("users")
-      .select("telegram_id")
+      .select("telegram_id, calories")
       .eq("id", numericId)
       .maybeSingle();
 
@@ -76,6 +109,8 @@ export async function GET(req: Request) {
         { status: 404, headers: corsHeaders }
       );
     }
+
+    const targetCalories = user.calories || 0;
 
     // Парсим месяц и вычисляем границы
     const monthStart = new Date(month + "-01T00:00:00");
@@ -95,7 +130,7 @@ export async function GET(req: Request) {
     const startUTC = monthStart.toISOString();
     const endUTC = monthEnd.toISOString();
 
-    // Получаем все записи за месяц из БД
+    // Получаем все записи за месяц из БД с калориями
     console.log("[/api/report/calendar] Запрос к БД:", {
       userId: user.telegram_id,
       month,
@@ -105,7 +140,7 @@ export async function GET(req: Request) {
 
     const { data: meals, error: mealsError } = await supabase
       .from("diary")
-      .select("created_at")
+      .select("created_at, calories")
       .eq("user_id", user.telegram_id)
       .gte("created_at", startUTC)
       .lte("created_at", endUTC);
@@ -120,23 +155,39 @@ export async function GET(req: Request) {
 
     console.log("[/api/report/calendar] Получено записей из БД:", meals?.length || 0);
 
-    // Извлекаем уникальные даты (в локальном времени)
-    const datesSet = new Set<string>();
+    // Агрегируем калории по дням
+    const caloriesByDate = new Map<string, number>();
     
     (meals || []).forEach(meal => {
       const mealDate = new Date(meal.created_at);
       const dayKey = mealDate.toISOString().split("T")[0]; // YYYY-MM-DD
-      datesSet.add(dayKey);
+      const mealCalories = Number(meal.calories || 0);
+      
+      if (mealCalories > 0) {
+        const current = caloriesByDate.get(dayKey) || 0;
+        caloriesByDate.set(dayKey, current + mealCalories);
+      }
     });
 
-    const dates = Array.from(datesSet).sort();
-    
-    console.log("[/api/report/calendar] Возвращаем даты:", { datesCount: dates.length, dates });
+    // Формируем массив дней с данными
+    const days = Array.from(caloriesByDate.entries())
+      .map(([date, actualCalories]) => ({
+        date,
+        actualCalories,
+        targetCalories,
+        status: getDayStatus(actualCalories, targetCalories) as "green" | "yellow" | "red" | "none"
+      }))
+      .sort((a, b) => a.date.localeCompare(b.date));
 
-    // Возвращаем массив дат
+    console.log("[/api/report/calendar] Возвращаем дни:", { 
+      daysCount: days.length, 
+      sample: days.slice(0, 3) 
+    });
+
+    // Возвращаем массив дней с данными
     return NextResponse.json({
       ok: true,
-      dates
+      days
     }, { headers: corsHeaders });
   } catch (error: any) {
     console.error("[/api/report/calendar] Неожиданная ошибка:", error);

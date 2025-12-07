@@ -29,6 +29,13 @@ interface DayReport {
   mealsCount: number;
 }
 
+interface CalendarDay {
+  date: string;
+  actualCalories: number;
+  targetCalories: number;
+  status: "green" | "yellow" | "red" | "none";
+}
+
 function LoadingFallback() {
   return (
     <div className="min-h-screen flex items-center justify-center bg-background">
@@ -47,7 +54,7 @@ function ReportPageContent() {
 
   // Календарь
   const [currentMonth, setCurrentMonth] = useState(new Date());
-  const [datesWithData, setDatesWithData] = useState<string[]>([]);
+  const [calendarDays, setCalendarDays] = useState<CalendarDay[]>([]);
   const [loadingCalendar, setLoadingCalendar] = useState(false);
 
   // Отчёт за день
@@ -172,18 +179,23 @@ function ReportPageContent() {
 
       if (!data.ok) {
         console.error("[loadCalendar] Ошибка:", data.error);
-        setDatesWithData([]);
+        setCalendarDays([]);
         return;
       }
 
       // ВСЕГДА создаём новый массив для принудительного re-render
-      const newDates = [...(data.dates || [])];
-      setDatesWithData(newDates);
+      const newDays: CalendarDay[] = (data.days || []).map((day: CalendarDay) => ({
+        date: day.date,
+        actualCalories: day.actualCalories,
+        targetCalories: day.targetCalories,
+        status: day.status
+      }));
+      setCalendarDays(newDays);
       
-      console.log("[loadCalendar] Календарь обновлён:", { datesCount: newDates.length, dates: newDates });
+      console.log("[loadCalendar] Календарь обновлён:", { daysCount: newDays.length, days: newDays });
     } catch (err: any) {
       console.error("[loadCalendar] Ошибка:", err);
-      setDatesWithData([]);
+      setCalendarDays([]);
     } finally {
       setLoadingCalendar(false);
     }
@@ -728,8 +740,35 @@ function ReportPageContent() {
               }
 
               const dateKey = getDateKey(day);
-              const hasData = datesWithData.includes(dateKey);
+              const dayData = calendarDays.find(d => d.date === dateKey);
               const isToday = dateKey === new Date().toISOString().split("T")[0];
+
+              // Определяем классы в зависимости от статуса
+              let dayClasses = 'aspect-square rounded-lg font-medium text-sm transition-colors ';
+              
+              if (dayData && dayData.status !== 'none') {
+                // День с данными и статусом
+                switch (dayData.status) {
+                  case 'green':
+                    dayClasses += 'bg-green-500 text-white hover:bg-green-600 ';
+                    break;
+                  case 'yellow':
+                    dayClasses += 'bg-yellow-500 text-white hover:bg-yellow-600 ';
+                    break;
+                  case 'red':
+                    dayClasses += 'bg-red-500 text-white hover:bg-red-600 ';
+                    break;
+                  default:
+                    dayClasses += 'bg-gray-100 text-textPrimary hover:bg-gray-200 ';
+                }
+              } else {
+                // День без данных
+                dayClasses += 'bg-gray-100 text-textPrimary hover:bg-gray-200 ';
+              }
+
+              if (isToday) {
+                dayClasses += 'ring-2 ring-accent ring-offset-2 ';
+              }
 
               return (
                 <button
@@ -746,14 +785,8 @@ function ReportPageContent() {
                     // Принудительно обновляем отчёт
                     await loadDayReport(dateKey, true);
                   }}
-                  className={`
-                    aspect-square rounded-lg font-medium text-sm transition-colors
-                    ${hasData 
-                      ? 'bg-accent text-white hover:bg-accent/90' 
-                      : 'bg-gray-100 text-textPrimary hover:bg-gray-200'
-                    }
-                    ${isToday ? 'ring-2 ring-accent ring-offset-2' : ''}
-                  `}
+                  className={dayClasses.trim()}
+                  title={dayData ? `${dayData.actualCalories.toFixed(0)} / ${dayData.targetCalories.toFixed(0)} ккал` : undefined}
                 >
                   {day}
                 </button>
