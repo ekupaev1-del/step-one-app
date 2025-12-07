@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
-import { getDailyWaterSummary } from "../../../lib/waterService";
+import { getDailyWaterSummary } from "../../../../lib/waterService";
 
 export const dynamic = 'force-dynamic';
 
