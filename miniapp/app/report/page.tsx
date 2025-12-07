@@ -333,7 +333,20 @@ function ReportPageContent() {
         dailyNorm: data.report.dailyNorm,
         percentage: data.report.percentage,
         meals: data.report.meals.map((meal: Meal) => ({ ...meal })),
-        mealsCount: data.report.mealsCount
+        mealsCount: data.report.mealsCount,
+        // Добавляем radarData если оно есть в ответе
+        radarData: data.report.radarData ? {
+          calories: data.report.radarData.calories || 0,
+          caloriesGoal: data.report.radarData.caloriesGoal || 0,
+          protein: data.report.radarData.protein || 0,
+          proteinGoal: data.report.radarData.proteinGoal || 0,
+          fat: data.report.radarData.fat || 0,
+          fatGoal: data.report.radarData.fatGoal || 0,
+          carbs: data.report.radarData.carbs || 0,
+          carbsGoal: data.report.radarData.carbsGoal || 0,
+          water: data.report.radarData.water || 0,
+          waterGoal: data.report.radarData.waterGoal || 0
+        } : undefined
       };
 
       // КРИТИЧНО: Принудительно обновляем refreshKey для re-render списка
@@ -698,27 +711,77 @@ function ReportPageContent() {
                   onCancel={() => setEditingMeal(null)}
                   onDelete={() => deleteMeal(editingMeal.id)}
                 />
-              ) : dayReport.radarData ? (
+              ) : (
                 <div className="space-y-6">
                   {/* Радиолокационная диаграмма */}
-                  <div className="flex justify-center">
-                    <RadarChart
-                      calories={dayReport.radarData.calories}
-                      caloriesGoal={dayReport.radarData.caloriesGoal}
-                      protein={dayReport.radarData.protein}
-                      proteinGoal={dayReport.radarData.proteinGoal}
-                      fat={dayReport.radarData.fat}
-                      fatGoal={dayReport.radarData.fatGoal}
-                      carbs={dayReport.radarData.carbs}
-                      carbsGoal={dayReport.radarData.carbsGoal}
-                      water={dayReport.radarData.water}
-                      waterGoal={dayReport.radarData.waterGoal}
-                    />
+                  {dayReport.radarData ? (
+                    <div className="flex justify-center">
+                      <RadarChart
+                        calories={dayReport.radarData.calories}
+                        caloriesGoal={dayReport.radarData.caloriesGoal}
+                        protein={dayReport.radarData.protein}
+                        proteinGoal={dayReport.radarData.proteinGoal}
+                        fat={dayReport.radarData.fat}
+                        fatGoal={dayReport.radarData.fatGoal}
+                        carbs={dayReport.radarData.carbs}
+                        carbsGoal={dayReport.radarData.carbsGoal}
+                        water={dayReport.radarData.water}
+                        waterGoal={dayReport.radarData.waterGoal}
+                      />
+                    </div>
+                  ) : (
+                    <div className="text-center text-textSecondary py-4">
+                      Данные для диаграммы недоступны
+                    </div>
+                  )}
+
+                  {/* Список приёмов пищи */}
+                  <div className="space-y-3">
+                    <h3 className="font-semibold text-textPrimary">Приемы пищи:</h3>
+                    {dayReport.meals.length === 0 ? (
+                      <div className="text-center text-textSecondary py-8">
+                        Нет записей за этот день
+                      </div>
+                    ) : (
+                      <div key={`meals-list-${refreshKey}-${dayReport.mealsCount}`}>
+                        {dayReport.meals.map((meal, index) => {
+                          const mealDate = new Date(meal.created_at);
+                          return (
+                            <div key={`meal-${meal.id}-${index}-${refreshKey}`} className="p-4 border border-gray-200 rounded-xl hover:border-accent transition-colors">
+                              <div className="flex justify-between items-start mb-2">
+                                <div className="flex-1">
+                                  <div className="font-medium text-textPrimary">{meal.meal_text}</div>
+                                  <div className="text-xs text-textSecondary mt-1">
+                                    {mealDate.toLocaleTimeString("ru-RU", {
+                                      hour: "2-digit",
+                                      minute: "2-digit"
+                                    })}
+                                  </div>
+                                </div>
+                              </div>
+                              <div className="text-sm text-textSecondary mb-3">
+                                🔥 {meal.calories} ккал | 🥚 {Number(meal.protein).toFixed(1)}г | 🥥 {Number(meal.fat).toFixed(1)}г | 🍚 {Number(meal.carbs || 0).toFixed(1)}г
+                              </div>
+                              <div className="flex gap-2">
+                                <button
+                                  onClick={() => setEditingMeal(meal)}
+                                  className="flex-1 py-2 px-4 bg-accent/20 text-accent font-medium rounded-lg hover:bg-accent/30 transition-colors text-sm"
+                                >
+                                  ✏️ Редактировать
+                                </button>
+                                <button
+                                  onClick={() => deleteMeal(meal.id)}
+                                  className="flex-1 py-2 px-4 bg-red-100 text-red-700 font-medium rounded-lg hover:bg-red-200 transition-colors text-sm"
+                                >
+                                  🗑️ Удалить
+                                </button>
+                              </div>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    )}
                   </div>
-                </div>
-              ) : (
-                <div className="text-center text-textSecondary py-8">
-                  Данные для диаграммы недоступны
                 </div>
               )}
             </>
