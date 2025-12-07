@@ -223,8 +223,10 @@ export async function POST(req: Request) {
   // ВАЖНО: Выполняем синхронно, чтобы убедиться, что сообщение отправлено
   if (user.telegram_id && isFirstTime) {
     console.log("[/api/save] Первое сохранение - отправляем меню в Telegram");
-    const updateUrl = `https://nutrition-app4.vercel.app/?id=${user.id}`;
-    const statsUrl = `https://nutrition-app4.vercel.app/stats?id=${user.id}`;
+    // Используем Preview URL из dev ветки для тестирования
+    const miniappBaseUrl = process.env.NEXT_PUBLIC_MINIAPP_URL || "https://step-one-app-git-dev-emins-projects-4717eabc.vercel.app";
+    const updateUrl = `${miniappBaseUrl}/?id=${user.id}`;
+    const statsUrl = `${miniappBaseUrl}/stats?id=${user.id}`;
     
     // Сообщение после сохранения анкеты - согласно скриншоту
     const messageText = `<b>✅ Отлично! Сохранил все ваши данные.
