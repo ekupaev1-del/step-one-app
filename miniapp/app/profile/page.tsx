@@ -124,11 +124,11 @@ function ProfilePageContent() {
   const formatActivity = (activity: string | null): string => {
     if (!activity) return "Не указана";
     const activityMap: Record<string, string> = {
-      sedentary: "Малоподвижный",
-      light: "Легкая",
-      moderate: "Умеренная",
-      active: "Высокая",
-      very_active: "Очень высокая"
+      sedentary: "Сидячая работа",
+      light: "1–2 тренировки в неделю",
+      moderate: "3–4 тренировки в неделю",
+      active: "5+ тренировок в неделю",
+      very_active: "Спорт ежедневно"
     };
     return activityMap[activity] || activity;
   };
@@ -248,24 +248,14 @@ function ProfilePageContent() {
 
         {/* Основная информация */}
         <div className="bg-white rounded-2xl shadow-soft p-6 mb-4">
-          <div className="flex justify-between items-center mb-4">
-            <h2 className="text-lg font-semibold text-textPrimary">Основная информация</h2>
-            {!isEditing && (
-              <button
-                onClick={() => setIsEditing(true)}
-                className="px-4 py-2 bg-accent/20 text-accent font-medium rounded-lg hover:bg-accent/30 transition-colors text-sm"
-              >
-                Редактировать данные
-              </button>
-            )}
-          </div>
+          <h2 className="text-lg font-semibold text-textPrimary mb-4">Основная информация</h2>
           
           {isEditing ? (
             <div className="space-y-4">
               {/* Вес */}
               <div>
                 <label className="block text-sm font-medium text-textSecondary mb-2">
-                  ⚖️ Вес (кг)
+                  Вес ⚖️ (кг)
                 </label>
                 <input
                   type="number"
@@ -297,7 +287,7 @@ function ProfilePageContent() {
               {/* Пол */}
               <div>
                 <label className="block text-sm font-medium text-textSecondary mb-2">
-                  Пол
+                  Пол 🚹🚺
                 </label>
                 <select
                   value={editGender}
@@ -329,7 +319,7 @@ function ProfilePageContent() {
               {/* Уровень активности */}
               <div>
                 <label className="block text-sm font-medium text-textSecondary mb-2">
-                  Уровень активности
+                  Активность 🏃
                 </label>
                 <select
                   value={editActivity}
@@ -337,11 +327,11 @@ function ProfilePageContent() {
                   className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-accent"
                 >
                   <option value="">Выберите уровень активности</option>
-                  <option value="sedentary">Малоподвижный</option>
-                  <option value="light">Легкая</option>
-                  <option value="moderate">Умеренная</option>
-                  <option value="active">Высокая</option>
-                  <option value="very_active">Очень высокая</option>
+                  <option value="sedentary">Сидячая работа</option>
+                  <option value="light">1–2 тренировки в неделю</option>
+                  <option value="moderate">3–4 тренировки в неделю</option>
+                  <option value="active">5+ тренировок в неделю</option>
+                  <option value="very_active">Спорт ежедневно</option>
                 </select>
               </div>
 
@@ -408,7 +398,7 @@ function ProfilePageContent() {
 
               {profile.gender && (
                 <div className="flex justify-between items-center py-2 border-b border-gray-100">
-                  <span className="text-textSecondary">Пол</span>
+                  <span className="text-textSecondary">Пол 🚹🚺</span>
                   <span className="font-medium text-textPrimary">{formatGender(profile.gender)}</span>
                 </div>
               )}
@@ -422,7 +412,7 @@ function ProfilePageContent() {
 
               {profile.activityLevel && (
                 <div className="flex justify-between items-center py-2 border-b border-gray-100">
-                  <span className="text-textSecondary">Уровень активности</span>
+                  <span className="text-textSecondary">Активность 🏃</span>
                   <span className="font-medium text-textPrimary">{formatActivity(profile.activityLevel)}</span>
                 </div>
               )}
@@ -430,6 +420,16 @@ function ProfilePageContent() {
               <div className="flex justify-between items-center py-2">
                 <span className="text-textSecondary">🎯 Цель</span>
                 <span className="font-medium text-textPrimary">{formatGoal(profile.goal)}</span>
+              </div>
+
+              {/* Кнопка редактирования внизу блока */}
+              <div className="pt-4 mt-4 border-t border-gray-100">
+                <button
+                  onClick={() => setIsEditing(true)}
+                  className="w-full px-4 py-2 bg-accent/20 text-accent font-medium rounded-lg hover:bg-accent/30 transition-colors"
+                >
+                  Редактировать данные
+                </button>
               </div>
             </div>
           )}
