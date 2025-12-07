@@ -4,7 +4,8 @@
 SERVER_USER="your-user"
 SERVER_HOST="your-server-ip-or-domain"
 SERVER_PATH="/path/to/step-one-app"
-BRANCH="main"
+# Для тестового бота используйте dev, для продакшена - main
+BRANCH="dev"
 
 echo "🚀 Деплой бота на сервер..."
 echo ""
