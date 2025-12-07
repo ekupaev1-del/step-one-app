@@ -196,6 +196,7 @@ bot.start(async (ctx) => {
     // Если анкета заполнена - показываем обычное меню
     const reportUrl = `${MINIAPP_BASE_URL}/report?id=${userId}`;
     const updateUrl = `${MINIAPP_BASE_URL}/?id=${userId}`;
+    const profileUrl = `${MINIAPP_BASE_URL}/profile?id=${userId}`;
     
     await ctx.reply("Добро пожаловать! Выберите действие:", {
       reply_markup: {
@@ -207,7 +208,7 @@ bot.start(async (ctx) => {
             { text: "📋 Получить отчет", web_app: { url: reportUrl } }
           ],
           [
-            { text: "👤 Личный кабинет" }
+            { text: "👤 Личный кабинет", web_app: { url: profileUrl } }
           ],
           [
             { text: "⏰ Напомнить о приёме пищи" }
@@ -295,6 +296,7 @@ bot.on("message", async (ctx, next) => {
         if (user) {
           const updateUrl = `${MINIAPP_BASE_URL}/?id=${user.id}`;
           const reportUrl = `${MINIAPP_BASE_URL}/report?id=${user.id}`;
+          const profileUrl = `${MINIAPP_BASE_URL}/profile?id=${user.id}`;
           
           console.log("[bot] 📤 Отправка сообщения с меню для пользователя:", user.id);
           
@@ -311,7 +313,7 @@ bot.on("message", async (ctx, next) => {
                       { text: "📋 Получить отчет", web_app: { url: reportUrl } }
                     ],
         [
-          { text: "👤 Личный кабинет" }
+          { text: "👤 Личный кабинет", web_app: { url: profileUrl } }
         ],
         [
           { text: "⏰ Напомнить о приёме пищи" }
@@ -813,6 +815,7 @@ bot.on("text", async (ctx) => {
 
       const updateUrl = user ? `${MINIAPP_BASE_URL}/?id=${user.id}` : "";
       const reportUrl = user ? `${MINIAPP_BASE_URL}/report?id=${user.id}` : "";
+      const profileUrl = user ? `${MINIAPP_BASE_URL}/profile?id=${user.id}` : "";
 
       // Возвращаем в главное меню
       const keyboardButtons: any[] = [
@@ -821,6 +824,12 @@ bot.on("text", async (ctx) => {
         ],
         [
           { text: "📋 Получить отчет", web_app: user ? { url: reportUrl } : undefined }
+        ],
+        [
+          { text: "👤 Личный кабинет", web_app: user ? { url: profileUrl } : undefined }
+        ],
+        [
+          { text: "⏰ Напомнить о приёме пищи" }
         ],
         [
           { text: "💡 Рекомендации" }
@@ -964,36 +973,8 @@ bot.on("text", async (ctx) => {
       return;
     }
 
-    if (text === "👤 Личный кабинет") {
-      // Получаем userId для создания ссылки на Mini App
-      const { data: user, error: userError } = await supabase
-        .from("users")
-        .select("id")
-        .eq("telegram_id", telegram_id)
-        .maybeSingle();
-
-      if (userError || !user) {
-        console.error("[bot] Ошибка получения пользователя:", userError);
-        return ctx.reply("❌ Ошибка: пользователь не найден. Используйте /start для регистрации.");
-      }
-
-      // Открываем Mini App на экране профиля
-      const profileUrl = `${MINIAPP_BASE_URL}/profile?id=${user.id}`;
-      
-      await ctx.reply("Открываю личный кабинет...", {
-        reply_markup: {
-          inline_keyboard: [
-            [
-              {
-                text: "👤 Открыть личный кабинет",
-                web_app: { url: profileUrl }
-              }
-            ]
-          ]
-        }
-      });
-      return;
-    }
+    // Обработчик "👤 Личный кабинет" удален - теперь это WebApp кнопка в меню
+    // Telegram автоматически откроет Mini App при нажатии на кнопку
 
     if (text === "⏰ Напомнить о приёме пищи") {
       // Получаем userId для показа экрана уведомлений
@@ -1423,10 +1404,10 @@ bot.on("callback_query", async (ctx) => {
         return ctx.editMessageText("❌ Ошибка: пользователь не найден.");
       }
 
-      // Открываем Mini App на экране профиля
+      // Открываем Mini App на экране профиля через WebApp кнопку
       const profileUrl = `${MINIAPP_BASE_URL}/profile?id=${user.id}`;
       
-      await ctx.editMessageText("Открываю личный кабинет...", {
+      await ctx.editMessageText("Нажмите на кнопку ниже, чтобы открыть личный кабинет:", {
         reply_markup: {
           inline_keyboard: [
             [

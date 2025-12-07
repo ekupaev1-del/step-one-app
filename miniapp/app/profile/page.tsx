@@ -1,7 +1,7 @@
 "use client";
 
 import { useSearchParams } from "next/navigation";
-import { useState, useEffect } from "react";
+import { useState, useEffect, Suspense } from "react";
 import "../globals.css";
 
 interface ProfileData {
@@ -205,9 +205,19 @@ function ProfilePageContent() {
   );
 }
 
+function LoadingFallback() {
+  return (
+    <div className="min-h-screen flex items-center justify-center bg-background">
+      <div className="text-textSecondary">Загрузка...</div>
+    </div>
+  );
+}
+
 export default function ProfilePage() {
   return (
-    <ProfilePageContent />
+    <Suspense fallback={<LoadingFallback />}>
+      <ProfilePageContent />
+    </Suspense>
   );
 }
 
