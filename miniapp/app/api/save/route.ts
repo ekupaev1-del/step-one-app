@@ -229,7 +229,7 @@ export async function POST(req: Request) {
     // Используем Preview URL из dev ветки для тестирования
     const miniappBaseUrl = process.env.NEXT_PUBLIC_MINIAPP_URL || "https://step-one-app-git-dev-emins-projects-4717eabc.vercel.app";
     const updateUrl = `${miniappBaseUrl}/?id=${user.id}`;
-    const statsUrl = `${miniappBaseUrl}/stats?id=${user.id}`;
+    const reportUrl = `${miniappBaseUrl}/report?id=${user.id}`;
     
     // Сообщение после сохранения анкеты - согласно скриншоту
     const messageText = `<b>✅ Отлично! Сохранил все ваши данные.
@@ -249,10 +249,7 @@ export async function POST(req: Request) {
           { text: "✏️ Обновить анкету", web_app: { url: updateUrl } }
         ],
         [
-          { text: "📋 Получить отчет", web_app: { url: statsUrl } }
-        ],
-        [
-          { text: "✏️ Редактировать прием пищи" }
+          { text: "📋 Получить отчет", web_app: { url: reportUrl } }
         ],
         [
           { text: "💡 Рекомендации" }

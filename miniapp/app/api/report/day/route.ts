@@ -141,6 +141,7 @@ export async function GET(req: Request) {
     });
 
     // Вычисляем итоговые значения за день
+    // Для новых пользователей meals может быть пустым массивом - это нормально
     const totals = (meals || []).reduce(
       (acc, meal) => ({
         calories: acc.calories + Number(meal.calories || 0),
@@ -156,6 +157,7 @@ export async function GET(req: Request) {
     const percentage = dailyNorm > 0 ? (totals.calories / dailyNorm) * 100 : 0;
 
     // Возвращаем готовый отчёт за день
+    // Для новых пользователей возвращаем пустой отчёт, а не 404
     const report = {
       date,
       totals,
