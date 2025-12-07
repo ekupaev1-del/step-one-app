@@ -8,8 +8,10 @@ import { openai } from "./services/openai.js";
 // Инициализация бота
 const bot = new Telegraf(env.telegramBotToken);
 
-// Миниап URL (будет обновлен после деплоя)
-const MINIAPP_BASE_URL = process.env.MINIAPP_BASE_URL || "https://nutrition-app4.vercel.app";
+// Миниап URL
+// Для тестирования используем Preview версию из dev ветки
+// Для продакшена используйте: https://nutrition-app4.vercel.app
+const MINIAPP_BASE_URL = process.env.MINIAPP_BASE_URL || "https://step-one-app-git-dev-emins-projects-4717eabc.vercel.app";
 
 // ░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░
 //            /start
