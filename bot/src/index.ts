@@ -650,6 +650,9 @@ function formatProgressMessage(
 //      Обработка текстовых сообщений
 // ░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░
 
+// Хранилище для отслеживания пользователей, ожидающих ввода воды
+const waitingForWaterInput = new Set<number>();
+
 bot.on("text", async (ctx) => {
   try {
     const telegram_id = ctx.from?.id;
@@ -1118,14 +1121,11 @@ bot.on("text", async (ctx) => {
     console.error("[bot] Ошибка обработки текста:", error);
     ctx.reply("Произошла ошибка при обработке сообщения.");
   }
-}
+});
 
 // ░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░
 //      Обработка callback queries (кнопки)
 // ░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░
-
-// Хранилище для отслеживания пользователей, ожидающих ввода воды
-const waitingForWaterInput = new Set<number>();
 
 bot.on("callback_query", async (ctx) => {
   try {
@@ -1197,7 +1197,7 @@ bot.on("callback_query", async (ctx) => {
       // Игнорируем ошибки ответа
     }
   }
-}););
+});
 
 // ░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░
 //      Команда /отменить
