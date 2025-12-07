@@ -150,7 +150,8 @@ export async function POST(req: Request) {
     calories,
     protein,
     fat,
-    carbs
+    carbs,
+    water_goal_ml
   } = body;
 
   console.log("[/api/save] UPDATE users by id:", numericId, {
@@ -163,7 +164,8 @@ export async function POST(req: Request) {
     calories,
     protein,
     fat,
-    carbs
+    carbs,
+    water_goal_ml
   });
 
   // Сначала проверяем, была ли анкета уже заполнена (чтобы различать первое сохранение и обновление)
@@ -191,7 +193,8 @@ export async function POST(req: Request) {
       calories,
       protein,
       fat,
-      carbs
+      carbs,
+      water_goal_ml: water_goal_ml || null
     })
     .eq("id", numericId)
     .select("id, telegram_id");

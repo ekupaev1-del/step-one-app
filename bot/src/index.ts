@@ -4,6 +4,7 @@ import { Readable } from "stream";
 import { env } from "./config/env.js";
 import { supabase } from "./services/supabase.js";
 import { openai } from "./services/openai.js";
+import { parseWaterAmount, logWaterIntake, getDailyWaterSummary } from "./services/water.js";
 
 // Инициализация бота
 const bot = new Telegraf(env.telegramBotToken);
@@ -646,6 +647,47 @@ bot.on("text", async (ctx) => {
     // Игнорируем команды
     if (text.startsWith("/")) {
       return;
+    }
+
+    // Обработка воды (ПЕРЕД анализом еды через OpenAI)
+    const waterAmount = parseWaterAmount(text);
+    if (waterAmount !== null) {
+      console.log(`[bot] Распознано потребление воды: ${waterAmount} мл от ${telegram_id}`);
+
+      // Получаем userId
+      const { data: user, error: userError } = await supabase
+        .from("users")
+        .select("id")
+        .eq("telegram_id", telegram_id)
+        .maybeSingle();
+
+      if (userError || !user) {
+        console.error("[bot] Ошибка получения пользователя для воды:", userError);
+        return ctx.reply("❌ Ошибка: пользователь не найден. Используйте /start для регистрации.");
+      }
+
+      try {
+        // Логируем воду
+        await logWaterIntake(user.id, waterAmount, 'telegram');
+
+        // Получаем сводку за день
+        const { totalMl, goalMl } = await getDailyWaterSummary(user.id);
+
+        // Формируем ответ
+        let response: string;
+        if (goalMl) {
+          const percentage = Math.round((totalMl / goalMl) * 100);
+          response = `💧 Сегодня: ${totalMl} / ${goalMl} мл (${percentage}%)`;
+        } else {
+          response = `💧 Сегодня выпито: ${totalMl} мл`;
+        }
+
+        return ctx.reply(response);
+      } catch (error: any) {
+        console.error("[bot] Ошибка логирования воды:", error);
+        const errorMessage = error.message || "Не понял количество воды, попробуй ещё раз числом.";
+        return ctx.reply(`❌ ${errorMessage}`);
+      }
     }
 
     // Кнопки "✏️ Обновить анкету" и "📋 Получить отчет" теперь напрямую открывают Mini App через web_app в keyboard button

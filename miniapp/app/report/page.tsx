@@ -62,6 +62,10 @@ function ReportPageContent() {
   const [dayReport, setDayReport] = useState<DayReport | null>(null);
   const [loadingDayReport, setLoadingDayReport] = useState(false);
   const [refreshKey, setRefreshKey] = useState(0); // Ключ для принудительного re-render
+
+  // Вода
+  const [waterSummary, setWaterSummary] = useState<{ totalMl: number; goalMl: number | null } | null>(null);
+  const [loadingWater, setLoadingWater] = useState(false);
   
   // Таймер для предотвращения слишком частых обновлений
   const lastUpdateRef = useRef<number>(0);
@@ -91,6 +95,66 @@ function ReportPageContent() {
       loadCalendar();
     }
   }, [userId, currentMonth]);
+
+  // Загрузка сводки по воде
+  const loadWaterSummary = async () => {
+    if (!userId) return;
+
+    setLoadingWater(true);
+    try {
+      const response = await fetch(`/api/water/summary?userId=${userId}`, {
+        method: 'GET',
+        cache: 'no-store'
+      });
+
+      if (!response.ok) {
+        throw new Error(`HTTP error! status: ${response.status}`);
+      }
+
+      const data = await response.json();
+      if (data.ok) {
+        setWaterSummary(data.summary);
+      }
+    } catch (err: any) {
+      console.error("[loadWaterSummary] Ошибка:", err);
+    } finally {
+      setLoadingWater(false);
+    }
+  };
+
+  // Загружаем воду при загрузке страницы и при изменении userId
+  useEffect(() => {
+    if (userId) {
+      loadWaterSummary();
+    }
+  }, [userId]);
+
+  // Добавление воды
+  const addWater = async (amount: number) => {
+    if (!userId) return;
+
+    try {
+      const response = await fetch(`/api/water/add?userId=${userId}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ amount }),
+        cache: 'no-store'
+      });
+
+      if (!response.ok) {
+        throw new Error(`HTTP error! status: ${response.status}`);
+      }
+
+      const data = await response.json();
+      if (data.ok) {
+        // Обновляем сводку
+        await loadWaterSummary();
+      }
+    } catch (err: any) {
+      console.error("[addWater] Ошибка:", err);
+      setError(err.message || "Ошибка добавления воды");
+    }
+  };
 
   // УМНОЕ АВТОМАТИЧЕСКОЕ ОБНОВЛЕНИЕ: только при реальном переключении на окно
   useEffect(() => {
@@ -798,6 +862,62 @@ function ReportPageContent() {
         {loadingCalendar && (
           <div className="text-center text-textSecondary text-sm py-2">
             Загрузка...
+          </div>
+        )}
+
+        {/* Блок воды */}
+        {waterSummary && (
+          <div className="mt-6 p-4 bg-blue-50 rounded-xl border border-blue-200">
+            <h3 className="font-semibold text-textPrimary mb-3">💧 Вода сегодня</h3>
+            <div className="mb-3">
+              {waterSummary.goalMl ? (
+                <div className="text-lg font-medium text-textPrimary">
+                  {waterSummary.totalMl} / {waterSummary.goalMl} мл ({Math.round((waterSummary.totalMl / waterSummary.goalMl) * 100)}%)
+                </div>
+              ) : (
+                <div className="text-lg font-medium text-textPrimary">
+                  {waterSummary.totalMl} мл
+                </div>
+              )}
+            </div>
+            {waterSummary.goalMl && (
+              <div className="w-full bg-gray-200 rounded-full h-2 mb-3">
+                <div
+                  className="bg-blue-500 h-2 rounded-full transition-all"
+                  style={{ width: `${Math.min(100, (waterSummary.totalMl / waterSummary.goalMl) * 100)}%` }}
+                />
+              </div>
+            )}
+            <div className="grid grid-cols-4 gap-2">
+              <button
+                onClick={() => addWater(200)}
+                disabled={loadingWater}
+                className="px-3 py-2 bg-blue-500 text-white font-medium rounded-lg hover:bg-blue-600 transition-colors disabled:opacity-50 text-sm"
+              >
+                +200
+              </button>
+              <button
+                onClick={() => addWater(250)}
+                disabled={loadingWater}
+                className="px-3 py-2 bg-blue-500 text-white font-medium rounded-lg hover:bg-blue-600 transition-colors disabled:opacity-50 text-sm"
+              >
+                +250
+              </button>
+              <button
+                onClick={() => addWater(300)}
+                disabled={loadingWater}
+                className="px-3 py-2 bg-blue-500 text-white font-medium rounded-lg hover:bg-blue-600 transition-colors disabled:opacity-50 text-sm"
+              >
+                +300
+              </button>
+              <button
+                onClick={() => addWater(500)}
+                disabled={loadingWater}
+                className="px-3 py-2 bg-blue-500 text-white font-medium rounded-lg hover:bg-blue-600 transition-colors disabled:opacity-50 text-sm"
+              >
+                +500
+              </button>
+            </div>
           </div>
         )}
 

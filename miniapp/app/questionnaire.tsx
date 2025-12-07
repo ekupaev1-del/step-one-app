@@ -3,6 +3,7 @@
 import { useSearchParams } from "next/navigation";
 import { useState, useEffect, useCallback, useRef } from "react";
 import { motion, AnimatePresence } from "framer-motion";
+import { calculateDailyWaterGoal, type ActivityLevel } from "../lib/waterHelpers";
 import "./globals.css";
 
 // Клиентский компонент с пошаговой формой
@@ -28,6 +29,7 @@ export function QuestionnaireFormContent() {
   const [protein, setProtein] = useState<number | null>(null);
   const [fat, setFat] = useState<number | null>(null);
   const [carbs, setCarbs] = useState<number | null>(null);
+  const [waterGoal, setWaterGoal] = useState<number | null>(null);
 
   // Сохраняем ссылку на WebApp при монтировании и инициализируем его
   useEffect(() => {
@@ -148,6 +150,10 @@ export function QuestionnaireFormContent() {
     const goalMultiplier = goalMultipliers[goal] || 1.0;
     totalCalories = Math.round(totalCalories * goalMultiplier);
 
+    // Вычисляем норму воды
+    const waterGoalMl = calculateDailyWaterGoal(weightNum, activity as ActivityLevel);
+    setWaterGoal(waterGoalMl);
+
     // Макроэлементы
     const proteinGrams = Math.round(weightNum * 2.2);
     const proteinCalories = proteinGrams * 4;
@@ -195,7 +201,7 @@ export function QuestionnaireFormContent() {
       return;
     }
 
-    console.log("[handleSubmit] Начало сохранения:", { userId, calories, protein, fat, carbs, activity, goal });
+    console.log("[handleSubmit] Начало сохранения:", { userId, calories, protein, fat, carbs, waterGoal, activity, goal });
 
     setLoading(true);
     setError(null);
@@ -211,7 +217,8 @@ export function QuestionnaireFormContent() {
         calories,
         protein,
         fat,
-        carbs
+        carbs,
+        water_goal_ml: waterGoal
       };
 
       console.log("[handleSubmit] Отправка данных:", payload);
