@@ -16,6 +16,41 @@ const bot = new Telegraf(env.telegramBotToken);
 // Для продакшена используйте: https://nutrition-app4.vercel.app
 const MINIAPP_BASE_URL = process.env.MINIAPP_BASE_URL || "https://step-one-app-git-dev-emins-projects-4717eabc.vercel.app";
 
+// ░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░
+//      ЕДИНАЯ ФУНКЦИЯ ГЛАВНОГО МЕНЮ
+// ░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░
+
+/**
+ * Возвращает единое главное меню бота с 4 кнопками.
+ * Это ЕДИНСТВЕННЫЙ источник истины для главного меню.
+ * 
+ * @param userId - ID пользователя из таблицы users (для создания ссылок на Mini App)
+ * @returns Объект reply_markup с клавиатурой
+ */
+function getMainMenuKeyboard(userId: number | null = null) {
+  const reportUrl = userId ? `${MINIAPP_BASE_URL}/report?id=${userId}` : undefined;
+  const profileUrl = userId ? `${MINIAPP_BASE_URL}/profile?id=${userId}` : undefined;
+
+  return {
+    keyboard: [
+      [
+        { text: "👤 Личный кабинет", web_app: profileUrl ? { url: profileUrl } : undefined }
+      ],
+      [
+        { text: "📊 Получить отчёт", web_app: reportUrl ? { url: reportUrl } : undefined }
+      ],
+      [
+        { text: "⏰ Напомнить о приёме пищи" }
+      ],
+      [
+        { text: "💡 Рекомендации" }
+      ]
+    ],
+    resize_keyboard: true,
+    one_time_keyboard: false
+  };
+}
+
 // ░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░
 //            /start
 // ░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░
@@ -193,29 +228,9 @@ bot.start(async (ctx) => {
       return;
     }
 
-    // Если анкета заполнена - показываем обычное меню
-    const reportUrl = `${MINIAPP_BASE_URL}/report?id=${userId}`;
-    const profileUrl = `${MINIAPP_BASE_URL}/profile?id=${userId}`;
-    
+    // Если анкета заполнена - показываем единое главное меню
     await ctx.reply("Добро пожаловать! Выберите действие:", {
-      reply_markup: {
-        keyboard: [
-          [
-            { text: "📋 Получить отчет", web_app: { url: reportUrl } }
-          ],
-          [
-            { text: "👤 Личный кабинет", web_app: { url: profileUrl } }
-          ],
-          [
-            { text: "⏰ Напомнить о приёме пищи" }
-          ],
-          [
-            { text: "💡 Рекомендации" }
-          ]
-        ],
-        resize_keyboard: true,
-        one_time_keyboard: false
-      }
+      reply_markup: getMainMenuKeyboard(userId)
     });
 
     console.log(`[bot] /start успешно завершён для id: ${userId}`);
@@ -290,33 +305,13 @@ bot.on("message", async (ctx, next) => {
         }
 
         if (user) {
-          const reportUrl = `${MINIAPP_BASE_URL}/report?id=${user.id}`;
-          const profileUrl = `${MINIAPP_BASE_URL}/profile?id=${user.id}`;
-          
           console.log("[bot] 📤 Отправка сообщения с меню для пользователя:", user.id);
           
           try {
             await ctx.reply(
               "✅ Отлично! Анкета сохранена.\n\n📸 Теперь вы можете отправлять фото, текст и аудио того, что кушаете, и бот проанализирует всё!",
               {
-                reply_markup: {
-                  keyboard: [
-                    [
-                      { text: "📋 Получить отчет", web_app: { url: reportUrl } }
-                    ],
-        [
-          { text: "👤 Личный кабинет", web_app: { url: profileUrl } }
-        ],
-        [
-          { text: "⏰ Напомнить о приёме пищи" }
-        ],
-        [
-          { text: "💡 Рекомендации" }
-        ]
-                  ],
-                  resize_keyboard: true,
-                  one_time_keyboard: false
-                }
+                reply_markup: getMainMenuKeyboard(user.id)
               }
             );
             console.log("[bot] ✅ Сообщение с меню отправлено успешно");
@@ -805,33 +800,11 @@ bot.on("text", async (ctx) => {
         .eq("telegram_id", telegram_id)
         .maybeSingle();
 
-      const reportUrl = user ? `${MINIAPP_BASE_URL}/report?id=${user.id}` : "";
-      const profileUrl = user ? `${MINIAPP_BASE_URL}/profile?id=${user.id}` : "";
-
       // Возвращаем в главное меню
-      const keyboardButtons: any[] = [
-        [
-          { text: "📋 Получить отчет", web_app: user ? { url: reportUrl } : undefined }
-        ],
-        [
-          { text: "👤 Личный кабинет", web_app: user ? { url: profileUrl } : undefined }
-        ],
-        [
-          { text: "⏰ Напомнить о приёме пищи" }
-        ],
-        [
-          { text: "💡 Рекомендации" }
-        ]
-      ];
-
       await ctx.reply(
         `✅ Удалено: ${lastMeal.meal_text} (${lastMeal.calories} ккал)\n\n${formatProgressMessage(todayMeals, dailyNorm)}`,
         {
-          reply_markup: {
-            keyboard: keyboardButtons,
-            resize_keyboard: true,
-            one_time_keyboard: false
-          }
+          reply_markup: getMainMenuKeyboard(user?.id || null)
         }
       );
       return;
@@ -846,28 +819,9 @@ bot.on("text", async (ctx) => {
         .eq("telegram_id", telegram_id)
         .maybeSingle();
 
-      const reportUrl = user ? `${MINIAPP_BASE_URL}/report?id=${user.id}` : "";
-      const profileUrl = user ? `${MINIAPP_BASE_URL}/profile?id=${user.id}` : "";
-
-      const keyboardButtons: any[] = [
-        [
-          { text: "📋 Получить отчет", web_app: user ? { url: reportUrl } : undefined }
-        ],
-        [
-          { text: "👤 Личный кабинет", web_app: user ? { url: profileUrl } : undefined }
-        ],
-        [
-          { text: "💡 Рекомендации" }
-        ]
-      ];
-
-      // Обновляем меню с минимальным сообщением
+      // Используем единое главное меню
       return ctx.reply("•", {
-        reply_markup: {
-          keyboard: keyboardButtons,
-          resize_keyboard: true,
-          one_time_keyboard: false
-        }
+        reply_markup: getMainMenuKeyboard(user?.id || null)
       });
     }
 
