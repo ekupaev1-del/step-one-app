@@ -615,20 +615,35 @@ async function getTodayMeals(telegram_id: number): Promise<{
 
 function formatProgressMessage(
   eaten: { calories: number; protein: number; fat: number; carbs: number },
-  norm: { calories: number; protein: number; fat: number; carbs: number } | null
+  norm: { calories: number; protein: number; fat: number; carbs: number } | null,
+  waterInfo?: { totalMl: number; goalMl: number | null }
 ): string {
+  let message = "";
+  
   if (!norm) {
-    return `Вы уже съели сегодня:\n🔥 ${eaten.calories} ккал\n🥚 ${eaten.protein.toFixed(1)} г белков\n🥥 ${eaten.fat.toFixed(1)} г жиров\n🍚 ${eaten.carbs.toFixed(1)} г углеводов\n\n⚠️ Пройдите анкету, чтобы увидеть дневную норму.`;
+    message = `Вы уже съели сегодня:\n🔥 ${eaten.calories} ккал\n🥚 ${eaten.protein.toFixed(1)} г белков\n🥥 ${eaten.fat.toFixed(1)} г жиров\n🍚 ${eaten.carbs.toFixed(1)} г углеводов\n\n⚠️ Пройдите анкету, чтобы увидеть дневную норму.`;
+  } else {
+    const remaining = {
+      calories: Math.max(0, norm.calories - eaten.calories),
+      protein: Math.max(0, norm.protein - eaten.protein),
+      fat: Math.max(0, norm.fat - eaten.fat),
+      carbs: Math.max(0, norm.carbs - eaten.carbs)
+    };
+
+    message = `Вы уже съели сегодня:\n🔥 ${eaten.calories} / ${norm.calories} ккал (осталось: ${remaining.calories})\n🥚 ${eaten.protein.toFixed(1)} / ${norm.protein.toFixed(1)} г белков (осталось: ${remaining.protein.toFixed(1)})\n🥥 ${eaten.fat.toFixed(1)} / ${norm.fat.toFixed(1)} г жиров (осталось: ${remaining.fat.toFixed(1)})\n🍚 ${eaten.carbs.toFixed(1)} / ${norm.carbs.toFixed(1)} г углеводов (осталось: ${remaining.carbs.toFixed(1)})`;
   }
 
-  const remaining = {
-    calories: Math.max(0, norm.calories - eaten.calories),
-    protein: Math.max(0, norm.protein - eaten.protein),
-    fat: Math.max(0, norm.fat - eaten.fat),
-    carbs: Math.max(0, norm.carbs - eaten.carbs)
-  };
+  // Добавляем информацию о воде, если она передана
+  if (waterInfo) {
+    if (waterInfo.goalMl) {
+      const percentage = Math.round((waterInfo.totalMl / waterInfo.goalMl) * 100);
+      message += `\n💧 ${waterInfo.totalMl} / ${waterInfo.goalMl} мл (${percentage}%)`;
+    } else {
+      message += `\n💧 ${waterInfo.totalMl} мл`;
+    }
+  }
 
-  return `Вы уже съели сегодня:\n🔥 ${eaten.calories} / ${norm.calories} ккал (осталось: ${remaining.calories})\n🥚 ${eaten.protein.toFixed(1)} / ${norm.protein.toFixed(1)} г белков (осталось: ${remaining.protein.toFixed(1)})\n🥥 ${eaten.fat.toFixed(1)} / ${norm.fat.toFixed(1)} г жиров (осталось: ${remaining.fat.toFixed(1)})\n🍚 ${eaten.carbs.toFixed(1)} / ${norm.carbs.toFixed(1)} г углеводов (осталось: ${remaining.carbs.toFixed(1)})`;
+  return message;
 }
 
 // ░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░
@@ -705,17 +720,15 @@ bot.on("text", async (ctx) => {
         // Логируем воду
         await logWaterIntake(user.id, amount, 'telegram');
 
-        // Получаем сводку за день
+        // Получаем сводку по воде за день
         const { totalMl, goalMl } = await getDailyWaterSummary(user.id);
 
-        // Формируем ответ
-        let response: string;
-        if (goalMl) {
-          const percentage = Math.round((totalMl / goalMl) * 100);
-          response = `💧 Добавлено: ${amount} мл\n\nСегодня: ${totalMl} / ${goalMl} мл (${percentage}%)`;
-        } else {
-          response = `💧 Добавлено: ${amount} мл\n\nСегодня выпито: ${totalMl} мл`;
-        }
+        // Получаем статистику по еде за сегодня
+        const todayMeals = await getTodayMeals(telegram_id);
+        const dailyNorm = await getUserDailyNorm(telegram_id);
+
+        // Формируем ответ с общим отчетом
+        const response = `✅ Добавлено:\nвода\n🔥 0 ккал | 🥚 0.0г | 🥥 0.0г | 🍚 0.0г\n\n${formatProgressMessage(todayMeals, dailyNorm, { totalMl, goalMl })}`;
 
         return ctx.reply(response);
       } catch (error: any) {
@@ -745,17 +758,15 @@ bot.on("text", async (ctx) => {
         // Логируем воду
         await logWaterIntake(user.id, waterAmount, 'telegram');
 
-        // Получаем сводку за день
+        // Получаем сводку по воде за день
         const { totalMl, goalMl } = await getDailyWaterSummary(user.id);
 
-        // Формируем ответ
-        let response: string;
-        if (goalMl) {
-          const percentage = Math.round((totalMl / goalMl) * 100);
-          response = `💧 Сегодня: ${totalMl} / ${goalMl} мл (${percentage}%)`;
-        } else {
-          response = `💧 Сегодня выпито: ${totalMl} мл`;
-        }
+        // Получаем статистику по еде за сегодня
+        const todayMeals = await getTodayMeals(telegram_id);
+        const dailyNorm = await getUserDailyNorm(telegram_id);
+
+        // Формируем ответ с общим отчетом
+        const response = `✅ Добавлено:\nвода\n🔥 0 ккал | 🥚 0.0г | 🥥 0.0г | 🍚 0.0г\n\n${formatProgressMessage(todayMeals, dailyNorm, { totalMl, goalMl })}`;
 
         return ctx.reply(response);
       } catch (error: any) {
@@ -1162,17 +1173,15 @@ bot.on("callback_query", async (ctx) => {
         // Логируем воду
         await logWaterIntake(user.id, amount, 'telegram');
 
-        // Получаем сводку за день
+        // Получаем сводку по воде за день
         const { totalMl, goalMl } = await getDailyWaterSummary(user.id);
 
-        // Формируем ответ
-        let response: string;
-        if (goalMl) {
-          const percentage = Math.round((totalMl / goalMl) * 100);
-          response = `💧 Добавлено: ${amount} мл\n\nСегодня: ${totalMl} / ${goalMl} мл (${percentage}%)`;
-        } else {
-          response = `💧 Добавлено: ${amount} мл\n\nСегодня выпито: ${totalMl} мл`;
-        }
+        // Получаем статистику по еде за сегодня
+        const todayMeals = await getTodayMeals(telegram_id);
+        const dailyNorm = await getUserDailyNorm(telegram_id);
+
+        // Формируем ответ с общим отчетом
+        const response = `✅ Добавлено:\nвода\n🔥 0 ккал | 🥚 0.0г | 🥥 0.0г | 🍚 0.0г\n\n${formatProgressMessage(todayMeals, dailyNorm, { totalMl, goalMl })}`;
 
         return ctx.editMessageText(response);
       } catch (error: any) {
