@@ -22,6 +22,12 @@ export async function OPTIONS() {
  * @param actualCalories - фактически потребленные калории
  * @param targetCalories - целевые калории
  * @returns "green" | "yellow" | "red" | "none"
+ * 
+ * Логика:
+ * - Зеленый: в пределах ±15% от нормы (85% - 115%)
+ * - Красный: переедание более 15% (>115%)
+ * - Желтый: недоедание более 15% (<85%)
+ * - None: нет данных или нет целевой нормы
  */
 function getDayStatus(actualCalories: number, targetCalories: number): "green" | "yellow" | "red" | "none" {
   if (!targetCalories || targetCalories <= 0) {
@@ -32,18 +38,21 @@ function getDayStatus(actualCalories: number, targetCalories: number): "green" |
     return "none";
   }
 
-  // Зеленый: 0% - 110% от цели
-  if (actualCalories <= 1.1 * targetCalories) {
+  // Вычисляем процент от нормы
+  const percentage = (actualCalories / targetCalories) * 100;
+
+  // Зеленый: в пределах ±15% от нормы (85% - 115%)
+  if (percentage >= 85 && percentage <= 115) {
     return "green";
   }
 
-  // Желтый: 110% - 115% от цели
-  if (actualCalories <= 1.15 * targetCalories) {
-    return "yellow";
+  // Красный: переедание более 15% (>115%)
+  if (percentage > 115) {
+    return "red";
   }
 
-  // Красный: > 115% от цели
-  return "red";
+  // Желтый: недоедание более 15% (<85%)
+  return "yellow";
 }
 
 /**
