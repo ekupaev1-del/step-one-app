@@ -5,6 +5,8 @@ import { env } from "./config/env.js";
 import { supabase } from "./services/supabase.js";
 import { openai } from "./services/openai.js";
 import { isWaterRequest, logWaterIntake, getDailyWaterSummary } from "./services/water.js";
+import { createReminder, getUserReminders, deleteReminder, validateTime, type ReminderType } from "./services/reminders.js";
+import { startReminderScheduler } from "./services/reminderScheduler.js";
 
 // Инициализация бота
 const bot = new Telegraf(env.telegramBotToken);
@@ -205,6 +207,9 @@ bot.start(async (ctx) => {
             { text: "📋 Получить отчет", web_app: { url: reportUrl } }
           ],
           [
+            { text: "👤 Личный кабинет" }
+          ],
+          [
             { text: "💡 Рекомендации" }
           ]
         ],
@@ -301,6 +306,9 @@ bot.on("message", async (ctx, next) => {
                     ],
                     [
                       { text: "📋 Получить отчет", web_app: { url: reportUrl } }
+                    ],
+                    [
+                      { text: "👤 Личный кабинет" }
                     ],
                     [
                       { text: "💡 Рекомендации" }
@@ -653,6 +661,9 @@ function formatProgressMessage(
 // Хранилище для отслеживания пользователей, ожидающих ввода воды
 const waitingForWaterInput = new Set<number>();
 
+// Хранилище для отслеживания пользователей, ожидающих ввода времени для напоминаний
+const waitingForReminderTime = new Map<number, { type: ReminderType }>();
+
 bot.on("text", async (ctx) => {
   try {
     const telegram_id = ctx.from?.id;
@@ -855,6 +866,109 @@ bot.on("text", async (ctx) => {
           one_time_keyboard: false
         }
       });
+    }
+
+    // Обработка ввода времени для напоминаний
+    if (waitingForReminderTime.has(telegram_id)) {
+      const reminderContext = waitingForReminderTime.get(telegram_id);
+      if (!reminderContext) {
+        waitingForReminderTime.delete(telegram_id);
+        return;
+      }
+
+      waitingForReminderTime.delete(telegram_id);
+
+      // Валидация времени
+      if (!validateTime(text)) {
+        return ctx.reply("❌ Некорректный формат времени. Используйте формат ЧЧ:ММ (например, 08:30)");
+      }
+
+      // Получаем userId
+      const { data: user, error: userError } = await supabase
+        .from("users")
+        .select("id")
+        .eq("telegram_id", telegram_id)
+        .maybeSingle();
+
+      if (userError || !user) {
+        console.error("[bot] Ошибка получения пользователя для напоминания:", userError);
+        return ctx.reply("❌ Ошибка: пользователь не найден. Используйте /start для регистрации.");
+      }
+
+      try {
+        await createReminder(user.id, reminderContext.type, text);
+        
+        const typeText = reminderContext.type === 'food' ? 'о приёме пищи' : 'про воду';
+        const emoji = reminderContext.type === 'food' ? '🍽' : '💧';
+        
+        await ctx.reply(`✅ Готово! Я буду напоминать ${typeText} в ${text} ${emoji}`);
+        
+        // Показываем обновленный экран уведомлений
+        await showNotificationsScreen(ctx, user.id);
+      } catch (error: any) {
+        console.error("[bot] Ошибка создания напоминания:", error);
+        return ctx.reply(`❌ ${error.message || "Ошибка создания напоминания"}`);
+      }
+      return;
+    }
+
+    if (text === "👤 Личный кабинет") {
+      // Получаем данные пользователя
+      const { data: user, error: userError } = await supabase
+        .from("users")
+        .select("id, weight, height, goal, calories, protein, fat, carbs, water_goal_ml")
+        .eq("telegram_id", telegram_id)
+        .maybeSingle();
+
+      if (userError || !user) {
+        console.error("[bot] Ошибка получения пользователя:", userError);
+        return ctx.reply("❌ Ошибка: пользователь не найден. Используйте /start для регистрации.");
+      }
+
+      // Формируем информацию о пользователе
+      let profileText = "👤 <b>Ваш личный кабинет</b>\n\n";
+      
+      if (user.weight) {
+        profileText += `⚖️ Вес: ${user.weight} кг\n`;
+      }
+      if (user.height) {
+        profileText += `📏 Рост: ${user.height} см\n`;
+      }
+      if (user.goal) {
+        const goalText = user.goal === "lose" ? "Похудение" : 
+                        user.goal === "gain" ? "Набор веса" : 
+                        "Поддержание веса";
+        profileText += `🎯 Цель: ${goalText}\n`;
+      }
+      
+      profileText += "\n<b>Ваши нормы:</b>\n";
+      if (user.calories) {
+        profileText += `🔥 Калории: ${user.calories} ккал\n`;
+      }
+      if (user.protein) {
+        profileText += `🥚 Белки: ${user.protein} г\n`;
+      }
+      if (user.fat) {
+        profileText += `🥥 Жиры: ${user.fat} г\n`;
+      }
+      if (user.carbs) {
+        profileText += `🍚 Углеводы: ${user.carbs} г\n`;
+      }
+      if (user.water_goal_ml) {
+        profileText += `💧 Вода: ${user.water_goal_ml} мл\n`;
+      }
+
+      await ctx.reply(profileText, {
+        parse_mode: "HTML",
+        reply_markup: {
+          inline_keyboard: [
+            [
+              { text: "🔔 Уведомления", callback_data: "notifications" }
+            ]
+          ]
+        }
+      });
+      return;
     }
 
     if (text === "💡 Рекомендации") {
@@ -1091,6 +1205,79 @@ bot.on("text", async (ctx) => {
 });
 
 // ░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░
+//      Вспомогательные функции
+// ░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░
+
+/**
+ * Показывает экран уведомлений
+ */
+async function showNotificationsScreen(ctx: any, userId: number) {
+  try {
+    const reminders = await getUserReminders(userId);
+    
+    const foodReminders = reminders.filter(r => r.type === 'food').map(r => r.time);
+    const waterReminders = reminders.filter(r => r.type === 'water').map(r => r.time);
+
+    let message = "🔔 <b>Уведомления</b>\n\n";
+    
+    message += "🍽 <b>Напоминания о еде:</b>\n";
+    if (foodReminders.length === 0) {
+      message += "Нет напоминаний\n";
+    } else {
+      foodReminders.forEach(time => {
+        message += `• ${time}\n`;
+      });
+    }
+    
+    message += "\n💧 <b>Напоминания о воде:</b>\n";
+    if (waterReminders.length === 0) {
+      message += "Нет напоминаний\n";
+    } else {
+      waterReminders.forEach(time => {
+        message += `• ${time}\n`;
+      });
+    }
+
+    // Создаем inline keyboard
+    const keyboard: any[] = [];
+    
+    // Кнопки добавления напоминаний
+    keyboard.push([
+      { text: "➕ Добавить напоминание по еде", callback_data: "add_reminder_food" }
+    ]);
+    keyboard.push([
+      { text: "➕ Добавить напоминание по воде", callback_data: "add_reminder_water" }
+    ]);
+
+    // Кнопки удаления для каждого напоминания
+    reminders.forEach(reminder => {
+      const typeEmoji = reminder.type === 'food' ? '🍽' : '💧';
+      keyboard.push([
+        { 
+          text: `❌ Удалить ${typeEmoji} ${reminder.time}`, 
+          callback_data: `delete_reminder_${reminder.id}` 
+        }
+      ]);
+    });
+
+    // Кнопка "Назад"
+    keyboard.push([
+      { text: "🔙 Назад", callback_data: "back_to_profile" }
+    ]);
+
+    await ctx.editMessageText(message, {
+      parse_mode: "HTML",
+      reply_markup: {
+        inline_keyboard: keyboard
+      }
+    });
+  } catch (error: any) {
+    console.error("[bot] Ошибка показа экрана уведомлений:", error);
+    await ctx.editMessageText(`❌ Ошибка: ${error.message || "Не удалось загрузить уведомления"}`);
+  }
+}
+
+// ░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░
 //      Обработка callback queries (кнопки)
 // ░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░
 
@@ -1104,6 +1291,133 @@ bot.on("callback_query", async (ctx) => {
     const data = ctx.callbackQuery.data;
     if (!data) {
       return ctx.answerCbQuery();
+    }
+
+    // Обработка кнопок уведомлений
+    if (data === "notifications") {
+      await ctx.answerCbQuery();
+      
+      const { data: user, error: userError } = await supabase
+        .from("users")
+        .select("id")
+        .eq("telegram_id", telegram_id)
+        .maybeSingle();
+
+      if (userError || !user) {
+        return ctx.editMessageText("❌ Ошибка: пользователь не найден.");
+      }
+
+      await showNotificationsScreen(ctx, user.id);
+      return;
+    }
+
+    if (data === "back_to_profile") {
+      await ctx.answerCbQuery();
+      
+      const { data: user, error: userError } = await supabase
+        .from("users")
+        .select("id, weight, height, goal, calories, protein, fat, carbs, water_goal_ml")
+        .eq("telegram_id", telegram_id)
+        .maybeSingle();
+
+      if (userError || !user) {
+        return ctx.editMessageText("❌ Ошибка: пользователь не найден.");
+      }
+
+      let profileText = "👤 <b>Ваш личный кабинет</b>\n\n";
+      
+      if (user.weight) {
+        profileText += `⚖️ Вес: ${user.weight} кг\n`;
+      }
+      if (user.height) {
+        profileText += `📏 Рост: ${user.height} см\n`;
+      }
+      if (user.goal) {
+        const goalText = user.goal === "lose" ? "Похудение" : 
+                        user.goal === "gain" ? "Набор веса" : 
+                        "Поддержание веса";
+        profileText += `🎯 Цель: ${goalText}\n`;
+      }
+      
+      profileText += "\n<b>Ваши нормы:</b>\n";
+      if (user.calories) {
+        profileText += `🔥 Калории: ${user.calories} ккал\n`;
+      }
+      if (user.protein) {
+        profileText += `🥚 Белки: ${user.protein} г\n`;
+      }
+      if (user.fat) {
+        profileText += `🥥 Жиры: ${user.fat} г\n`;
+      }
+      if (user.carbs) {
+        profileText += `🍚 Углеводы: ${user.carbs} г\n`;
+      }
+      if (user.water_goal_ml) {
+        profileText += `💧 Вода: ${user.water_goal_ml} мл\n`;
+      }
+
+      await ctx.editMessageText(profileText, {
+        parse_mode: "HTML",
+        reply_markup: {
+          inline_keyboard: [
+            [
+              { text: "🔔 Уведомления", callback_data: "notifications" }
+            ]
+          ]
+        }
+      });
+      return;
+    }
+
+    if (data === "add_reminder_food" || data === "add_reminder_water") {
+      await ctx.answerCbQuery();
+      
+      const type: ReminderType = data === "add_reminder_food" ? 'food' : 'water';
+      const typeText = type === 'food' ? 'о приёме пищи' : 'про воду';
+      
+      waitingForReminderTime.set(telegram_id, { type });
+      
+      await ctx.editMessageText(
+        `Во сколько напомнить ${typeText}? Введите время в формате ЧЧ:ММ, например 08:30`,
+        {
+          reply_markup: {
+            inline_keyboard: [
+              [
+                { text: "🔙 Назад", callback_data: "notifications" }
+              ]
+            ]
+          }
+        }
+      );
+      return;
+    }
+
+    if (data.startsWith("delete_reminder_")) {
+      await ctx.answerCbQuery();
+      
+      const reminderId = parseInt(data.replace("delete_reminder_", ""), 10);
+      if (isNaN(reminderId)) {
+        return ctx.answerCbQuery("Ошибка: некорректный ID напоминания");
+      }
+
+      const { data: user, error: userError } = await supabase
+        .from("users")
+        .select("id")
+        .eq("telegram_id", telegram_id)
+        .maybeSingle();
+
+      if (userError || !user) {
+        return ctx.answerCbQuery("Ошибка: пользователь не найден");
+      }
+
+      try {
+        await deleteReminder(reminderId, user.id);
+        await showNotificationsScreen(ctx, user.id);
+      } catch (error: any) {
+        console.error("[bot] Ошибка удаления напоминания:", error);
+        await ctx.answerCbQuery(`Ошибка: ${error.message}`);
+      }
+      return;
     }
 
     // Обработка кнопок воды
@@ -1690,3 +2004,7 @@ process.once("SIGTERM", () => bot.stop("SIGTERM"));
 // Стартуем
 bot.launch();
 console.log("🤖 Бот запущен");
+
+// Запускаем scheduler для напоминаний
+startReminderScheduler(bot);
+console.log("⏰ Scheduler напоминаний запущен");
