@@ -5,6 +5,7 @@ import { useState, useEffect, Suspense, useRef } from "react";
 import "../globals.css";
 import RadarChart from "../components/RadarChart";
 import MonthlyNutritionChart from "../components/MonthlyNutritionChart";
+import AppLayout from "../components/AppLayout";
 
 interface Meal {
   id: number;
@@ -630,7 +631,8 @@ function ReportPageContent() {
   // Модальное окно с отчётом за день
   if (selectedDate && (dayReport || loadingDayReport)) {
     return (
-      <div key={`report-${selectedDate}-${refreshKey}`} className="min-h-screen bg-background p-4 py-8">
+      <AppLayout>
+        <div key={`report-${selectedDate}-${refreshKey}`} className="min-h-screen bg-background p-4 py-8">
         <div className="max-w-md mx-auto bg-white rounded-2xl shadow-soft p-8">
           <div className="flex items-center justify-between mb-6">
             <h2 className="text-xl font-bold text-textPrimary">
@@ -770,13 +772,15 @@ function ReportPageContent() {
           ) : null}
         </div>
       </div>
+      </AppLayout>
     );
   }
 
   // Календарь
   return (
-    <div className="min-h-screen bg-background p-4 py-8">
-      <div className="max-w-md mx-auto bg-white rounded-2xl shadow-soft p-8">
+    <AppLayout>
+      <div className="min-h-screen bg-background p-4 py-8">
+        <div className="max-w-md mx-auto bg-white rounded-2xl shadow-soft p-8">
         <h1 className="text-2xl font-bold mb-6 text-textPrimary text-center">
           📅 Календарь отчётов
         </h1>
@@ -885,8 +889,9 @@ function ReportPageContent() {
         <div className="mt-6 text-center text-sm text-textSecondary">
           Нажмите на день, чтобы посмотреть отчёт
         </div>
+        </div>
       </div>
-    </div>
+    </AppLayout>
   );
 }
 

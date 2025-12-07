@@ -3,6 +3,7 @@
 import { useSearchParams } from "next/navigation";
 import { useState, useEffect, Suspense } from "react";
 import "../globals.css";
+import AppLayout from "../components/AppLayout";
 
 interface ProfileData {
   name: string | null;
@@ -206,33 +207,40 @@ function ProfilePageContent() {
 
   if (loading) {
     return (
-      <div className="min-h-screen flex items-center justify-center bg-background">
-        <div className="text-textSecondary">Загрузка...</div>
-      </div>
+      <AppLayout>
+        <div className="min-h-screen flex items-center justify-center bg-background">
+          <div className="text-textSecondary">Загрузка...</div>
+        </div>
+      </AppLayout>
     );
   }
 
   if (error && !profile) {
     return (
-      <div className="min-h-screen flex items-center justify-center bg-background p-4">
-        <div className="max-w-md w-full bg-white rounded-2xl shadow-soft p-6 text-center">
-          <h2 className="text-xl font-semibold mb-2 text-red-600">Ошибка</h2>
-          <p className="text-textPrimary">{error}</p>
+      <AppLayout>
+        <div className="min-h-screen flex items-center justify-center bg-background p-4">
+          <div className="max-w-md w-full bg-white rounded-2xl shadow-soft p-6 text-center">
+            <h2 className="text-xl font-semibold mb-2 text-red-600">Ошибка</h2>
+            <p className="text-textPrimary">{error}</p>
+          </div>
         </div>
-      </div>
+      </AppLayout>
     );
   }
 
   if (!profile) {
     return (
-      <div className="min-h-screen flex items-center justify-center bg-background">
-        <div className="text-textSecondary">Профиль не найден</div>
-      </div>
+      <AppLayout>
+        <div className="min-h-screen flex items-center justify-center bg-background">
+          <div className="text-textSecondary">Профиль не найден</div>
+        </div>
+      </AppLayout>
     );
   }
 
   return (
-    <div className="min-h-screen bg-background p-4 py-8">
+    <AppLayout>
+      <div className="min-h-screen bg-background p-4 py-8">
       <div className="max-w-md mx-auto">
         {/* Заголовок */}
         <div className="mb-6">
@@ -491,6 +499,7 @@ function ProfilePageContent() {
         {/* Можно добавить здесь позже */}
       </div>
     </div>
+    </AppLayout>
   );
 }
 
