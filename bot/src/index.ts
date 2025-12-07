@@ -195,15 +195,11 @@ bot.start(async (ctx) => {
 
     // Если анкета заполнена - показываем обычное меню
     const reportUrl = `${MINIAPP_BASE_URL}/report?id=${userId}`;
-    const updateUrl = `${MINIAPP_BASE_URL}/?id=${userId}`;
     const profileUrl = `${MINIAPP_BASE_URL}/profile?id=${userId}`;
     
     await ctx.reply("Добро пожаловать! Выберите действие:", {
       reply_markup: {
         keyboard: [
-          [
-            { text: "✏️ Обновить анкету", web_app: { url: updateUrl } }
-          ],
           [
             { text: "📋 Получить отчет", web_app: { url: reportUrl } }
           ],
@@ -294,7 +290,6 @@ bot.on("message", async (ctx, next) => {
         }
 
         if (user) {
-          const updateUrl = `${MINIAPP_BASE_URL}/?id=${user.id}`;
           const reportUrl = `${MINIAPP_BASE_URL}/report?id=${user.id}`;
           const profileUrl = `${MINIAPP_BASE_URL}/profile?id=${user.id}`;
           
@@ -306,9 +301,6 @@ bot.on("message", async (ctx, next) => {
               {
                 reply_markup: {
                   keyboard: [
-                    [
-                      { text: "✏️ Обновить анкету", web_app: { url: updateUrl } }
-                    ],
                     [
                       { text: "📋 Получить отчет", web_app: { url: reportUrl } }
                     ],
@@ -765,7 +757,7 @@ bot.on("text", async (ctx) => {
     // УДАЛЕНО: Старая логика parseWaterAmount больше не используется
     // Теперь при любом упоминании воды показываются кнопки
 
-    // Кнопки "✏️ Обновить анкету" и "📋 Получить отчет" теперь напрямую открывают Mini App через web_app в keyboard button
+    // Кнопки "📋 Получить отчет" и "👤 Личный кабинет" теперь напрямую открывают Mini App через web_app в keyboard button
     // Обработчики текста не нужны, так как кнопки не отправляют текст при нажатии - они напрямую открывают Mini App
 
 
@@ -813,15 +805,11 @@ bot.on("text", async (ctx) => {
         .eq("telegram_id", telegram_id)
         .maybeSingle();
 
-      const updateUrl = user ? `${MINIAPP_BASE_URL}/?id=${user.id}` : "";
       const reportUrl = user ? `${MINIAPP_BASE_URL}/report?id=${user.id}` : "";
       const profileUrl = user ? `${MINIAPP_BASE_URL}/profile?id=${user.id}` : "";
 
       // Возвращаем в главное меню
       const keyboardButtons: any[] = [
-        [
-          { text: "✏️ Обновить анкету", web_app: user ? { url: updateUrl } : undefined }
-        ],
         [
           { text: "📋 Получить отчет", web_app: user ? { url: reportUrl } : undefined }
         ],
@@ -858,15 +846,15 @@ bot.on("text", async (ctx) => {
         .eq("telegram_id", telegram_id)
         .maybeSingle();
 
-      const updateUrl = user ? `${MINIAPP_BASE_URL}/?id=${user.id}` : "";
       const reportUrl = user ? `${MINIAPP_BASE_URL}/report?id=${user.id}` : "";
+      const profileUrl = user ? `${MINIAPP_BASE_URL}/profile?id=${user.id}` : "";
 
       const keyboardButtons: any[] = [
         [
-          { text: "✏️ Обновить анкету", web_app: user ? { url: updateUrl } : undefined }
+          { text: "📋 Получить отчет", web_app: user ? { url: reportUrl } : undefined }
         ],
         [
-          { text: "📋 Получить отчет", web_app: user ? { url: reportUrl } : undefined }
+          { text: "👤 Личный кабинет", web_app: user ? { url: profileUrl } : undefined }
         ],
         [
           { text: "💡 Рекомендации" }

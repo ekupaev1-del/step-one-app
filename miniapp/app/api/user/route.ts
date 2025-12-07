@@ -27,7 +27,7 @@ export async function GET(req: Request) {
   // Получаем данные пользователя (полный профиль)
   const { data: user, error } = await supabase
     .from("users")
-    .select("weight, height, goal, calories, protein, fat, carbs, water_goal_ml")
+    .select("weight, height, goal, activity, gender, age, calories, protein, fat, carbs, water_goal_ml")
     .eq("id", numericId)
     .maybeSingle();
 
@@ -47,6 +47,9 @@ export async function GET(req: Request) {
     weightKg: user.weight ? Number(user.weight) : null,
     heightCm: user.height ? Number(user.height) : null,
     goal: user.goal || null,
+    activityLevel: user.activity || null,
+    gender: user.gender || null,
+    age: user.age ? Number(user.age) : null,
     caloriesGoal: user.calories ? Number(user.calories) : null,
     proteinGoal: user.protein ? Number(user.protein) : null,
     fatGoal: user.fat ? Number(user.fat) : null,
