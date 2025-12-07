@@ -255,7 +255,7 @@ function ProfilePageContent() {
               {/* Вес */}
               <div>
                 <label className="block text-sm font-medium text-textSecondary mb-2">
-                  Вес ⚖️ (кг)
+                  ⚖️ Вес (кг)
                 </label>
                 <input
                   type="number"
@@ -287,7 +287,7 @@ function ProfilePageContent() {
               {/* Пол */}
               <div>
                 <label className="block text-sm font-medium text-textSecondary mb-2">
-                  Пол 🚹🚺
+                  👤 Пол
                 </label>
                 <select
                   value={editGender}
@@ -319,7 +319,7 @@ function ProfilePageContent() {
               {/* Уровень активности */}
               <div>
                 <label className="block text-sm font-medium text-textSecondary mb-2">
-                  Активность 🏃
+                  🏃 Активность
                 </label>
                 <select
                   value={editActivity}
@@ -398,7 +398,7 @@ function ProfilePageContent() {
 
               {profile.gender && (
                 <div className="flex justify-between items-center py-2 border-b border-gray-100">
-                  <span className="text-textSecondary">Пол 🚹🚺</span>
+                  <span className="text-textSecondary">👤 Пол</span>
                   <span className="font-medium text-textPrimary">{formatGender(profile.gender)}</span>
                 </div>
               )}
@@ -412,7 +412,7 @@ function ProfilePageContent() {
 
               {profile.activityLevel && (
                 <div className="flex justify-between items-center py-2 border-b border-gray-100">
-                  <span className="text-textSecondary">Активность 🏃</span>
+                  <span className="text-textSecondary">🏃 Активность</span>
                   <span className="font-medium text-textPrimary">{formatActivity(profile.activityLevel)}</span>
                 </div>
               )}
