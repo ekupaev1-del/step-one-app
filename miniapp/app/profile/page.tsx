@@ -303,7 +303,7 @@ function ProfilePageContent() {
               {/* Возраст */}
               <div>
                 <label className="block text-sm font-medium text-textSecondary mb-2">
-                  Возраст (лет)
+                  🎂 Возраст (лет)
                 </label>
                 <input
                   type="number"
@@ -405,7 +405,7 @@ function ProfilePageContent() {
 
               {profile.age && (
                 <div className="flex justify-between items-center py-2 border-b border-gray-100">
-                  <span className="text-textSecondary">Возраст</span>
+                  <span className="text-textSecondary">🎂 Возраст</span>
                   <span className="font-medium text-textPrimary">{profile.age} лет</span>
                 </div>
               )}
