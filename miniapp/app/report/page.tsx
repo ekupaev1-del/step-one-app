@@ -3,6 +3,7 @@
 import { useSearchParams } from "next/navigation";
 import { useState, useEffect, Suspense, useRef } from "react";
 import "../globals.css";
+import RadarChart from "../components/RadarChart";
 
 interface Meal {
   id: number;
@@ -27,6 +28,18 @@ interface DayReport {
   percentage: number;
   meals: Meal[];
   mealsCount: number;
+  radarData?: {
+    calories: number;
+    caloriesGoal: number;
+    protein: number;
+    proteinGoal: number;
+    fat: number;
+    fatGoal: number;
+    carbs: number;
+    carbsGoal: number;
+    water: number;
+    waterGoal: number;
+  };
 }
 
 interface CalendarDay {
@@ -685,71 +698,27 @@ function ReportPageContent() {
                   onCancel={() => setEditingMeal(null)}
                   onDelete={() => deleteMeal(editingMeal.id)}
                 />
+              ) : dayReport.radarData ? (
+                <div className="space-y-6">
+                  {/* Радиолокационная диаграмма */}
+                  <div className="flex justify-center">
+                    <RadarChart
+                      calories={dayReport.radarData.calories}
+                      caloriesGoal={dayReport.radarData.caloriesGoal}
+                      protein={dayReport.radarData.protein}
+                      proteinGoal={dayReport.radarData.proteinGoal}
+                      fat={dayReport.radarData.fat}
+                      fatGoal={dayReport.radarData.fatGoal}
+                      carbs={dayReport.radarData.carbs}
+                      carbsGoal={dayReport.radarData.carbsGoal}
+                      water={dayReport.radarData.water}
+                      waterGoal={dayReport.radarData.waterGoal}
+                    />
+                  </div>
+                </div>
               ) : (
-                <div className="space-y-4">
-                  {/* Итоги за день */}
-                  <div className="p-4 bg-accent/10 rounded-xl">
-                    <h3 className="font-semibold text-textPrimary mb-2">Итого за день:</h3>
-                    <div className="space-y-1 text-sm">
-                      <div className="mb-2 pb-2 border-b border-gray-200">
-                        <div className="font-medium">
-                          🔥 {dayReport.totals.calories.toFixed(0)} / {dayReport.dailyNorm.toFixed(0)} ккал ({dayReport.percentage.toFixed(1)}%)
-                        </div>
-                      </div>
-                      <div>🔥 {dayReport.totals.calories.toFixed(0)} ккал</div>
-                      <div>🥚 {dayReport.totals.protein.toFixed(1)} г белков</div>
-                      <div>🥥 {dayReport.totals.fat.toFixed(1)} г жиров</div>
-                      <div>🍚 {dayReport.totals.carbs.toFixed(1)} г углеводов</div>
-                    </div>
-                  </div>
-
-                  {/* Список приёмов пищи */}
-                  <div className="space-y-3">
-                    <h3 className="font-semibold text-textPrimary">Приемы пищи:</h3>
-                    {dayReport.meals.length === 0 ? (
-                      <div className="text-center text-textSecondary py-8">
-                        Нет записей за этот день
-                      </div>
-                    ) : (
-                      <div key={`meals-list-${refreshKey}-${dayReport.mealsCount}`}>
-                        {dayReport.meals.map((meal, index) => {
-                          const mealDate = new Date(meal.created_at);
-                          return (
-                            <div key={`meal-${meal.id}-${index}-${refreshKey}`} className="p-4 border border-gray-200 rounded-xl hover:border-accent transition-colors">
-                            <div className="flex justify-between items-start mb-2">
-                              <div className="flex-1">
-                                <div className="font-medium text-textPrimary">{meal.meal_text}</div>
-                                <div className="text-xs text-textSecondary mt-1">
-                                  {mealDate.toLocaleTimeString("ru-RU", {
-                                    hour: "2-digit",
-                                    minute: "2-digit"
-                                  })}
-                                </div>
-                              </div>
-                            </div>
-                            <div className="text-sm text-textSecondary mb-3">
-                              🔥 {meal.calories} ккал | 🥚 {Number(meal.protein).toFixed(1)}г | 🥥 {Number(meal.fat).toFixed(1)}г | 🍚 {Number(meal.carbs || 0).toFixed(1)}г
-                            </div>
-                            <div className="flex gap-2">
-                              <button
-                                onClick={() => setEditingMeal(meal)}
-                                className="flex-1 py-2 px-4 bg-accent/20 text-accent font-medium rounded-lg hover:bg-accent/30 transition-colors text-sm"
-                              >
-                                ✏️ Редактировать
-                              </button>
-                              <button
-                                onClick={() => deleteMeal(meal.id)}
-                                className="flex-1 py-2 px-4 bg-red-100 text-red-700 font-medium rounded-lg hover:bg-red-200 transition-colors text-sm"
-                              >
-                                🗑️ Удалить
-                              </button>
-                            </div>
-                          </div>
-                          );
-                        })}
-                      </div>
-                    )}
-                  </div>
+                <div className="text-center text-textSecondary py-8">
+                  Данные для диаграммы недоступны
                 </div>
               )}
             </>

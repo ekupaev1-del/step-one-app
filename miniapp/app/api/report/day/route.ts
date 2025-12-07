@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
+import { getDailyWaterSummary } from "../../../lib/waterService";
 
 export const dynamic = 'force-dynamic';
 
@@ -58,10 +59,10 @@ export async function GET(req: Request) {
       );
     }
 
-    // Получаем пользователя и его дневную норму
+    // Получаем пользователя и его дневную норму (включая воду)
     const { data: user, error: userError } = await supabase
       .from("users")
-      .select("telegram_id, calories, protein, fat, carbs")
+      .select("telegram_id, calories, protein, fat, carbs, water_goal_ml")
       .eq("id", numericId)
       .maybeSingle();
 
@@ -156,6 +157,31 @@ export async function GET(req: Request) {
     const dailyNorm = user.calories || 0;
     const percentage = dailyNorm > 0 ? (totals.calories / dailyNorm) * 100 : 0;
 
+    // Получаем данные по воде за день
+    const reportDate = new Date(date + "T12:00:00"); // Используем полдень для избежания проблем с таймзонами
+    let waterData = { totalMl: 0, goalMl: null as number | null };
+    try {
+      waterData = await getDailyWaterSummary(numericId, reportDate);
+    } catch (waterError: any) {
+      console.error("[/api/report/day] Ошибка получения данных по воде:", waterError);
+      // Продолжаем без воды, используем значения по умолчанию
+    }
+
+    // Подготавливаем данные для радиолокационной диаграммы
+    // Всегда возвращаем валидные числа (0 если отсутствует)
+    const radarData = {
+      calories: totals.calories,
+      caloriesGoal: user.calories || 0,
+      protein: totals.protein,
+      proteinGoal: user.protein || 0,
+      fat: totals.fat,
+      fatGoal: user.fat || 0,
+      carbs: totals.carbs,
+      carbsGoal: user.carbs || 0,
+      water: waterData.totalMl,
+      waterGoal: waterData.goalMl || 0
+    };
+
     // Возвращаем готовый отчёт за день
     // Для новых пользователей возвращаем пустой отчёт, а не 404
     const report = {
@@ -164,7 +190,9 @@ export async function GET(req: Request) {
       dailyNorm,
       percentage: Math.round(percentage * 10) / 10,
       meals: meals || [],
-      mealsCount: meals?.length || 0
+      mealsCount: meals?.length || 0,
+      // Новые поля для радиолокационной диаграммы
+      radarData
     };
 
     console.log("[/api/report/day] Возвращаем отчёт:", {
