@@ -15,9 +15,10 @@ export default function AppNavigation() {
   const isReportsActive = pathname === "/report" || pathname.startsWith("/report");
   const isProfileActive = pathname === "/profile" || pathname.startsWith("/profile");
 
-  const handleNavigation = (path: string) => {
+  const handleNavigation = (path: "/report" | "/profile") => {
     const url = `${path}${userIdParam}`;
-    router.push(url);
+    // Используем type assertion для обхода строгой типизации Next.js 16
+    (router.push as (href: string) => void)(url);
   };
 
   return (
@@ -25,7 +26,7 @@ export default function AppNavigation() {
       <div className="flex items-center justify-around h-16 max-w-md mx-auto">
         {/* Кнопка "Отчеты" */}
         <button
-          onClick={() => handleNavigation("/report")}
+          onClick={() => handleNavigation("/report" as "/report" | "/profile")}
           className={`flex-1 flex flex-col items-center justify-center h-full transition-colors relative ${
             isReportsActive
               ? "text-accent"
@@ -43,7 +44,7 @@ export default function AppNavigation() {
 
         {/* Кнопка "Личный кабинет" */}
         <button
-          onClick={() => handleNavigation("/profile")}
+          onClick={() => handleNavigation("/profile" as "/report" | "/profile")}
           className={`flex-1 flex flex-col items-center justify-center h-full transition-colors relative ${
             isProfileActive
               ? "text-accent"
