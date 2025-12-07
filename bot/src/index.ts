@@ -4,7 +4,7 @@ import { Readable } from "stream";
 import { env } from "./config/env.js";
 import { supabase } from "./services/supabase.js";
 import { openai } from "./services/openai.js";
-import { parseWaterAmount, logWaterIntake, getDailyWaterSummary } from "./services/water.js";
+import { parseWaterAmount, isWaterRequest, logWaterIntake, getDailyWaterSummary } from "./services/water.js";
 
 // Инициализация бота
 const bot = new Telegraf(env.telegramBotToken);
@@ -650,6 +650,81 @@ bot.on("text", async (ctx) => {
     }
 
     // Обработка воды (ПЕРЕД анализом еды через OpenAI)
+    
+    // Проверяем, является ли это простым запросом "вода" без количества
+    if (isWaterRequest(text)) {
+      console.log(`[bot] Запрос воды без количества от ${telegram_id}`);
+      
+      // Показываем кнопки с вариантами
+      return ctx.reply(
+        "💧 Сколько воды вы выпили?",
+        {
+          reply_markup: {
+            inline_keyboard: [
+              [
+                { text: "0.3 л (300 мл)", callback_data: "water_300" },
+                { text: "0.5 л (500 мл)", callback_data: "water_500" }
+              ],
+              [
+                { text: "Свой вариант", callback_data: "water_custom" }
+              ]
+            ]
+          }
+        }
+      );
+    }
+
+    // Проверяем, ожидает ли пользователь ввода воды (выбрал "свой вариант")
+    if (waitingForWaterInput.has(telegram_id)) {
+      waitingForWaterInput.delete(telegram_id);
+      
+      // Пытаемся извлечь число из текста
+      const numbers = text.match(/\d+/g);
+      if (!numbers || numbers.length === 0) {
+        return ctx.reply("❌ Не понял количество. Напишите число в миллилитрах (например: 250, 300, 500)");
+      }
+
+      const amount = parseInt(numbers[0], 10);
+      if (isNaN(amount) || amount <= 0 || amount >= 5000) {
+        return ctx.reply("❌ Количество должно быть от 1 до 4999 мл");
+      }
+
+      // Получаем userId
+      const { data: user, error: userError } = await supabase
+        .from("users")
+        .select("id")
+        .eq("telegram_id", telegram_id)
+        .maybeSingle();
+
+      if (userError || !user) {
+        console.error("[bot] Ошибка получения пользователя для воды:", userError);
+        return ctx.reply("❌ Ошибка: пользователь не найден. Используйте /start для регистрации.");
+      }
+
+      try {
+        // Логируем воду
+        await logWaterIntake(user.id, amount, 'telegram');
+
+        // Получаем сводку за день
+        const { totalMl, goalMl } = await getDailyWaterSummary(user.id);
+
+        // Формируем ответ
+        let response: string;
+        if (goalMl) {
+          const percentage = Math.round((totalMl / goalMl) * 100);
+          response = `💧 Добавлено: ${amount} мл\n\nСегодня: ${totalMl} / ${goalMl} мл (${percentage}%)`;
+        } else {
+          response = `💧 Добавлено: ${amount} мл\n\nСегодня выпито: ${totalMl} мл`;
+        }
+
+        return ctx.reply(response);
+      } catch (error: any) {
+        console.error("[bot] Ошибка логирования воды:", error);
+        return ctx.reply(`❌ ${error.message || "Ошибка сохранения"}`);
+      }
+    }
+
+    // Проверяем, есть ли количество воды в тексте
     const waterAmount = parseWaterAmount(text);
     if (waterAmount !== null) {
       console.log(`[bot] Распознано потребление воды: ${waterAmount} мл от ${telegram_id}`);
@@ -1032,7 +1107,88 @@ bot.on("text", async (ctx) => {
     console.error("[bot] Ошибка обработки текста:", error);
     ctx.reply("Произошла ошибка при обработке сообщения.");
   }
-});
+}
+
+// ░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░
+//      Обработка callback queries (кнопки)
+// ░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░
+
+// Хранилище для отслеживания пользователей, ожидающих ввода воды
+const waitingForWaterInput = new Set<number>();
+
+bot.on("callback_query", async (ctx) => {
+  try {
+    const telegram_id = ctx.from?.id;
+    if (!telegram_id) {
+      return ctx.answerCbQuery("Ошибка: не удалось определить ваш ID");
+    }
+
+    const data = ctx.callbackQuery.data;
+    if (!data) {
+      return ctx.answerCbQuery();
+    }
+
+    // Обработка кнопок воды
+    if (data.startsWith("water_")) {
+      await ctx.answerCbQuery();
+
+      // Получаем userId
+      const { data: user, error: userError } = await supabase
+        .from("users")
+        .select("id")
+        .eq("telegram_id", telegram_id)
+        .maybeSingle();
+
+      if (userError || !user) {
+        console.error("[bot] Ошибка получения пользователя для воды:", userError);
+        return ctx.editMessageText("❌ Ошибка: пользователь не найден. Используйте /start для регистрации.");
+      }
+
+      if (data === "water_custom") {
+        // Пользователь выбрал "свой вариант"
+        waitingForWaterInput.add(telegram_id);
+        return ctx.editMessageText("💧 Напишите количество воды в миллилитрах (например: 250, 300, 500)");
+      }
+
+      // Извлекаем количество из callback_data (water_300, water_500)
+      const amountStr = data.replace("water_", "");
+      const amount = parseInt(amountStr, 10);
+
+      if (isNaN(amount) || amount <= 0 || amount >= 5000) {
+        return ctx.editMessageText("❌ Некорректное количество воды");
+      }
+
+      try {
+        // Логируем воду
+        await logWaterIntake(user.id, amount, 'telegram');
+
+        // Получаем сводку за день
+        const { totalMl, goalMl } = await getDailyWaterSummary(user.id);
+
+        // Формируем ответ
+        let response: string;
+        if (goalMl) {
+          const percentage = Math.round((totalMl / goalMl) * 100);
+          response = `💧 Добавлено: ${amount} мл\n\nСегодня: ${totalMl} / ${goalMl} мл (${percentage}%)`;
+        } else {
+          response = `💧 Добавлено: ${amount} мл\n\nСегодня выпито: ${totalMl} мл`;
+        }
+
+        return ctx.editMessageText(response);
+      } catch (error: any) {
+        console.error("[bot] Ошибка логирования воды:", error);
+        return ctx.editMessageText(`❌ ${error.message || "Ошибка сохранения"}`);
+      }
+    }
+  } catch (error: any) {
+    console.error("[bot] Ошибка обработки callback:", error);
+    try {
+      await ctx.answerCbQuery("Произошла ошибка");
+    } catch (e) {
+      // Игнорируем ошибки ответа
+    }
+  }
+}););
 
 // ░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░
 //      Команда /отменить

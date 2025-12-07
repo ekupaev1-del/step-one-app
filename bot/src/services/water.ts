@@ -5,6 +5,25 @@
 import { supabase } from "./supabase.js";
 
 /**
+ * Проверяет, является ли текст запросом о воде (без указания количества)
+ * 
+ * @param text - текст сообщения
+ * @returns true если это просто "вода" без числа
+ */
+export function isWaterRequest(text: string): boolean {
+  const normalizedText = text.toLowerCase().trim();
+  
+  // Точные совпадения для простого запроса
+  const simpleWaterRequests = ['вода', 'воды', 'водой', 'water', '💧'];
+  
+  if (simpleWaterRequests.includes(normalizedText)) {
+    return true;
+  }
+  
+  return false;
+}
+
+/**
  * Распознает текст о воде и извлекает количество
  * 
  * Паттерны:
@@ -21,6 +40,11 @@ import { supabase } from "./supabase.js";
 export function parseWaterAmount(text: string): number | null {
   const normalizedText = text.toLowerCase().trim();
 
+  // Если это просто "вода" без числа - возвращаем null (будет обработано отдельно)
+  if (isWaterRequest(normalizedText)) {
+    return null;
+  }
+
   // Ключевые слова для воды
   const waterKeywords = ['вода', 'воды', 'водой', 'выпил', 'выпила', 'выпито', 'water', 'плюс', '+'];
 
@@ -28,6 +52,14 @@ export function parseWaterAmount(text: string): number | null {
   const hasWaterKeyword = waterKeywords.some(keyword => normalizedText.includes(keyword));
 
   if (!hasWaterKeyword) {
+    // Проверяем, может быть это просто число (для случая "свой вариант")
+    const numbers = normalizedText.match(/\d+/g);
+    if (numbers && numbers.length > 0) {
+      const amount = parseInt(numbers[0], 10);
+      if (amount > 0 && amount < 5000) {
+        return amount;
+      }
+    }
     return null;
   }
 
