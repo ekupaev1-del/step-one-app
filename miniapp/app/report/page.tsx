@@ -4,7 +4,6 @@ import { useSearchParams } from "next/navigation";
 import { useState, useEffect, Suspense, useRef } from "react";
 import "../globals.css";
 import RadarChart from "../components/RadarChart";
-import MonthlyNutritionChart from "../components/MonthlyNutritionChart";
 import AppLayout from "../components/AppLayout";
 
 interface Meal {
@@ -78,16 +77,6 @@ function ReportPageContent() {
   const [loadingDayReport, setLoadingDayReport] = useState(false);
   const [refreshKey, setRefreshKey] = useState(0); // Ключ для принудительного re-render
 
-  // Месячные данные для графика
-  const [monthlyData, setMonthlyData] = useState<Array<{
-    date: string;
-    calories: number;
-    protein: number;
-    fat: number;
-    carbs: number;
-  }>>([]);
-  const [loadingMonthly, setLoadingMonthly] = useState(false);
-  
   // Таймер для предотвращения слишком частых обновлений
   const lastUpdateRef = useRef<number>(0);
   const UPDATE_COOLDOWN = 10000; // 10 секунд между автоматическими обновлениями
@@ -114,41 +103,6 @@ function ReportPageContent() {
   useEffect(() => {
     if (userId) {
       loadCalendar();
-    }
-  }, [userId, currentMonth]);
-
-  // Загрузка месячных данных для графика
-  const loadMonthlyData = async () => {
-    if (!userId) return;
-
-    setLoadingMonthly(true);
-    try {
-      const monthStr = `${currentMonth.getFullYear()}-${String(currentMonth.getMonth() + 1).padStart(2, '0')}`;
-      const response = await fetch(`/api/report/monthly?userId=${userId}&month=${monthStr}`, {
-        method: 'GET',
-        cache: 'no-store'
-      });
-
-      if (!response.ok) {
-        throw new Error(`HTTP error! status: ${response.status}`);
-      }
-
-      const data = await response.json();
-      if (data.ok) {
-        setMonthlyData(data.days || []);
-      }
-    } catch (err: any) {
-      console.error("[loadMonthlyData] Ошибка:", err);
-      setMonthlyData([]);
-    } finally {
-      setLoadingMonthly(false);
-    }
-  };
-
-  // Загружаем месячные данные при изменении месяца
-  useEffect(() => {
-    if (userId) {
-      loadMonthlyData();
     }
   }, [userId, currentMonth]);
 
@@ -882,9 +836,6 @@ function ReportPageContent() {
             Загрузка...
           </div>
         )}
-
-        {/* График питания за месяц */}
-        <MonthlyNutritionChart data={monthlyData} loading={loadingMonthly} />
 
         <div className="mt-6 text-center text-sm text-textSecondary">
           Нажмите на день, чтобы посмотреть отчёт
