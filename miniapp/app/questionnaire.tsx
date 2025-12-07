@@ -19,6 +19,10 @@ export function QuestionnaireFormContent() {
   const [saved, setSaved] = useState(false);
 
   // Форма данные
+  const [phone, setPhone] = useState<string>("");
+  const [email, setEmail] = useState<string>("");
+  const [phoneError, setPhoneError] = useState<string | null>(null);
+  const [emailError, setEmailError] = useState<string | null>(null);
   const [gender, setGender] = useState<string>("");
   const [age, setAge] = useState<string>("");
   const [weight, setWeight] = useState<string>("");
@@ -170,9 +174,86 @@ export function QuestionnaireFormContent() {
     setCarbs(carbsGrams);
   }, [gender, age, weight, height, activity, goal]);
 
-  const handleNext = () => {
+  // Валидация телефона
+  const validatePhone = (phoneValue: string): boolean => {
+    // Разрешаем форматы: +7XXXXXXXXXX, +XXXXXXXXXX, 7XXXXXXXXXX, XXXXXXXXXX
+    const phoneRegex = /^\+?[0-9]{10,15}$/;
+    const cleaned = phoneValue.replace(/\s|-|\(|\)/g, '');
+    return phoneRegex.test(cleaned);
+  };
+
+  // Валидация email
+  const validateEmail = (emailValue: string): boolean => {
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    return emailRegex.test(emailValue);
+  };
+
+  // Сохранение телефона и email
+  const savePhoneAndEmail = async (): Promise<boolean> => {
+    if (!userId) return false;
+
+    setLoading(true);
+    setError(null);
+    setPhoneError(null);
+    setEmailError(null);
+
+    try {
+      const response = await fetch(`/api/save?id=${userId}`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json"
+        },
+        body: JSON.stringify({
+          phone: phone.trim(),
+          email: email.trim()
+        })
+      });
+
+      const data = await response.json();
+
+      if (!response.ok) {
+        setError(data.error || "Ошибка сохранения данных");
+        setLoading(false);
+        return false;
+      }
+
+      setLoading(false);
+      return true;
+    } catch (err: any) {
+      console.error("[savePhoneAndEmail] Ошибка:", err);
+      setError("Не удалось сохранить данные. Попробуйте позже.");
+      setLoading(false);
+      return false;
+    }
+  };
+
+  const handleNext = async () => {
     if (step === 0) {
-      setStep(1);
+      setStep(0.5); // Переход к экрану с телефоном и email
+    } else if (step === 0.5) {
+      // Валидация и сохранение телефона и email
+      setPhoneError(null);
+      setEmailError(null);
+
+      const phoneValid = validatePhone(phone);
+      const emailValid = validateEmail(email);
+
+      if (!phoneValid) {
+        setPhoneError("Введите корректный номер телефона");
+      }
+      if (!emailValid) {
+        setEmailError("Введите корректный email адрес");
+      }
+
+      if (!phoneValid || !emailValid) {
+        return;
+      }
+
+      // Сохраняем телефон и email
+      const saved = await savePhoneAndEmail();
+      if (saved) {
+        setStep(1);
+      }
     } else if (step === 1 && gender) {
       setStep(2);
     } else if (step === 2 && age) {
@@ -191,7 +272,13 @@ export function QuestionnaireFormContent() {
 
   const handleBack = () => {
     if (step > 0) {
-      setStep(step - 1);
+      if (step === 0.5) {
+        setStep(0);
+      } else if (step === 1) {
+        setStep(0.5);
+      } else {
+        setStep(step - 1);
+      }
     }
   };
 
@@ -368,7 +455,97 @@ export function QuestionnaireFormContent() {
   }
 
   const totalSteps = 6;
-  const progress = step === 0 ? 0 : ((step - 1) / totalSteps) * 100;
+  const progress = step === 0 ? 0 : step === 0.5 ? 0 : ((step - 1) / totalSteps) * 100;
+
+  // Экран 0.5: Телефон и Email
+  if (step === 0.5) {
+    return (
+      <div className="min-h-screen flex items-center justify-center px-4" style={{ backgroundColor: '#F6F3EF' }}>
+        <div className="max-w-md w-full bg-white rounded-[44px] shadow-lg p-8" style={{ paddingTop: '56px' }}>
+          <p className="text-xs uppercase text-gray-400 mb-6 tracking-[0.15em] font-light text-center">
+            КОНТАКТНАЯ ИНФОРМАЦИЯ
+          </p>
+          <h1 className="text-2xl md:text-3xl font-bold mb-6 text-gray-800 leading-tight text-center">
+            Введите номер телефона и email
+          </h1>
+
+          {error && (
+            <div className="p-4 bg-red-50 border border-red-200 rounded-lg text-red-700 text-sm mb-4">
+              {error}
+            </div>
+          )}
+
+          <div className="space-y-4 mb-6">
+            {/* Телефон */}
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-2">
+                Номер телефона
+              </label>
+              <input
+                type="tel"
+                value={phone}
+                onChange={(e) => {
+                  setPhone(e.target.value);
+                  setPhoneError(null);
+                }}
+                placeholder="+7 (999) 123-45-67"
+                className={`w-full px-4 py-3 border-2 rounded-xl focus:outline-none focus:ring-2 transition-colors ${
+                  phoneError
+                    ? 'border-red-300 focus:border-red-500 focus:ring-red-200'
+                    : 'border-gray-200 focus:border-accent focus:ring-accent/20'
+                }`}
+                style={{ backgroundColor: '#fff' }}
+              />
+              {phoneError && (
+                <p className="mt-1 text-sm text-red-600">{phoneError}</p>
+              )}
+            </div>
+
+            {/* Email */}
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-2">
+                Email адрес
+              </label>
+              <input
+                type="email"
+                value={email}
+                onChange={(e) => {
+                  setEmail(e.target.value);
+                  setEmailError(null);
+                }}
+                placeholder="example@email.com"
+                className={`w-full px-4 py-3 border-2 rounded-xl focus:outline-none focus:ring-2 transition-colors ${
+                  emailError
+                    ? 'border-red-300 focus:border-red-500 focus:ring-red-200'
+                    : 'border-gray-200 focus:border-accent focus:ring-accent/20'
+                }`}
+                style={{ backgroundColor: '#fff' }}
+              />
+              {emailError && (
+                <p className="mt-1 text-sm text-red-600">{emailError}</p>
+              )}
+            </div>
+          </div>
+
+          <button
+            onClick={handleNext}
+            disabled={loading || !phone.trim() || !email.trim()}
+            className="w-full py-4 px-6 text-white font-medium rounded-[50px] shadow-md hover:opacity-90 transition-opacity text-lg disabled:opacity-50 disabled:cursor-not-allowed"
+            style={{ backgroundColor: '#A4C49A' }}
+          >
+            {loading ? "Сохранение..." : "Продолжить"}
+          </button>
+
+          <button
+            onClick={handleBack}
+            className="w-full mt-4 text-center text-gray-600 text-sm hover:text-gray-800 transition-colors"
+          >
+            ← Назад
+          </button>
+        </div>
+      </div>
+    );
+  }
 
   // Экран 0: Приветствие
   if (step === 0) {
@@ -759,6 +936,14 @@ export function QuestionnaireFormContent() {
             className="w-full text-center text-textSecondary text-sm hover:text-textPrimary transition-colors"
           >
             ← Вернуться на шаг назад
+          </button>
+        )}
+        {step === 1 && (
+          <button
+            onClick={handleBack}
+            className="w-full text-center text-textSecondary text-sm hover:text-textPrimary transition-colors"
+          >
+            ← Вернуться назад
           </button>
         )}
       </div>

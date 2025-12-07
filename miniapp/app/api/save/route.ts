@@ -141,6 +141,8 @@ export async function POST(req: Request) {
 
   const body = await req.json();
   const {
+    phone,
+    email,
     gender,
     age,
     weight,
@@ -155,6 +157,8 @@ export async function POST(req: Request) {
   } = body;
 
   console.log("[/api/save] UPDATE users by id:", numericId, {
+    phone,
+    email,
     gender,
     age,
     weight,
@@ -181,21 +185,26 @@ export async function POST(req: Request) {
   // ВАЖНО: Только UPDATE, никаких INSERT/UPSERT!
   // Форма НИКОГДА не должна создавать новые строки в users.
   // Бот создаёт строку при /start, форма только обновляет существующую.
+  // Подготавливаем объект для обновления (только переданные поля)
+  const updateData: any = {};
+  
+  if (phone !== undefined) updateData.phone = phone || null;
+  if (email !== undefined) updateData.email = email || null;
+  if (gender !== undefined) updateData.gender = gender || null;
+  if (age !== undefined) updateData.age = age || null;
+  if (weight !== undefined) updateData.weight = weight || null;
+  if (height !== undefined) updateData.height = height || null;
+  if (activity !== undefined) updateData.activity = activity || null;
+  if (goal !== undefined) updateData.goal = goal || null;
+  if (calories !== undefined) updateData.calories = calories || null;
+  if (protein !== undefined) updateData.protein = protein || null;
+  if (fat !== undefined) updateData.fat = fat || null;
+  if (carbs !== undefined) updateData.carbs = carbs || null;
+  if (water_goal_ml !== undefined) updateData.water_goal_ml = water_goal_ml || null;
+
   const { data, error } = await supabase
     .from("users")
-    .update({
-      gender,
-      age,
-      weight,
-      height,
-      activity,
-      goal,
-      calories,
-      protein,
-      fat,
-      carbs,
-      water_goal_ml: water_goal_ml || null
-    })
+    .update(updateData)
     .eq("id", numericId)
     .select("id, telegram_id");
 
