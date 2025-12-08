@@ -35,7 +35,10 @@ pm2 restart step-one-bot
 Убедитесь, что в файле `bot/src/index.ts` указан правильный Preview URL:
 
 ```typescript
-const MINIAPP_BASE_URL = process.env.MINIAPP_BASE_URL || "https://nutrition-app4.vercel.app";
+const MINIAPP_BASE_URL =
+  process.env.MINIAPP_BASE_URL && !process.env.MINIAPP_BASE_URL.includes("git-dev")
+    ? process.env.MINIAPP_BASE_URL
+    : "https://nutrition-app4.vercel.app";
 ```
 
 ### 3. Использовать переменную окружения (рекомендуется)
