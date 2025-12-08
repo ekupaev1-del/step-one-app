@@ -34,14 +34,15 @@ function AppNavigation() {
       <div 
         className="mx-4 mb-2"
         style={{
-          background: 'rgba(255, 255, 255, 0.18)',
-          backdropFilter: 'blur(8px)',
-          WebkitBackdropFilter: 'blur(8px)',
-          borderTop: '0.5px solid rgba(0, 0, 0, 0.08)',
-          borderTopLeftRadius: '18px',
-          borderTopRightRadius: '18px',
-          height: '64px',
-          minHeight: '64px'
+          background: 'rgba(255, 255, 255, 0.95)',
+          backdropFilter: 'blur(10px)',
+          WebkitBackdropFilter: 'blur(10px)',
+          borderTop: '0.5px solid rgba(0, 0, 0, 0.06)',
+          borderTopLeftRadius: '20px',
+          borderTopRightRadius: '20px',
+          height: '68px',
+          minHeight: '68px',
+          boxShadow: '0 -2px 12px rgba(0, 0, 0, 0.08)'
         }}
       >
         <div className="flex items-center justify-around h-full max-w-md mx-auto px-2">
@@ -50,12 +51,12 @@ function AppNavigation() {
             onClick={() => handleNavigation("/report" as "/report" | "/profile")}
             className="flex-1 flex flex-col items-center justify-center h-full relative"
             style={{
-              paddingTop: '6px',
-              paddingBottom: '6px'
+              paddingTop: '8px',
+              paddingBottom: '8px'
             }}
           >
             <span 
-              className="mb-1"
+              className="mb-1.5"
               style={{
                 fontSize: '22px',
                 lineHeight: '1',
@@ -67,8 +68,8 @@ function AppNavigation() {
             <span 
               className="font-medium"
               style={{
-                fontSize: '11px',
-                color: isReportsActive ? '#FFFFFF' : 'rgba(255, 255, 255, 0.75)',
+                fontSize: '12px',
+                color: isReportsActive ? '#8FBC8F' : '#5F5B62',
                 fontWeight: isReportsActive ? 600 : 500
               }}
             >
@@ -78,9 +79,10 @@ function AppNavigation() {
               <div 
                 className="absolute bottom-0 left-1/2 -translate-x-1/2 rounded-full"
                 style={{
-                  width: '36px',
-                  height: '2.5px',
-                  background: '#8FBC8F'
+                  width: '40px',
+                  height: '3px',
+                  background: '#8FBC8F',
+                  borderRadius: '2px'
                 }}
               />
             )}
@@ -91,12 +93,12 @@ function AppNavigation() {
             onClick={() => handleNavigation("/profile" as "/report" | "/profile")}
             className="flex-1 flex flex-col items-center justify-center h-full relative"
             style={{
-              paddingTop: '6px',
-              paddingBottom: '6px'
+              paddingTop: '8px',
+              paddingBottom: '8px'
             }}
           >
             <span 
-              className="mb-1"
+              className="mb-1.5"
               style={{
                 fontSize: '22px',
                 lineHeight: '1',
@@ -108,8 +110,8 @@ function AppNavigation() {
             <span 
               className="font-medium"
               style={{
-                fontSize: '11px',
-                color: isProfileActive ? '#FFFFFF' : 'rgba(255, 255, 255, 0.75)',
+                fontSize: '12px',
+                color: isProfileActive ? '#8FBC8F' : '#5F5B62',
                 fontWeight: isProfileActive ? 600 : 500
               }}
             >
@@ -119,9 +121,10 @@ function AppNavigation() {
               <div 
                 className="absolute bottom-0 left-1/2 -translate-x-1/2 rounded-full"
                 style={{
-                  width: '36px',
-                  height: '2.5px',
-                  background: '#8FBC8F'
+                  width: '40px',
+                  height: '3px',
+                  background: '#8FBC8F',
+                  borderRadius: '2px'
                 }}
               />
             )}
