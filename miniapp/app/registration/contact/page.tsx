@@ -1,10 +1,8 @@
-"use server";
-
 import { redirect } from "next/navigation";
 
 export const dynamic = "force-dynamic";
 
-export default function RegistrationContactRedirect({
+export default async function RegistrationContactRedirect({
   searchParams
 }: {
   searchParams?: Record<string, string | string[] | undefined>;
