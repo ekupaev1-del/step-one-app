@@ -189,8 +189,12 @@ export async function POST(req: Request) {
   // Подготавливаем объект для обновления (только переданные поля)
   const updateData: any = {};
 
-  // Жёсткая валидация для первого сохранения анкеты
-  if (isFirstTime) {
+  // Валидация: если передаются все поля анкеты (не только phone/email), то проверяем все
+  const isFullQuestionnaire = gender !== undefined && age !== undefined && weight !== undefined && 
+                               height !== undefined && activity !== undefined && goal !== undefined;
+  
+  // Жёсткая валидация только при полном сохранении анкеты (когда передаются все поля)
+  if (isFullQuestionnaire && isFirstTime) {
     if (!phone || !email || !gender || !age || !weight || !height || !activity || !goal) {
       return NextResponse.json(
         { ok: false, error: "Телефон, email, пол, возраст, вес, рост, активность и цель обязательны" },
