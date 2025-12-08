@@ -199,13 +199,19 @@ export async function POST(req: Request) {
     }
     // Серверный расчёт норм
     try {
-      const { calories: calcCalories, protein: calcProtein, fat: calcFat, carbs: calcCarbs, waterGoalMl } =
-        calculateMacros(gender, Number(age), Number(weight), Number(height), activity, goal);
-      updateData.calories = calcCalories;
-      updateData.protein = calcProtein;
-      updateData.fat = calcFat;
-      updateData.carbs = calcCarbs;
-      updateData.water_goal_ml = waterGoalMl;
+      const calc = calculateMacros(
+        gender,
+        Number(age),
+        Number(weight),
+        Number(height),
+        activity,
+        goal
+      );
+      updateData.calories = calc.calories;
+      updateData.protein = calc.protein;
+      updateData.fat = calc.fat;
+      updateData.carbs = calc.carbs;
+      updateData.water_goal_ml = calc.waterGoalMl;
     } catch (calcErr: any) {
       return NextResponse.json(
         { ok: false, error: calcErr.message || "Ошибка расчёта норм" },
