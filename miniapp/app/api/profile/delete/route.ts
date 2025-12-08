@@ -104,16 +104,32 @@ export async function DELETE(req: Request) {
       );
     }
 
-    // Удаляем пользователя
-    const { error: userDeleteError } = await supabase
+    // Очищаем профиль, оставляя telegram_id и саму строку
+    const { error: userResetError } = await supabase
       .from("users")
-      .delete()
+      .update({
+        name: null,
+        phone: null,
+        email: null,
+        gender: null,
+        age: null,
+        weight: null,
+        height: null,
+        activity: null,
+        goal: null,
+        calories: null,
+        protein: null,
+        fat: null,
+        carbs: null,
+        water_goal_ml: null,
+        avatar_url: null
+      })
       .eq("id", numericId);
 
-    if (userDeleteError) {
-      console.error("[/api/profile/delete] Ошибка удаления пользователя:", userDeleteError);
+    if (userResetError) {
+      console.error("[/api/profile/delete] Ошибка очистки пользователя:", userResetError);
       return NextResponse.json(
-        { ok: false, error: "Не удалось удалить пользователя" },
+        { ok: false, error: "Не удалось очистить профиль" },
         { status: 500, headers: corsHeaders }
       );
     }

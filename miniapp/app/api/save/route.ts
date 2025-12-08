@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
+import { calculateMacros } from "../../../lib/macroCalculator";
 
 export const dynamic = 'force-dynamic';
 
@@ -187,7 +188,32 @@ export async function POST(req: Request) {
   // Бот создаёт строку при /start, форма только обновляет существующую.
   // Подготавливаем объект для обновления (только переданные поля)
   const updateData: any = {};
-  
+
+  // Жёсткая валидация для первого сохранения анкеты
+  if (isFirstTime) {
+    if (!phone || !email || !gender || !age || !weight || !height || !activity || !goal) {
+      return NextResponse.json(
+        { ok: false, error: "Телефон, email, пол, возраст, вес, рост, активность и цель обязательны" },
+        { status: 400 }
+      );
+    }
+    // Серверный расчёт норм
+    try {
+      const { calories: calcCalories, protein: calcProtein, fat: calcFat, carbs: calcCarbs, waterGoalMl } =
+        calculateMacros(gender, Number(age), Number(weight), Number(height), activity, goal);
+      updateData.calories = calcCalories;
+      updateData.protein = calcProtein;
+      updateData.fat = calcFat;
+      updateData.carbs = calcCarbs;
+      updateData.water_goal_ml = waterGoalMl;
+    } catch (calcErr: any) {
+      return NextResponse.json(
+        { ok: false, error: calcErr.message || "Ошибка расчёта норм" },
+        { status: 400 }
+      );
+    }
+  }
+
   if (phone !== undefined) updateData.phone = phone || null;
   if (email !== undefined) updateData.email = email || null;
   if (gender !== undefined) updateData.gender = gender || null;
@@ -196,11 +222,11 @@ export async function POST(req: Request) {
   if (height !== undefined) updateData.height = height || null;
   if (activity !== undefined) updateData.activity = activity || null;
   if (goal !== undefined) updateData.goal = goal || null;
-  if (calories !== undefined) updateData.calories = calories || null;
-  if (protein !== undefined) updateData.protein = protein || null;
-  if (fat !== undefined) updateData.fat = fat || null;
-  if (carbs !== undefined) updateData.carbs = carbs || null;
-  if (water_goal_ml !== undefined) updateData.water_goal_ml = water_goal_ml || null;
+  if (calories !== undefined) updateData.calories = calories || updateData.calories || null;
+  if (protein !== undefined) updateData.protein = protein || updateData.protein || null;
+  if (fat !== undefined) updateData.fat = fat || updateData.fat || null;
+  if (carbs !== undefined) updateData.carbs = carbs || updateData.carbs || null;
+  if (water_goal_ml !== undefined) updateData.water_goal_ml = water_goal_ml || updateData.water_goal_ml || null;
 
   const { data, error } = await supabase
     .from("users")

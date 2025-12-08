@@ -45,6 +45,7 @@ function ProfilePageContent() {
   const [editGender, setEditGender] = useState<string>("");
   const [editAge, setEditAge] = useState<string>("");
   const [deleting, setDeleting] = useState(false);
+  const [needsOnboarding, setNeedsOnboarding] = useState(false);
 
   // Инициализация userId
   useEffect(() => {
@@ -115,6 +116,22 @@ function ProfilePageContent() {
 
     loadProfile();
   }, [userId]);
+
+  // Если профиль пустой — отправляем на онбординг
+  useEffect(() => {
+    if (!profile || !userId) return;
+    const requiredFilled =
+      profile.weightKg &&
+      profile.heightCm &&
+      profile.goal &&
+      profile.activityLevel &&
+      profile.gender &&
+      profile.age;
+    if (!requiredFilled) {
+      setNeedsOnboarding(true);
+      window.location.href = `/?id=${userId}`;
+    }
+  }, [profile, userId]);
 
   // Функция для форматирования цели
   const formatGoal = (goal: string | null): string => {
