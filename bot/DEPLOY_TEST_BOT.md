@@ -35,7 +35,7 @@ pm2 restart step-one-bot
 Убедитесь, что в файле `bot/src/index.ts` указан правильный Preview URL:
 
 ```typescript
-const MINIAPP_BASE_URL = process.env.MINIAPP_BASE_URL || "https://step-one-app-git-dev-emins-projects-4717eabc.vercel.app";
+const MINIAPP_BASE_URL = process.env.MINIAPP_BASE_URL || "https://nutrition-app4.vercel.app";
 ```
 
 ### 3. Использовать переменную окружения (рекомендуется)
@@ -44,7 +44,7 @@ const MINIAPP_BASE_URL = process.env.MINIAPP_BASE_URL || "https://step-one-app-g
 
 1. Добавьте в `bot/.env`:
 ```bash
-MINIAPP_BASE_URL=https://step-one-app-git-dev-emins-projects-4717eabc.vercel.app
+MINIAPP_BASE_URL=https://nutrition-app4.vercel.app
 ```
 
 2. Обновите `ecosystem.config.js` чтобы передавать переменные окружения:
@@ -83,4 +83,5 @@ pm2 logs step-one-bot
 7. Перезапустите бота
 
 Или используйте стабильный домен для Preview deployments (если настроен в Vercel).
+
 

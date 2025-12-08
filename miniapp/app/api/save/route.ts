@@ -238,7 +238,7 @@ export async function POST(req: Request) {
   if (isFullQuestionnaireSaved) {
     console.log("[/api/save] Полная анкета сохранена - отправляем меню в Telegram");
     // Используем Preview URL из dev ветки для тестирования
-    const miniappBaseUrl = process.env.NEXT_PUBLIC_MINIAPP_URL || "https://step-one-app-git-dev-emins-projects-4717eabc.vercel.app";
+    const miniappBaseUrl = process.env.NEXT_PUBLIC_MINIAPP_URL || "https://nutrition-app4.vercel.app";
     const reportUrl = `${miniappBaseUrl}/report?id=${user.id}`;
     const profileUrl = `${miniappBaseUrl}/profile?id=${user.id}`;
     
