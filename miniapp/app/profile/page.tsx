@@ -44,6 +44,7 @@ function ProfilePageContent() {
   const [editActivity, setEditActivity] = useState<string>("");
   const [editGender, setEditGender] = useState<string>("");
   const [editAge, setEditAge] = useState<string>("");
+  const [deleting, setDeleting] = useState(false);
 
   // Инициализация userId
   useEffect(() => {
@@ -286,6 +287,30 @@ function ProfilePageContent() {
   }
 
   const displayName = profile.name || "Пользователь";
+
+  const handleDeleteProfile = async () => {
+    if (!userId) return;
+    const confirmDelete = window.confirm("Вы действительно хотите удалить профиль?");
+    if (!confirmDelete) return;
+
+    try {
+      setDeleting(true);
+      const response = await fetch(`/api/profile/delete?userId=${userId}`, {
+        method: "DELETE"
+      });
+      const data = await response.json();
+      if (!response.ok || !data.ok) {
+        throw new Error(data.error || "Не удалось удалить профиль");
+      }
+      // После удаления отправляем на онбординг/старт
+      window.location.href = "/";
+    } catch (err: any) {
+      console.error("[profile] Ошибка удаления профиля:", err);
+      setError(err.message || "Ошибка удаления профиля");
+    } finally {
+      setDeleting(false);
+    }
+  };
 
   return (
     <AppLayout>
@@ -540,6 +565,17 @@ function ProfilePageContent() {
               </div>
             </div>
           )}
+        </div>
+
+        {/* Удаление профиля */}
+        <div className="mb-4">
+          <button
+            onClick={handleDeleteProfile}
+            disabled={deleting}
+            className="w-full px-4 py-3 bg-white border border-red-200 text-red-600 font-medium rounded-2xl shadow-soft hover:bg-red-50 transition-colors disabled:opacity-50"
+          >
+            {deleting ? "Удаление..." : "Удалить профиль"}
+          </button>
         </div>
 
         {/* Нормы (сворачиваемая секция) */}
