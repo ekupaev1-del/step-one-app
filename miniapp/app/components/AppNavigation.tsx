@@ -1,8 +1,9 @@
 "use client";
 
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
+import { memo } from "react";
 
-export default function AppNavigation() {
+function AppNavigation() {
   const pathname = usePathname();
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -17,7 +18,7 @@ export default function AppNavigation() {
 
   const handleNavigation = (path: "/report" | "/profile") => {
     const url = `${path}${userIdParam}`;
-    // Используем type assertion для обхода строгой типизации Next.js 16
+    // Мгновенная навигация без задержек
     (router.push as (href: string) => void)(url);
   };
 
@@ -25,54 +26,50 @@ export default function AppNavigation() {
     <nav 
       className="fixed bottom-0 left-0 right-0 z-50"
       style={{ 
-        paddingBottom: 'calc(env(safe-area-inset-bottom) + 12px)',
-        paddingTop: '12px'
+        paddingBottom: 'calc(env(safe-area-inset-bottom) + 8px)',
+        paddingTop: '8px'
       }}
     >
-      {/* Liquid Glass Background */}
+      {/* Легкий стеклянный фон */}
       <div 
-        className="mx-4 mb-2 border-t border-l border-r"
+        className="mx-4 mb-2"
         style={{
-          background: 'rgba(255, 255, 255, 0.85)',
-          backdropFilter: 'blur(20px)',
-          WebkitBackdropFilter: 'blur(20px)',
-          borderColor: 'rgba(255, 255, 255, 0.9)',
-          boxShadow: '0 -4px 24px rgba(0, 0, 0, 0.12), 0 0 1px rgba(0, 0, 0, 0.08)',
-          borderTopLeftRadius: '24px',
-          borderTopRightRadius: '24px',
-          height: '80px',
-          minHeight: '80px'
+          background: 'rgba(255, 255, 255, 0.18)',
+          backdropFilter: 'blur(8px)',
+          WebkitBackdropFilter: 'blur(8px)',
+          borderTop: '0.5px solid rgba(0, 0, 0, 0.08)',
+          borderTopLeftRadius: '18px',
+          borderTopRightRadius: '18px',
+          height: '64px',
+          minHeight: '64px'
         }}
       >
-        <div className="flex items-center justify-around h-full max-w-md mx-auto px-4" style={{ paddingTop: '14px', paddingBottom: '14px' }}>
+        <div className="flex items-center justify-around h-full max-w-md mx-auto px-2">
           {/* Кнопка "Отчеты" */}
           <button
             onClick={() => handleNavigation("/report" as "/report" | "/profile")}
-            className="flex-1 flex flex-col items-center justify-center h-full transition-all duration-200 relative"
+            className="flex-1 flex flex-col items-center justify-center h-full relative"
             style={{
-              paddingTop: '8px',
-              paddingBottom: '8px'
+              paddingTop: '6px',
+              paddingBottom: '6px'
             }}
           >
             <span 
-              className="mb-2 transition-all duration-200"
+              className="mb-1"
               style={{
-                fontSize: '26px',
+                fontSize: '22px',
                 lineHeight: '1',
-                opacity: isReportsActive ? 1.0 : 0.5,
-                transform: isReportsActive ? 'scale(1.1)' : 'scale(1)',
-                filter: isReportsActive ? 'none' : 'grayscale(0.3)'
+                opacity: isReportsActive ? 1.0 : 0.65
               }}
             >
               📊
             </span>
             <span 
-              className="font-medium transition-all duration-200"
+              className="font-medium"
               style={{
-                fontSize: '13px',
-                color: isReportsActive ? '#8FBC8F' : '#5F5B62',
-                fontWeight: isReportsActive ? 600 : 500,
-                letterSpacing: '0.01em'
+                fontSize: '11px',
+                color: isReportsActive ? '#FFFFFF' : 'rgba(255, 255, 255, 0.75)',
+                fontWeight: isReportsActive ? 600 : 500
               }}
             >
               Отчеты
@@ -81,10 +78,9 @@ export default function AppNavigation() {
               <div 
                 className="absolute bottom-0 left-1/2 -translate-x-1/2 rounded-full"
                 style={{
-                  width: '48px',
-                  height: '3px',
-                  background: '#8FBC8F',
-                  boxShadow: '0 2px 8px rgba(143, 188, 143, 0.4)'
+                  width: '36px',
+                  height: '2.5px',
+                  background: '#8FBC8F'
                 }}
               />
             )}
@@ -93,31 +89,28 @@ export default function AppNavigation() {
           {/* Кнопка "Личный кабинет" */}
           <button
             onClick={() => handleNavigation("/profile" as "/report" | "/profile")}
-            className="flex-1 flex flex-col items-center justify-center h-full transition-all duration-200 relative"
+            className="flex-1 flex flex-col items-center justify-center h-full relative"
             style={{
-              paddingTop: '8px',
-              paddingBottom: '8px'
+              paddingTop: '6px',
+              paddingBottom: '6px'
             }}
           >
             <span 
-              className="mb-2 transition-all duration-200"
+              className="mb-1"
               style={{
-                fontSize: '26px',
+                fontSize: '22px',
                 lineHeight: '1',
-                opacity: isProfileActive ? 1.0 : 0.5,
-                transform: isProfileActive ? 'scale(1.1)' : 'scale(1)',
-                filter: isProfileActive ? 'none' : 'grayscale(0.3)'
+                opacity: isProfileActive ? 1.0 : 0.65
               }}
             >
               👤
             </span>
             <span 
-              className="font-medium transition-all duration-200"
+              className="font-medium"
               style={{
-                fontSize: '13px',
-                color: isProfileActive ? '#8FBC8F' : '#5F5B62',
-                fontWeight: isProfileActive ? 600 : 500,
-                letterSpacing: '0.01em'
+                fontSize: '11px',
+                color: isProfileActive ? '#FFFFFF' : 'rgba(255, 255, 255, 0.75)',
+                fontWeight: isProfileActive ? 600 : 500
               }}
             >
               Личный кабинет
@@ -126,10 +119,9 @@ export default function AppNavigation() {
               <div 
                 className="absolute bottom-0 left-1/2 -translate-x-1/2 rounded-full"
                 style={{
-                  width: '48px',
-                  height: '3px',
-                  background: '#8FBC8F',
-                  boxShadow: '0 2px 8px rgba(143, 188, 143, 0.4)'
+                  width: '36px',
+                  height: '2.5px',
+                  background: '#8FBC8F'
                 }}
               />
             )}
@@ -139,4 +131,7 @@ export default function AppNavigation() {
     </nav>
   );
 }
+
+// Мемоизация для предотвращения лишних ре-рендеров
+export default memo(AppNavigation);
 

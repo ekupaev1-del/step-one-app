@@ -13,13 +13,13 @@ interface AppLayoutProps {
  */
 export default function AppLayout({ children }: AppLayoutProps) {
   return (
-    <div className="min-h-screen bg-background" style={{ paddingBottom: 'calc(104px + env(safe-area-inset-bottom))' }}>
+    <div className="min-h-screen bg-background" style={{ paddingBottom: 'calc(80px + env(safe-area-inset-bottom))' }}>
       {/* Основной контент */}
       <main className="w-full">
         {children}
       </main>
       
-      {/* Нижняя навигационная панель с liquid glass эффектом */}
+      {/* Нижняя навигационная панель */}
       <AppNavigation />
     </div>
   );
