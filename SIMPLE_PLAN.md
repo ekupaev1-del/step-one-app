@@ -48,7 +48,7 @@ git push origin dev
 
 1. Зайди в Vercel Dashboard → Deployments
 2. Увидишь новый деплой из ветки `dev`
-3. Скопируй URL (например: `step-one-app-git-dev-username.vercel.app`)
+3. Используй прод-URL: `https://step-one-app.vercel.app`
 4. Используй этот URL для тестирования в Telegram!
 
 ## 🎉 ГОТОВО!

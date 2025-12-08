@@ -42,7 +42,7 @@ git push origin dev
 ## Готово! 🎉
 
 После пуша Vercel автоматически создаст preview URL:
-`https://твой-проект-git-dev-твой-username.vercel.app`
+`https://step-one-app.vercel.app`
 
 Используй этот URL для тестирования в Telegram!
 
@@ -58,4 +58,5 @@ npm run dev
 ```
 
 Откроется на `http://localhost:3000`
+
 

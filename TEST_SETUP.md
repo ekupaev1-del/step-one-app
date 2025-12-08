@@ -65,7 +65,8 @@ git push origin dev
 ## Preview URL
 
 После пуша в `dev` ветку, Vercel создаст preview URL вида:
-`https://step-one-app-git-dev-твой-username.vercel.app`
+`https://step-one-app.vercel.app`
 
 Этот URL можно использовать для тестирования в Telegram Mini App!
+
 
