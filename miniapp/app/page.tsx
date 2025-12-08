@@ -14,5 +14,5 @@ export default async function Page({
       ? `/registration?id=${idValue}`
       : "/registration";
 
-  redirect(target);
+  redirect(target as any);
 }

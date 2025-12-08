@@ -20,7 +20,7 @@ export default async function RegistrationContactRedirect({
   }
 
   const target = query.toString() ? `/registration?${query.toString()}` : "/registration";
-  redirect(target);
+  redirect(target as any);
 }
 
 
