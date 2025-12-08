@@ -36,9 +36,8 @@ pm2 restart step-one-bot
 
 ```typescript
 const MINIAPP_BASE_URL =
-  process.env.MINIAPP_BASE_URL && !process.env.MINIAPP_BASE_URL.includes("git-dev")
-    ? process.env.MINIAPP_BASE_URL
-    : "https://nutrition-app4.vercel.app";
+  process.env.MINIAPP_BASE_URL ||
+  "https://step-one-n9qv8suqb-emins-projects-4717eabc.vercel.app";
 ```
 
 ### 3. Использовать переменную окружения (рекомендуется)
@@ -47,7 +46,7 @@ const MINIAPP_BASE_URL =
 
 1. Добавьте в `bot/.env`:
 ```bash
-MINIAPP_BASE_URL=https://nutrition-app4.vercel.app
+MINIAPP_BASE_URL=https://step-one-n9qv8suqb-emins-projects-4717eabc.vercel.app
 ```
 
 2. Обновите `ecosystem.config.js` чтобы передавать переменные окружения:

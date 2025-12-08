@@ -14,11 +14,9 @@ const bot = new Telegraf(env.telegramBotToken);
 // Миниап URL
 // Для тестирования используем Preview версию из dev ветки
 // Продакшен-домен мини-приложения (стабильный)
-const envMiniappUrl = process.env.MINIAPP_BASE_URL;
 const MINIAPP_BASE_URL =
-  envMiniappUrl && !envMiniappUrl.includes("git-dev")
-    ? envMiniappUrl
-    : "https://nutrition-app4.vercel.app";
+  process.env.MINIAPP_BASE_URL ||
+  "https://step-one-n9qv8suqb-emins-projects-4717eabc.vercel.app";
 
 // ░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░
 //      ЕДИНАЯ ФУНКЦИЯ ГЛАВНОГО МЕНЮ
