@@ -23,3 +23,5 @@ COMMENT ON COLUMN reminders.type IS 'Тип напоминания: food (еда
 COMMENT ON COLUMN reminders.time IS 'Время напоминания в формате HH:MM (24-часовой формат)';
 COMMENT ON COLUMN reminders.is_active IS 'Активно ли напоминание';
 
+
+

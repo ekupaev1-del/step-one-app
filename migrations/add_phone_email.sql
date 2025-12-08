@@ -10,3 +10,5 @@ ADD COLUMN IF NOT EXISTS email TEXT;
 COMMENT ON COLUMN users.phone IS 'Номер телефона пользователя';
 COMMENT ON COLUMN users.email IS 'Email адрес пользователя';
 
+
+

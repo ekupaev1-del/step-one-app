@@ -129,7 +129,7 @@ function ProfilePageContent() {
       profile.age;
     if (!requiredFilled) {
       setNeedsOnboarding(true);
-      window.location.href = `/registration/contact?id=${userId}`;
+      window.location.href = `/registration?id=${userId}`;
     }
   }, [profile, userId]);
 

@@ -253,9 +253,10 @@ export async function POST(req: Request) {
   if (!data || data.length === 0) {
     console.error("[/api/save] Не найден пользователь с id:", numericId);
     // НИ В КОЕМ СЛУЧАЕ не создаём новую строку!
+    // Возвращаем 400, чтобы фронт видел корректный ответ, а не 404.
     return NextResponse.json(
       { ok: false, error: "Пользователь с таким id не найден. Запустите /start в боте" },
-      { status: 404 }
+      { status: 400 }
     );
   }
 

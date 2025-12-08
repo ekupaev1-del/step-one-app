@@ -292,3 +292,5 @@ const [loadingWater, setLoadingWater] = useState(false);
 
 ✅ Все части реализованы и готовы к использованию.
 
+
+

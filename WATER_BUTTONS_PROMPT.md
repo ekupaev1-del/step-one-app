@@ -145,3 +145,5 @@ const waitingForWaterInput = new Set<number>();
 
 ✅ **Реализовано** - изменения внесены в код
 
+
+

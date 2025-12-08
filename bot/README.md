@@ -127,3 +127,4 @@ pm2 stop step-one-bot   # Остановка
 pm2 delete step-one-bot # Удаление из PM2
 ```
 
+

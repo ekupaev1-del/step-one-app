@@ -1,23 +1,28 @@
-"use client";
+"use server";
 
-import { Suspense } from "react";
-import { QuestionnaireFormContent } from "../../questionnaire";
+import { redirect } from "next/navigation";
 
 export const dynamic = "force-dynamic";
 
-function LoadingFallback() {
-  return (
-    <div className="min-h-screen flex items-center justify-center">
-      <div className="text-gray-600">Загрузка...</div>
-    </div>
-  );
+export default function RegistrationContactRedirect({
+  searchParams
+}: {
+  searchParams?: Record<string, string | string[] | undefined>;
+}) {
+  const query = new URLSearchParams();
+
+  if (searchParams) {
+    for (const [key, value] of Object.entries(searchParams)) {
+      if (Array.isArray(value)) {
+        value.forEach((v) => query.append(key, v));
+      } else if (value !== undefined) {
+        query.set(key, value);
+      }
+    }
+  }
+
+  const target = query.toString() ? `/registration?${query.toString()}` : "/registration";
+  redirect(target);
 }
 
-export default function RegistrationContactPage() {
-  return (
-    <Suspense fallback={<LoadingFallback />}>
-      <QuestionnaireFormContent />
-    </Suspense>
-  );
-}
 
