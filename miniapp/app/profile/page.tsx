@@ -1,12 +1,13 @@
 "use client";
 
 import { useSearchParams } from "next/navigation";
-import { useState, useEffect, Suspense } from "react";
+import { useState, useEffect, Suspense, useRef } from "react";
 import "../globals.css";
 import AppLayout from "../components/AppLayout";
 
 interface ProfileData {
   name: string | null;
+  avatarUrl: string | null;
   weightKg: number | null;
   heightCm: number | null;
   goal: string | null;
@@ -31,6 +32,9 @@ function ProfilePageContent() {
   const [isEditing, setIsEditing] = useState(false);
   const [saving, setSaving] = useState(false);
   const [normsExpanded, setNormsExpanded] = useState(false);
+  const [avatarUrl, setAvatarUrl] = useState<string | null>(null);
+  const [uploadingAvatar, setUploadingAvatar] = useState(false);
+  const fileInputRef = useRef<HTMLInputElement | null>(null);
 
   // Редактируемые поля
   const [editWeight, setEditWeight] = useState<string>("");
@@ -75,6 +79,7 @@ function ProfilePageContent() {
 
         setProfile({
           name: data.name,
+          avatarUrl: data.avatarUrl,
           weightKg: data.weightKg,
           heightCm: data.heightCm,
           goal: data.goal,
@@ -87,6 +92,8 @@ function ProfilePageContent() {
           carbsGoal: data.carbsGoal,
           waterGoalMl: data.waterGoalMl
         });
+
+        setAvatarUrl(data.avatarUrl || null);
 
         // Инициализируем поля редактирования
         setEditWeight(data.weightKg?.toString() || "");
@@ -138,6 +145,40 @@ function ProfilePageContent() {
   const formatGender = (gender: string | null): string => {
     if (!gender) return "Не указан";
     return gender === "male" ? "Мужской" : "Женский";
+  };
+
+  const handleAvatarClick = () => {
+    fileInputRef.current?.click();
+  };
+
+  const handleAvatarChange = async (event: React.ChangeEvent<HTMLInputElement>) => {
+    if (!userId) return;
+    const file = event.target.files?.[0];
+    if (!file) return;
+
+    const formData = new FormData();
+    formData.append("userId", String(userId));
+    formData.append("file", file);
+
+    try {
+      setUploadingAvatar(true);
+      const response = await fetch("/api/profile/avatar", {
+        method: "POST",
+        body: formData
+      });
+      const data = await response.json();
+      if (!response.ok || !data.ok) {
+        throw new Error(data.error || "Не удалось загрузить фото");
+      }
+      setAvatarUrl(data.avatarUrl);
+      setProfile(prev => prev ? { ...prev, avatarUrl: data.avatarUrl } : prev);
+    } catch (err: any) {
+      console.error("[avatar] Ошибка загрузки:", err);
+      setError(err.message || "Не удалось загрузить фото");
+    } finally {
+      setUploadingAvatar(false);
+      if (fileInputRef.current) fileInputRef.current.value = "";
+    }
   };
 
   // Обработчик сохранения
@@ -244,7 +285,7 @@ function ProfilePageContent() {
       <div className="max-w-md mx-auto">
         {/* Заголовок */}
         <div className="mb-6">
-          <h1 className="text-2xl font-bold text-textPrimary">👤 Личный кабинет</h1>
+          <h1 className="text-2xl font-bold text-textPrimary">Личный кабинет</h1>
         </div>
 
         {/* Сообщение об ошибке (если есть) */}
@@ -263,7 +304,7 @@ function ProfilePageContent() {
               {/* Вес */}
               <div>
                 <label className="block text-sm font-medium text-textSecondary mb-2">
-                  ⚖️ Вес (кг)
+                  Вес (кг)
                 </label>
                 <input
                   type="number"
@@ -279,7 +320,7 @@ function ProfilePageContent() {
               {/* Рост */}
               <div>
                 <label className="block text-sm font-medium text-textSecondary mb-2">
-                  📏 Рост (см)
+                  Рост (см)
                 </label>
                 <input
                   type="number"
@@ -295,7 +336,7 @@ function ProfilePageContent() {
               {/* Пол */}
               <div>
                 <label className="block text-sm font-medium text-textSecondary mb-2">
-                  👤 Пол
+                  Пол
                 </label>
                 <select
                   value={editGender}
@@ -311,7 +352,7 @@ function ProfilePageContent() {
               {/* Возраст */}
               <div>
                 <label className="block text-sm font-medium text-textSecondary mb-2">
-                  🎂 Возраст (лет)
+                  Возраст (лет)
                 </label>
                 <input
                   type="number"
@@ -327,7 +368,7 @@ function ProfilePageContent() {
               {/* Уровень активности */}
               <div>
                 <label className="block text-sm font-medium text-textSecondary mb-2">
-                  🏃 Активность
+                  Активность
                 </label>
                 <select
                   value={editActivity}
@@ -346,7 +387,7 @@ function ProfilePageContent() {
               {/* Цель */}
               <div>
                 <label className="block text-sm font-medium text-textSecondary mb-2">
-                  🎯 Цель
+                  Цель
                 </label>
                 <select
                   value={editGoal}
@@ -392,41 +433,41 @@ function ProfilePageContent() {
             <div className="space-y-3">
               {profile.weightKg && (
                 <div className="flex justify-between items-center py-2 border-b border-gray-100">
-                  <span className="text-textSecondary">⚖️ Вес</span>
+                  <span className="text-textSecondary">Вес</span>
                   <span className="font-medium text-textPrimary">{profile.weightKg} кг</span>
                 </div>
               )}
               
               {profile.heightCm && (
                 <div className="flex justify-between items-center py-2 border-b border-gray-100">
-                  <span className="text-textSecondary">📏 Рост</span>
+                  <span className="text-textSecondary">Рост</span>
                   <span className="font-medium text-textPrimary">{profile.heightCm} см</span>
                 </div>
               )}
 
               {profile.gender && (
                 <div className="flex justify-between items-center py-2 border-b border-gray-100">
-                  <span className="text-textSecondary">👤 Пол</span>
+                  <span className="text-textSecondary">Пол</span>
                   <span className="font-medium text-textPrimary">{formatGender(profile.gender)}</span>
                 </div>
               )}
 
               {profile.age && (
                 <div className="flex justify-between items-center py-2 border-b border-gray-100">
-                  <span className="text-textSecondary">🎂 Возраст</span>
+                  <span className="text-textSecondary">Возраст</span>
                   <span className="font-medium text-textPrimary">{profile.age} лет</span>
                 </div>
               )}
 
               {profile.activityLevel && (
                 <div className="flex justify-between items-center py-2 border-b border-gray-100">
-                  <span className="text-textSecondary">🏃 Активность</span>
+                  <span className="text-textSecondary">Активность</span>
                   <span className="font-medium text-textPrimary">{formatActivity(profile.activityLevel)}</span>
                 </div>
               )}
               
               <div className="flex justify-between items-center py-2">
-                <span className="text-textSecondary">🎯 Цель</span>
+                <span className="text-textSecondary">Цель</span>
                 <span className="font-medium text-textPrimary">{formatGoal(profile.goal)}</span>
               </div>
 
@@ -459,35 +500,35 @@ function ProfilePageContent() {
             <div className="mt-4 space-y-3 animate-fadeIn">
               {profile.caloriesGoal && (
                 <div className="flex justify-between items-center py-2 border-b border-gray-100">
-                  <span className="text-textSecondary">🔥 Калории</span>
+                  <span className="text-textSecondary">Калории</span>
                   <span className="font-medium text-textPrimary">{profile.caloriesGoal} ккал</span>
                 </div>
               )}
               
               {profile.proteinGoal && (
                 <div className="flex justify-between items-center py-2 border-b border-gray-100">
-                  <span className="text-textSecondary">🥚 Белки</span>
+                  <span className="text-textSecondary">Белки</span>
                   <span className="font-medium text-textPrimary">{profile.proteinGoal} г</span>
                 </div>
               )}
               
               {profile.fatGoal && (
                 <div className="flex justify-between items-center py-2 border-b border-gray-100">
-                  <span className="text-textSecondary">🥥 Жиры</span>
+                  <span className="text-textSecondary">Жиры</span>
                   <span className="font-medium text-textPrimary">{profile.fatGoal} г</span>
                 </div>
               )}
               
               {profile.carbsGoal && (
                 <div className="flex justify-between items-center py-2 border-b border-gray-100">
-                  <span className="text-textSecondary">🍚 Углеводы</span>
+                  <span className="text-textSecondary">Углеводы</span>
                   <span className="font-medium text-textPrimary">{profile.carbsGoal} г</span>
                 </div>
               )}
               
               {profile.waterGoalMl && (
                 <div className="flex justify-between items-center py-2">
-                  <span className="text-textSecondary">💧 Вода</span>
+                  <span className="text-textSecondary">Вода</span>
                   <span className="font-medium text-textPrimary">{profile.waterGoalMl} мл</span>
                 </div>
               )}
