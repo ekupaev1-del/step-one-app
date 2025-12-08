@@ -295,6 +295,8 @@ export function QuestionnaireFormContent() {
 
     try {
       const payload = {
+        phone: phone.trim(),
+        email: email.trim(),
         gender,
         age: Number(age),
         weight: Number(weight),
