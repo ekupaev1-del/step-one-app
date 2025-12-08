@@ -37,6 +37,7 @@ function ProfilePageContent() {
   const fileInputRef = useRef<HTMLInputElement | null>(null);
 
   // Редактируемые поля
+  const [editName, setEditName] = useState<string>("");
   const [editWeight, setEditWeight] = useState<string>("");
   const [editHeight, setEditHeight] = useState<string>("");
   const [editGoal, setEditGoal] = useState<string>("");
@@ -96,6 +97,7 @@ function ProfilePageContent() {
         setAvatarUrl(data.avatarUrl || null);
 
         // Инициализируем поля редактирования
+        setEditName(data.name || "");
         setEditWeight(data.weightKg?.toString() || "");
         setEditHeight(data.heightCm?.toString() || "");
         setEditGoal(data.goal || "");
@@ -213,6 +215,8 @@ function ProfilePageContent() {
     setSaving(true);
     setError(null);
 
+    const normalizedName = editName.trim() || null;
+
     try {
       const response = await fetch(`/api/profile/update?userId=${userId}`, {
         method: "PATCH",
@@ -220,6 +224,7 @@ function ProfilePageContent() {
           "Content-Type": "application/json"
         },
         body: JSON.stringify({
+          name: normalizedName,
           weightKg: weightNum,
           heightCm: heightNum,
           goal: editGoal,
@@ -237,6 +242,7 @@ function ProfilePageContent() {
 
       // Обновляем профиль из ответа
       setProfile(data.profile);
+      setAvatarUrl(data.profile.avatarUrl || null);
       setIsEditing(false);
     } catch (err: any) {
       console.error("[profile] Ошибка сохранения:", err);
@@ -279,12 +285,14 @@ function ProfilePageContent() {
     );
   }
 
+  const displayName = profile.name || "Пользователь";
+
   return (
     <AppLayout>
       <div className="min-h-screen bg-background p-4 py-8">
       <div className="max-w-md mx-auto">
         {/* Заголовок */}
-        <div className="mb-6">
+        <div className="mb-6 text-center">
           <h1 className="text-2xl font-bold text-textPrimary">Личный кабинет</h1>
         </div>
 
@@ -295,12 +303,61 @@ function ProfilePageContent() {
           </div>
         )}
 
+        {/* Профильный хедер */}
+        <div className="bg-white rounded-2xl shadow-soft p-6 mb-4 flex flex-col items-center text-center">
+          <div
+            className="w-28 h-28 rounded-full border border-gray-200 bg-gray-100 overflow-hidden mb-3"
+            style={{
+              backgroundSize: "cover",
+              backgroundPosition: "center",
+              backgroundImage: avatarUrl ? `url(${avatarUrl})` : "none"
+            }}
+          >
+            {!avatarUrl && (
+              <div className="w-full h-full flex items-center justify-center text-textSecondary text-xs">
+                Фото
+              </div>
+            )}
+          </div>
+          <input
+            ref={fileInputRef}
+            type="file"
+            accept="image/*"
+            className="hidden"
+            onChange={handleAvatarChange}
+          />
+          <div className="text-xl font-semibold text-textPrimary">{displayName}</div>
+          <div className="text-sm text-textSecondary mb-3">Личный кабинет</div>
+          <button
+            onClick={handleAvatarClick}
+            disabled={uploadingAvatar}
+            className="px-4 py-2 rounded-full border border-gray-200 text-textPrimary text-sm hover:bg-gray-50 disabled:opacity-50"
+          >
+            {uploadingAvatar ? "Загрузка..." : "Изменить фото"}
+          </button>
+        </div>
+
         {/* Основная информация */}
         <div className="bg-white rounded-2xl shadow-soft p-6 mb-4">
           <h2 className="text-lg font-semibold text-textPrimary mb-4">Основная информация</h2>
           
           {isEditing ? (
             <div className="space-y-4">
+              {/* Имя */}
+              <div>
+                <label className="block text-sm font-medium text-textSecondary mb-2">
+                  Имя
+                </label>
+                <input
+                  type="text"
+                  value={editName}
+                  onChange={(e) => setEditName(e.target.value)}
+                  className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-accent"
+                  placeholder="Введите имя"
+                  maxLength={100}
+                />
+              </div>
+
               {/* Вес */}
               <div>
                 <label className="block text-sm font-medium text-textSecondary mb-2">
@@ -408,6 +465,7 @@ function ProfilePageContent() {
                     setIsEditing(false);
                     setError(null);
                     // Восстанавливаем значения из профиля
+                    setEditName(profile.name || "");
                     setEditWeight(profile.weightKg?.toString() || "");
                     setEditHeight(profile.heightCm?.toString() || "");
                     setEditGoal(profile.goal || "");

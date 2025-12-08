@@ -27,7 +27,7 @@ export async function GET(req: Request) {
   // Получаем данные пользователя (полный профиль)
   const { data: user, error } = await supabase
     .from("users")
-    .select("weight, height, goal, activity, gender, age, calories, protein, fat, carbs, water_goal_ml")
+    .select("weight, height, goal, activity, gender, age, calories, protein, fat, carbs, water_goal_ml, avatar_url, name")
     .eq("id", numericId)
     .maybeSingle();
 
@@ -43,7 +43,7 @@ export async function GET(req: Request) {
   // Формируем ответ в нужном формате
   return NextResponse.json({
     ok: true,
-    name: null, // Имя/ник пока не хранится в БД
+    name: user.name || null,
     weightKg: user.weight ? Number(user.weight) : null,
     heightCm: user.height ? Number(user.height) : null,
     goal: user.goal || null,
@@ -54,7 +54,8 @@ export async function GET(req: Request) {
     proteinGoal: user.protein ? Number(user.protein) : null,
     fatGoal: user.fat ? Number(user.fat) : null,
     carbsGoal: user.carbs ? Number(user.carbs) : null,
-    waterGoalMl: user.water_goal_ml ? Number(user.water_goal_ml) : null
+    waterGoalMl: user.water_goal_ml ? Number(user.water_goal_ml) : null,
+    avatarUrl: user.avatar_url || null
   });
 }
 

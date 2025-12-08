@@ -40,7 +40,7 @@ export async function PATCH(req: Request) {
     }
 
     const body = await req.json();
-    const { weightKg, heightCm, goal, activityLevel, gender, age } = body;
+    const { name, weightKg, heightCm, goal, activityLevel, gender, age } = body;
 
     // Валидация обязательных полей
     if (!weightKg || !heightCm || !goal || !activityLevel || !gender || !age) {
@@ -117,6 +117,7 @@ export async function PATCH(req: Request) {
     const { data: updatedUser, error: updateError } = await supabase
       .from("users")
       .update({
+        name: name || null,
         gender,
         age: ageNum,
         weight: weightNum,
@@ -130,7 +131,7 @@ export async function PATCH(req: Request) {
         water_goal_ml: macros.waterGoalMl
       })
       .eq("id", numericId)
-      .select("weight, height, goal, activity, gender, age, calories, protein, fat, carbs, water_goal_ml")
+      .select("name, avatar_url, weight, height, goal, activity, gender, age, calories, protein, fat, carbs, water_goal_ml")
       .single();
 
     if (updateError) {
@@ -152,7 +153,8 @@ export async function PATCH(req: Request) {
     return NextResponse.json({
       ok: true,
       profile: {
-        name: null,
+        name: updatedUser.name || null,
+        avatarUrl: updatedUser.avatar_url || null,
         weightKg: updatedUser.weight ? Number(updatedUser.weight) : null,
         heightCm: updatedUser.height ? Number(updatedUser.height) : null,
         goal: updatedUser.goal || null,
@@ -174,4 +176,5 @@ export async function PATCH(req: Request) {
     );
   }
 }
+
 
