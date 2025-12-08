@@ -12,7 +12,7 @@ export default function RegistrationIndexPage() {
   useEffect(() => {
     const id = searchParams.get("id");
     const target = id ? `/registration/contact?id=${id}` : "/registration/contact";
-    router.replace(target);
+    router.replace(target as any);
   }, [router, searchParams]);
 
   return (
