@@ -335,6 +335,23 @@ export function QuestionnaireFormContent() {
       setLoading(false);
       console.log("[handleSubmit] Данные успешно сохранены");
 
+      // Отправляем данные обратно в бот через Telegram WebApp
+      try {
+        const webApp = webAppRef.current || (typeof window !== "undefined" ? (window as any).Telegram?.WebApp : null);
+        if (webApp && typeof webApp.sendData === 'function') {
+          const dataToSend = JSON.stringify({
+            action: "questionnaire_saved",
+            userId: userId
+          });
+          webApp.sendData(dataToSend);
+          console.log("[handleSubmit] ✅ Данные отправлены в бот через sendData");
+        } else {
+          console.warn("[handleSubmit] ⚠️ Telegram.WebApp.sendData недоступен");
+        }
+      } catch (sendDataError) {
+        console.error("[handleSubmit] Ошибка отправки данных в бот:", sendDataError);
+      }
+
       // Закрываем Mini App - используем все возможные способы
       const closeMiniApp = (attempt = 0) => {
         try {

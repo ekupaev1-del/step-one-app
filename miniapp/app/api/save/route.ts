@@ -4,115 +4,9 @@ import { calculateMacros } from "../../../lib/macroCalculator";
 
 export const dynamic = 'force-dynamic';
 
-// Функция для отправки сообщения через Telegram Bot API
-async function sendTelegramMessage(telegramId: number, text: string, keyboard?: any) {
-  console.log("[/api/save] sendTelegramMessage вызвана для telegram_id:", telegramId);
-  
-  // Пробуем получить токен из разных источников
-  const botToken = process.env.TELEGRAM_BOT_TOKEN || process.env.NEXT_PUBLIC_TELEGRAM_BOT_TOKEN;
-  if (!botToken) {
-    console.error("[/api/save] ❌ TELEGRAM_BOT_TOKEN не установлен");
-    const availableVars = Object.keys(process.env).filter(k => k.includes("TELEGRAM") || k.includes("BOT"));
-    console.error("[/api/save] Доступные переменные окружения с TELEGRAM/BOT:", availableVars.length > 0 ? availableVars : "НЕТ");
-    return;
-  }
-
-  console.log("[/api/save] ✅ Токен найден, отправляем сообщение...");
-  const url = `https://api.telegram.org/bot${botToken}/sendMessage`;
-  const payload: any = {
-    chat_id: telegramId,
-    text: text,
-    parse_mode: "HTML"
-  };
-
-  if (keyboard) {
-    payload.reply_markup = keyboard;
-  }
-
-  try {
-    console.log("[/api/save] ========== НАЧАЛО ОТПРАВКИ В TELEGRAM ==========");
-    console.log("[/api/save] Отправка запроса в Telegram API...");
-    console.log("[/api/save] URL:", url.replace(botToken.substring(0, 10), "***"));
-    console.log("[/api/save] Payload:", JSON.stringify({ ...payload, text: payload.text.substring(0, 50) + "..." }));
-    console.log("[/api/save] Telegram ID:", telegramId);
-    
-    // Добавляем таймаут для запроса
-    const controller = new AbortController();
-    const timeoutId = setTimeout(() => {
-      console.error("[/api/save] ❌❌❌ ТАЙМАУТ! Запрос не завершился за 10 секунд");
-      controller.abort();
-    }, 10000); // 10 секунд таймаут
-    
-    try {
-      console.log("[/api/save] Выполняем fetch...");
-      const fetchStartTime = Date.now();
-      const response = await fetch(url, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(payload),
-        signal: controller.signal
-      });
-      
-      const fetchDuration = Date.now() - fetchStartTime;
-      clearTimeout(timeoutId);
-      console.log("[/api/save] ✅ Fetch завершен за", fetchDuration, "мс");
-      console.log("[/api/save] Ответ получен, статус:", response.status);
-      
-      if (!response.ok) {
-        const errorText = await response.text();
-        console.error("[/api/save] ❌ HTTP ошибка от Telegram API:", response.status);
-        console.error("[/api/save] Текст ошибки:", errorText);
-        try {
-          const errorJson = JSON.parse(errorText);
-          console.error("[/api/save] JSON ошибки:", JSON.stringify(errorJson, null, 2));
-        } catch (e) {
-          // Не JSON, просто текст
-        }
-        return;
-      }
-      
-      console.log("[/api/save] Парсим JSON ответ...");
-      const result = await response.json();
-      console.log("[/api/save] ========== РЕЗУЛЬТАТ ОТ TELEGRAM API ==========");
-      console.log("[/api/save] Результат:", JSON.stringify(result, null, 2));
-      console.log("[/api/save] result.ok:", result.ok);
-      
-      if (!result.ok) {
-        console.error("[/api/save] ❌ Ошибка отправки сообщения в Telegram:");
-        console.error("[/api/save] Код ошибки:", result.error_code);
-        console.error("[/api/save] Описание ошибки:", result.description);
-        console.error("[/api/save] Полный ответ:", JSON.stringify(result, null, 2));
-        console.log("[/api/save] ========== КОНЕЦ (ОШИБКА) ==========");
-      } else {
-        console.log("[/api/save] ✅ Сообщение успешно отправлено в Telegram");
-        console.log("[/api/save] Message ID:", result.result?.message_id);
-        console.log("[/api/save] Chat ID:", result.result?.chat?.id);
-        console.log("[/api/save] ========== КОНЕЦ (УСПЕХ) ==========");
-      }
-    } catch (fetchError: any) {
-      clearTimeout(timeoutId);
-      console.error("[/api/save] ========== ОШИБКА В FETCH ==========");
-      if (fetchError.name === 'AbortError') {
-        console.error("[/api/save] ❌ Таймаут запроса к Telegram API (10 секунд)");
-      } else {
-        console.error("[/api/save] ❌ Ошибка fetch:", fetchError);
-        console.error("[/api/save] Имя ошибки:", fetchError.name);
-        console.error("[/api/save] Сообщение:", fetchError.message);
-        throw fetchError; // Пробрасываем дальше
-      }
-      console.log("[/api/save] ========== КОНЕЦ (FETCH ERROR) ==========");
-    }
-  } catch (error: any) {
-    console.error("[/api/save] ========== КРИТИЧЕСКАЯ ОШИБКА ==========");
-    console.error("[/api/save] ❌ Ошибка при отправке сообщения:", error);
-    console.error("[/api/save] Тип ошибки:", error?.constructor?.name);
-    console.error("[/api/save] Сообщение ошибки:", error?.message);
-    if (error?.stack) {
-      console.error("[/api/save] Stack:", error.stack.substring(0, 500));
-    }
-    console.log("[/api/save] ========== КОНЕЦ (CRITICAL ERROR) ==========");
-  }
-}
+// УДАЛЕНО: sendTelegramMessage больше не используется
+// Меню теперь отправляется только через бота после получения questionnaire_saved
+// Это гарантирует единую логику через sendMainMenu()
 
 export async function POST(req: Request) {
   const supabase = createClient(
@@ -268,51 +162,12 @@ export async function POST(req: Request) {
   console.log("[/api/save] OK updated id:", numericId);
   console.log("[/api/save] Данные пользователя:", { id: user.id, telegram_id: user.telegram_id });
 
-  // Отправляем сообщение с меню ТОЛЬКО при сохранении полной анкеты (когда есть calories)
-  // НЕ отправляем при сохранении только phone/email
+  // ВАЖНО: НЕ отправляем меню из API - пусть бот сам отправляет меню после получения questionnaire_saved
+  // Это гарантирует единую логику отправки меню через sendMainMenu()
   const isFullQuestionnaireSaved = user.telegram_id && isFirstTime && calories !== undefined && calories !== null;
   
   if (isFullQuestionnaireSaved) {
-    console.log("[/api/save] Полная анкета сохранена - отправляем меню в Telegram");
-    // Используем Preview URL из dev ветки для тестирования
-    const miniappBaseUrl =
-      process.env.NEXT_PUBLIC_MINIAPP_URL ||
-      "https://step-one-app.vercel.app";
-    const reportUrl = `${miniappBaseUrl}/report?id=${user.id}`;
-    const profileUrl = `${miniappBaseUrl}/profile?id=${user.id}`;
-    
-    // Сообщение после сохранения анкеты
-    const messageText = `✅ Отлично! Анкета сохранена.\n\n📸 Теперь вы можете отправлять фото, текст и аудио того, что кушаете, и бот проанализирует всё!`;
-    
-    // ЕДИНОЕ главное меню с 4 кнопками (как в боте)
-    const keyboard = {
-      keyboard: [
-        [
-          { text: "👤 Личный кабинет", web_app: { url: profileUrl } }
-        ],
-        [
-          { text: "📊 Получить отчёт", web_app: { url: reportUrl } }
-        ],
-        [
-          { text: "⏰ Напомнить о приёме пищи" }
-        ],
-        [
-          { text: "💡 Рекомендации" }
-        ]
-      ],
-      resize_keyboard: true,
-      one_time_keyboard: false
-    };
-
-    // Пробуем отправить сообщение синхронно (await)
-    try {
-      console.log("[/api/save] Вызываем sendTelegramMessage (синхронно)...");
-      await sendTelegramMessage(user.telegram_id, messageText, keyboard);
-      console.log("[/api/save] ✅ sendTelegramMessage завершена успешно");
-    } catch (err) {
-      console.error("[/api/save] ❌ Ошибка отправки сообщения:", err);
-      // Не прерываем выполнение - данные уже сохранены
-    }
+    console.log("[/api/save] Полная анкета сохранена - бот отправит меню после получения questionnaire_saved");
   } else if (user.telegram_id && !isFirstTime) {
     console.log("[/api/save] Обновление анкеты - сообщение не отправляем");
   } else if (user.telegram_id && (calories === undefined || calories === null)) {
