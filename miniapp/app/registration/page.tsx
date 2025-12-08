@@ -1,11 +1,11 @@
 "use client";
 
-import { useEffect } from "react";
+import { Suspense, useEffect } from "react";
 import { useSearchParams, useRouter } from "next/navigation";
 
 export const dynamic = "force-dynamic";
 
-export default function RegistrationIndexPage() {
+function RegistrationRedirect() {
   const searchParams = useSearchParams();
   const router = useRouter();
 
@@ -19,6 +19,18 @@ export default function RegistrationIndexPage() {
     <div className="min-h-screen flex items-center justify-center">
       <div className="text-gray-600">Загрузка...</div>
     </div>
+  );
+}
+
+export default function RegistrationIndexPage() {
+  return (
+    <Suspense fallback={
+      <div className="min-h-screen flex items-center justify-center">
+        <div className="text-gray-600">Загрузка...</div>
+      </div>
+    }>
+      <RegistrationRedirect />
+    </Suspense>
   );
 }
 
