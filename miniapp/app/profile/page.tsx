@@ -190,8 +190,10 @@ function ProfilePageContent() {
       if (!response.ok || !data.ok) {
         throw new Error(data.error || "Не удалось загрузить фото");
       }
-      setAvatarUrl(data.avatarUrl);
-      setProfile(prev => prev ? { ...prev, avatarUrl: data.avatarUrl } : prev);
+      // Обновляем аватар с cache busting для немедленного отображения
+      const avatarUrlWithCache = data.avatarUrl ? `${data.avatarUrl.split('?')[0]}?t=${Date.now()}` : null;
+      setAvatarUrl(avatarUrlWithCache);
+      setProfile(prev => prev ? { ...prev, avatarUrl: avatarUrlWithCache } : prev);
     } catch (err: any) {
       console.error("[avatar] Ошибка загрузки:", err);
       setError(err.message || "Не удалось загрузить фото");

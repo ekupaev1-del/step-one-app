@@ -25,14 +25,18 @@ const MINIAPP_BASE_URL =
 /**
  * Возвращает единое главное меню бота с 4 кнопками.
  * Это ЕДИНСТВЕННЫЙ источник истины для главного меню.
+ * ВСЕГДА используйте эту функцию для создания главного меню.
  * 
  * @param userId - ID пользователя из таблицы users (для создания ссылок на Mini App)
  * @returns Объект reply_markup с клавиатурой
  */
-function getMainMenuKeyboard(userId: number | null = null) {
-  const reportUrl = userId ? `${MINIAPP_BASE_URL}/report?id=${userId}` : undefined;
-  const profileUrl = userId ? `${MINIAPP_BASE_URL}/profile?id=${userId}` : undefined;
+function getMainMenuKeyboard(userId: number | null = null): any {
+  // Всегда используем актуальный MINIAPP_BASE_URL
+  const baseUrl = MINIAPP_BASE_URL;
+  const reportUrl = userId ? `${baseUrl}/report?id=${userId}` : undefined;
+  const profileUrl = userId ? `${baseUrl}/profile?id=${userId}` : undefined;
 
+  // ЕДИНСТВЕННОЕ правильное меню - 4 кнопки с правильными URL
   return {
     keyboard: [
       [
@@ -231,8 +235,13 @@ bot.start(async (ctx) => {
     }
 
     // Если анкета заполнена - показываем единое главное меню
+    // Принудительно обновляем меню для замены старого
+    const menu = getMainMenuKeyboard(userId);
     await ctx.reply("Добро пожаловать! Выберите действие:", {
-      reply_markup: getMainMenuKeyboard(userId)
+      reply_markup: {
+        ...menu,
+        replace_keyboard: true // Принудительно заменяем старое меню
+      }
     });
 
     console.log(`[bot] /start успешно завершён для id: ${userId}`);
@@ -310,10 +319,16 @@ bot.on("message", async (ctx, next) => {
           console.log("[bot] 📤 Отправка сообщения с меню для пользователя:", user.id);
           
           try {
+            // Принудительно обновляем меню после регистрации
+            // Используем reply_markup с replace_keyboard для замены старого меню
+            const menu = getMainMenuKeyboard(user.id);
             await ctx.reply(
               "✅ Отлично! Анкета сохранена.\n\n📸 Теперь вы можете отправлять фото, текст и аудио того, что кушаете, и бот проанализирует всё!",
               {
-                reply_markup: getMainMenuKeyboard(user.id)
+                reply_markup: {
+                  ...menu,
+                  replace_keyboard: true // Принудительно заменяем старое меню
+                }
               }
             );
             console.log("[bot] ✅ Сообщение с меню отправлено успешно");

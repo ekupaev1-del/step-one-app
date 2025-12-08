@@ -31,8 +31,9 @@ export async function POST(req: Request) {
     const filePath = `${userId}/${randomUUID()}.${fileExt}`;
 
     // Загружаем в бакет avatars
+    // Используем короткий cacheControl для быстрого обновления
     const { error: uploadError } = await supabase.storage.from("avatars").upload(filePath, file, {
-      cacheControl: "3600",
+      cacheControl: "60", // 60 секунд вместо 3600 для быстрого обновления
       upsert: false
     });
 
@@ -41,9 +42,15 @@ export async function POST(req: Request) {
       return NextResponse.json({ ok: false, error: "Ошибка загрузки файла" }, { status: 500 });
     }
 
-    // Получаем публичный URL
+    // Получаем публичный URL с cache busting для немедленного обновления
     const { data: publicData } = supabase.storage.from("avatars").getPublicUrl(filePath);
-    const publicUrl = publicData?.publicUrl || null;
+    let publicUrl = publicData?.publicUrl || null;
+    
+    // Добавляем timestamp для cache busting, чтобы аватар обновлялся сразу
+    if (publicUrl) {
+      const timestamp = Date.now();
+      publicUrl = `${publicUrl}?t=${timestamp}`;
+    }
 
     // Сохраняем ссылку в users
     const { error: updateError } = await supabase
