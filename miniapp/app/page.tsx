@@ -1,22 +1,23 @@
 "use client";
 
-import { Suspense } from "react";
-import { QuestionnaireFormContent } from "./questionnaire";
+import { useEffect } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
 
 export const dynamic = "force-dynamic";
 
-function LoadingFallback() {
+export default function Page() {
+  const router = useRouter();
+  const searchParams = useSearchParams();
+
+  useEffect(() => {
+    const id = searchParams.get("id");
+    const target = id ? `/registration/contact?id=${id}` : "/registration/contact";
+    router.replace(target as any);
+  }, [router, searchParams]);
+
   return (
     <div className="min-h-screen flex items-center justify-center">
       <div className="text-gray-600">Загрузка...</div>
     </div>
-  );
-}
-
-export default function Page() {
-  return (
-    <Suspense fallback={<LoadingFallback />}>
-      <QuestionnaireFormContent />
-    </Suspense>
   );
 }
