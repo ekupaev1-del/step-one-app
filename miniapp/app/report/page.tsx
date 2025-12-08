@@ -3,8 +3,8 @@
 import { useSearchParams } from "next/navigation";
 import { useState, useEffect, Suspense, useRef } from "react";
 import "../globals.css";
-import RadarChart from "../components/RadarChart";
 import AppLayout from "../components/AppLayout";
+import DayNutritionInfographic from "../components/DayNutritionInfographic";
 
 interface Meal {
   id: number;
@@ -651,27 +651,19 @@ function ReportPageContent() {
                 />
               ) : (
                 <div className="space-y-6">
-                  {/* Радиолокационная диаграмма */}
-                  {dayReport.radarData ? (
-                    <div className="flex justify-center">
-                      <RadarChart
-                        calories={dayReport.radarData.calories}
-                        caloriesGoal={dayReport.radarData.caloriesGoal}
-                        protein={dayReport.radarData.protein}
-                        proteinGoal={dayReport.radarData.proteinGoal}
-                        fat={dayReport.radarData.fat}
-                        fatGoal={dayReport.radarData.fatGoal}
-                        carbs={dayReport.radarData.carbs}
-                        carbsGoal={dayReport.radarData.carbsGoal}
-                        water={dayReport.radarData.water}
-                        waterGoal={dayReport.radarData.waterGoal}
-                      />
-                    </div>
-                  ) : (
-                    <div className="text-center text-textSecondary py-4">
-                      Данные для диаграммы недоступны
-                    </div>
-                  )}
+                  {/* Инфографика по питанию */}
+                  <DayNutritionInfographic
+                    stats={{
+                      caloriesEaten: dayReport.totals.calories,
+                      caloriesGoal: dayReport.radarData?.caloriesGoal || null,
+                      proteinEaten: dayReport.totals.protein,
+                      proteinGoal: dayReport.radarData?.proteinGoal || null,
+                      fatEaten: dayReport.totals.fat,
+                      fatGoal: dayReport.radarData?.fatGoal || null,
+                      carbsEaten: dayReport.totals.carbs,
+                      carbsGoal: dayReport.radarData?.carbsGoal || null
+                    }}
+                  />
 
                   {/* Список приёмов пищи */}
                   <div className="space-y-3">
