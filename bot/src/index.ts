@@ -86,20 +86,31 @@ function getMainMenuKeyboard(userId: number | null = null): any {
  * @returns Promise<void>
  */
 async function sendMainMenu(ctx: any, userId: number | null, message?: string): Promise<void> {
-  const menu = getMainMenuKeyboard(userId);
-  const menuText = message || "Выберите действие:";
-  
-  console.log("[sendMainMenu] Отправка меню для userId:", userId);
-  console.log("[sendMainMenu] MINIAPP_BASE_URL:", MINIAPP_BASE_URL);
-  
-  await ctx.reply(menuText, {
-    reply_markup: {
-      ...menu,
-      replace_keyboard: true // Принудительно заменяем старое меню
-    }
-  });
-  
-  console.log("[sendMainMenu] ✅ Меню отправлено успешно");
+  try {
+    const menu = getMainMenuKeyboard(userId);
+    const menuText = message || "Выберите действие:";
+    
+    console.log("[sendMainMenu] Отправка меню для userId:", userId);
+    console.log("[sendMainMenu] MINIAPP_BASE_URL:", MINIAPP_BASE_URL);
+    console.log("[sendMainMenu] Chat ID:", ctx.chat?.id);
+    
+    await ctx.reply(menuText, {
+      reply_markup: {
+        ...menu,
+        replace_keyboard: true // Принудительно заменяем старое меню
+      }
+    });
+    
+    console.log("[sendMainMenu] ✅ Меню отправлено успешно");
+  } catch (error: any) {
+    console.error("[sendMainMenu] ❌ Ошибка отправки меню:", error);
+    console.error("[sendMainMenu] Error details:", {
+      message: error?.message,
+      code: error?.response?.error_code,
+      description: error?.response?.description
+    });
+    throw error; // Пробрасываем ошибку дальше
+  }
 }
 
 // ░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░
@@ -317,32 +328,38 @@ bot.start(async (ctx) => {
 bot.on("message", async (ctx, next) => {
   // Проверяем, есть ли данные из WebApp
   if (ctx.message && "web_app_data" in ctx.message) {
-    console.log("[bot] Получены данные из WebApp");
+    console.log("[bot] ========== ПОЛУЧЕНЫ ДАННЫЕ ИЗ WEBAPP ==========");
+    console.log("[bot] Полное сообщение:", JSON.stringify(ctx.message, null, 2));
     try {
       const telegram_id = ctx.from?.id;
+      const chat_id = ctx.chat?.id;
+      console.log("[bot] telegram_id:", telegram_id);
+      console.log("[bot] chat_id:", chat_id);
+      
       if (!telegram_id) {
-        console.log("[bot] Нет telegram_id, пропускаем");
+        console.log("[bot] ❌ Нет telegram_id, пропускаем");
         return next();
       }
 
       const data = (ctx.message as any).web_app_data?.data;
-      console.log("[bot] Данные из WebApp:", data);
+      console.log("[bot] Данные из WebApp (raw):", data);
       if (!data) {
-        console.log("[bot] Нет данных в web_app_data, пропускаем");
+        console.log("[bot] ❌ Нет данных в web_app_data, пропускаем");
         return next();
       }
 
       let parsedData;
       try {
         parsedData = JSON.parse(data);
-        console.log("[bot] Распарсенные данные:", parsedData);
+        console.log("[bot] Распарсенные данные:", JSON.stringify(parsedData, null, 2));
       } catch (e) {
-        console.error("[bot] Ошибка парсинга данных из WebApp:", e);
+        console.error("[bot] ❌ Ошибка парсинга данных из WebApp:", e);
         return next();
       }
 
       // Если анкета сохранена - отправляем приветственное сообщение с меню
       if (parsedData.action === "questionnaire_saved") {
+        console.log("[bot] ========== ОБРАБОТКА QUESTIONNAIRE_SAVED ==========");
         console.log("[bot] Обработка questionnaire_saved для telegram_id:", telegram_id);
         
         // ВАЖНО: Получаем СВЕЖИЕ данные пользователя из БД после сохранения анкеты
@@ -380,35 +397,41 @@ bot.on("message", async (ctx, next) => {
         if (user && user.id) {
           console.log("[bot] 📤 Отправка меню после регистрации для пользователя:", user.id);
           console.log("[bot] Используемый MINIAPP_BASE_URL:", MINIAPP_BASE_URL);
+          console.log("[bot] Chat ID:", ctx.chat?.id);
           
+          // ВАЖНО: Отправляем подтверждение и меню
+          // Сначала отправляем подтверждение
+          try {
+            await ctx.reply("✅ Ваши данные сохранены. Добро пожаловать!");
+            console.log("[bot] ✅ Подтверждение отправлено");
+          } catch (confirmError: any) {
+            console.error("[bot] ❌ Ошибка отправки подтверждения:", confirmError);
+          }
+          
+          // Затем отправляем главное меню
           try {
             // Используем ЕДИНСТВЕННУЮ функцию sendMainMenu для гарантии правильного меню
-            await sendMainMenu(
-              ctx,
-              user.id,
-              "✅ Отлично! Анкета сохранена.\n\n📸 Теперь вы можете отправлять фото, текст и аудио того, что кушаете, и бот проанализирует всё!"
-            );
+            await sendMainMenu(ctx, user.id, "Выберите действие:");
             console.log("[bot] ✅ Меню после регистрации отправлено успешно");
-          } catch (replyError: any) {
-            console.error("[bot] ❌ Ошибка отправки меню:", replyError);
-            // Пробуем отправить сообщение без меню, затем меню отдельно
+          } catch (menuError: any) {
+            console.error("[bot] ❌ Ошибка отправки меню:", menuError);
+            // Пробуем отправить меню еще раз с задержкой
             try {
-              await ctx.reply(
-                "✅ Отлично! Анкета сохранена.\n\n📸 Теперь вы можете отправлять фото, текст и аудио того, что кушаете, и бот проанализирует всё!"
-              );
-              // Отправляем меню отдельно для гарантии
+              await new Promise(resolve => setTimeout(resolve, 500));
               await sendMainMenu(ctx, user.id);
-            } catch (e) {
-              console.error("[bot] ❌ Критическая ошибка отправки сообщения:", e);
+              console.log("[bot] ✅ Меню отправлено после повторной попытки");
+            } catch (retryError: any) {
+              console.error("[bot] ❌ Критическая ошибка отправки меню после повтора:", retryError);
             }
           }
         } else {
-          console.log("[bot] ⚠️ Пользователь не найден после регистрации, отправляем сообщение без меню");
+          console.log("[bot] ⚠️ Пользователь не найден после регистрации");
+          // Даже если пользователь не найден, отправляем сообщение
           try {
-            await ctx.reply(
-              "✅ Отлично! Анкета сохранена.\n\n📸 Теперь вы можете отправлять фото, текст и аудио того, что кушаете, и бот проанализирует всё!"
-            );
-          } catch (e) {
+            await ctx.reply("✅ Ваши данные сохранены. Добро пожаловать!");
+            // Пробуем отправить меню без userId (кнопки без web_app)
+            await sendMainMenu(ctx, null, "Выберите действие:");
+          } catch (e: any) {
             console.error("[bot] ❌ Ошибка отправки сообщения:", e);
           }
         }
