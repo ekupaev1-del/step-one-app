@@ -109,9 +109,9 @@ bot.start(async (ctx) => {
       console.log(`[bot] Создана новая запись, id: ${userId}`);
     }
 
-    // Если анкета не заполнена - показываем приветствие
+    // Если анкета не заполнена - показываем приветствие (только новая анкета)
     if (!isQuestionnaireFilled) {
-      const url = `${MINIAPP_BASE_URL}/?id=${userId}`;
+      const url = `${MINIAPP_BASE_URL}/registration/contact?id=${userId}`;
       console.log(`[bot] Показываю приветствие для нового пользователя`);
 
       // Отправляем приветственное сообщение с картинкой
