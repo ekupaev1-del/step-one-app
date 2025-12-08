@@ -30,13 +30,23 @@ const MINIAPP_BASE_URL =
  * @param userId - ID пользователя из таблицы users (для создания ссылок на Mini App)
  * @returns Объект reply_markup с клавиатурой
  */
+/**
+ * ЕДИНСТВЕННАЯ функция для создания главного меню бота.
+ * ВСЕГДА используйте эту функцию - никаких других способов создания меню!
+ * 
+ * @param userId - ID пользователя из таблицы users (обязателен для создания ссылок на Mini App)
+ * @returns Объект reply_markup с клавиатурой
+ */
 function getMainMenuKeyboard(userId: number | null = null): any {
   // Всегда используем актуальный MINIAPP_BASE_URL
-  const baseUrl = MINIAPP_BASE_URL;
+  const baseUrl = MINIAPP_BASE_URL.trim().replace(/\/$/, ''); // Убираем trailing slash
+  
+  // ВАЖНО: URL должны быть правильными - /profile и /report (не /reports!)
   const reportUrl = userId ? `${baseUrl}/report?id=${userId}` : undefined;
   const profileUrl = userId ? `${baseUrl}/profile?id=${userId}` : undefined;
 
   // ЕДИНСТВЕННОЕ правильное меню - 4 кнопки с правильными URL
+  // Кнопки с web_app открывают Mini App напрямую
   return {
     keyboard: [
       [
@@ -237,6 +247,8 @@ bot.start(async (ctx) => {
     // Если анкета заполнена - показываем единое главное меню
     // Принудительно обновляем меню для замены старого
     const menu = getMainMenuKeyboard(userId);
+    console.log("[bot] /start: отправка меню для пользователя с id:", userId);
+    console.log("[bot] /start: MINIAPP_BASE_URL:", MINIAPP_BASE_URL);
     await ctx.reply("Добро пожаловать! Выберите действие:", {
       reply_markup: {
         ...menu,
@@ -304,10 +316,11 @@ bot.on("message", async (ctx, next) => {
       if (parsedData.action === "questionnaire_saved") {
         console.log("[bot] Обработка questionnaire_saved для telegram_id:", telegram_id);
         
-        // Получаем userId для создания ссылок на Mini App
+        // ВАЖНО: Получаем СВЕЖИЕ данные пользователя из БД после сохранения анкеты
+        // Это гарантирует что мы используем актуальный userId
         const { data: user, error: userError } = await supabase
           .from("users")
-          .select("id")
+          .select("id, calories")
           .eq("telegram_id", telegram_id)
           .maybeSingle();
 
@@ -315,13 +328,22 @@ bot.on("message", async (ctx, next) => {
           console.error("[bot] Ошибка получения пользователя:", userError);
         }
 
-        if (user) {
+        if (user && user.id) {
           console.log("[bot] 📤 Отправка сообщения с меню для пользователя:", user.id);
+          console.log("[bot] Используемый MINIAPP_BASE_URL:", MINIAPP_BASE_URL);
           
           try {
             // Принудительно обновляем меню после регистрации
             // Используем reply_markup с replace_keyboard для замены старого меню
             const menu = getMainMenuKeyboard(user.id);
+            
+            // Логируем URL для отладки
+            const profileUrl = `${MINIAPP_BASE_URL}/profile?id=${user.id}`;
+            const reportUrl = `${MINIAPP_BASE_URL}/report?id=${user.id}`;
+            console.log("[bot] Profile URL:", profileUrl);
+            console.log("[bot] Report URL:", reportUrl);
+            
+            // Отправляем сообщение с принудительным обновлением меню
             await ctx.reply(
               "✅ Отлично! Анкета сохранена.\n\n📸 Теперь вы можете отправлять фото, текст и аудио того, что кушаете, и бот проанализирует всё!",
               {
@@ -334,11 +356,19 @@ bot.on("message", async (ctx, next) => {
             console.log("[bot] ✅ Сообщение с меню отправлено успешно");
           } catch (replyError: any) {
             console.error("[bot] ❌ Ошибка отправки сообщения:", replyError);
-            // Пробуем отправить без меню
+            // Пробуем отправить без меню, но затем отправляем меню отдельно
             try {
               await ctx.reply(
                 "✅ Отлично! Анкета сохранена.\n\n📸 Теперь вы можете отправлять фото, текст и аудио того, что кушаете, и бот проанализирует всё!"
               );
+              // Отправляем меню отдельно для гарантии
+              const menu = getMainMenuKeyboard(user.id);
+              await ctx.reply("Выберите действие:", {
+                reply_markup: {
+                  ...menu,
+                  replace_keyboard: true
+                }
+              });
             } catch (e) {
               console.error("[bot] ❌ Критическая ошибка отправки сообщения:", e);
             }
@@ -817,11 +847,15 @@ bot.on("text", async (ctx) => {
         .eq("telegram_id", telegram_id)
         .maybeSingle();
 
-      // Возвращаем в главное меню
+      // Возвращаем в главное меню с принудительным обновлением
+      const menu = getMainMenuKeyboard(user?.id || null);
       await ctx.reply(
         `✅ Удалено: ${lastMeal.meal_text} (${lastMeal.calories} ккал)\n\n${formatProgressMessage(todayMeals, dailyNorm)}`,
         {
-          reply_markup: getMainMenuKeyboard(user?.id || null)
+          reply_markup: {
+            ...menu,
+            replace_keyboard: true
+          }
         }
       );
       return;
@@ -836,9 +870,13 @@ bot.on("text", async (ctx) => {
         .eq("telegram_id", telegram_id)
         .maybeSingle();
 
-      // Используем единое главное меню
+      // Используем единое главное меню с принудительным обновлением
+      const menu = getMainMenuKeyboard(user?.id || null);
       return ctx.reply("•", {
-        reply_markup: getMainMenuKeyboard(user?.id || null)
+        reply_markup: {
+          ...menu,
+          replace_keyboard: true
+        }
       });
     }
 
