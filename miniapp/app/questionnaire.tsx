@@ -363,21 +363,52 @@ export function QuestionnaireFormContent({ initialUserId }: { initialUserId?: st
       setLoading(false);
       console.log("[handleSubmit] Данные успешно сохранены");
 
-      // Отправляем данные обратно в бот через Telegram WebApp
-      try {
-        const webApp = webAppRef.current || (typeof window !== "undefined" ? (window as any).Telegram?.WebApp : null);
-        if (webApp && typeof webApp.sendData === 'function') {
-          const dataToSend = JSON.stringify({
-            action: "questionnaire_saved",
-            userId: userId
-          });
-          webApp.sendData(dataToSend);
-          console.log("[handleSubmit] ✅ Данные отправлены в бот через sendData");
-        } else {
-          console.warn("[handleSubmit] ⚠️ Telegram.WebApp.sendData недоступен");
+      // ВАЖНО: Отправляем данные обратно в бот через Telegram WebApp
+      // Это критически важно - бот должен получить уведомление о завершении регистрации
+      let sendDataAttempts = 0;
+      const maxSendDataAttempts = 5;
+      
+      const sendDataToBot = () => {
+        try {
+          const webApp = webAppRef.current || (typeof window !== "undefined" ? (window as any).Telegram?.WebApp : null);
+          console.log("[handleSubmit] Попытка отправки sendData, попытка:", sendDataAttempts + 1);
+          console.log("[handleSubmit] webAppRef.current:", webAppRef.current ? "exists" : "null");
+          console.log("[handleSubmit] window.Telegram:", typeof window !== "undefined" ? ((window as any).Telegram ? "exists" : "null") : "window undefined");
+          
+          if (webApp && typeof webApp.sendData === 'function') {
+            const dataToSend = JSON.stringify({
+              action: "questionnaire_saved",
+              userId: userId
+            });
+            console.log("[handleSubmit] Отправка данных в бот:", dataToSend);
+            webApp.sendData(dataToSend);
+            console.log("[handleSubmit] ✅ Данные отправлены в бот через sendData");
+            return true;
+          } else {
+            console.warn(`[handleSubmit] ⚠️ Telegram.WebApp.sendData недоступен (попытка ${sendDataAttempts + 1})`);
+            return false;
+          }
+        } catch (sendDataError) {
+          console.error(`[handleSubmit] Ошибка отправки данных в бот (попытка ${sendDataAttempts + 1}):`, sendDataError);
+          return false;
         }
-      } catch (sendDataError) {
-        console.error("[handleSubmit] Ошибка отправки данных в бот:", sendDataError);
+      };
+      
+      // Пробуем отправить сразу
+      if (!sendDataToBot()) {
+        // Если не получилось, пробуем еще раз с задержками
+        const retryInterval = setInterval(() => {
+          sendDataAttempts++;
+          if (sendDataToBot() || sendDataAttempts >= maxSendDataAttempts) {
+            clearInterval(retryInterval);
+            if (sendDataAttempts >= maxSendDataAttempts) {
+              console.error("[handleSubmit] ❌ Не удалось отправить sendData после всех попыток");
+            }
+          }
+        }, 500);
+        
+        // Очищаем интервал через 5 секунд максимум
+        setTimeout(() => clearInterval(retryInterval), 5000);
       }
 
       // Закрываем Mini App - используем все возможные способы
