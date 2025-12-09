@@ -1,16 +1,12 @@
 "use client";
 
-import { useSearchParams } from "next/navigation";
 import { useState, useEffect, useCallback, useRef } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { calculateDailyWaterGoal, type ActivityLevel } from "../lib/waterHelpers";
 import "./globals.css";
 
 // Клиентский компонент с пошаговой формой
-export function QuestionnaireFormContent() {
-  const searchParams = useSearchParams();
-  const userIdParam = searchParams.get("id");
-
+export function QuestionnaireFormContent({ initialUserId }: { initialUserId?: string | null }) {
   const [userId, setUserId] = useState<number | null>(null);
   const webAppRef = useRef<any>(null);
   const [step, setStep] = useState(0); // 0 = приветствие, 1-6 = шаги
@@ -100,8 +96,8 @@ export function QuestionnaireFormContent() {
 
   // Проверяем id при монтировании
   useEffect(() => {
-    if (userIdParam) {
-      const n = Number(userIdParam);
+    if (initialUserId) {
+      const n = Number(initialUserId);
       if (Number.isFinite(n) && n > 0) {
         setUserId(n);
         setError(null);
@@ -111,7 +107,7 @@ export function QuestionnaireFormContent() {
     } else {
       setError("ID не передан. Запустите анкету через Telegram бота");
     }
-  }, [userIdParam]);
+  }, [initialUserId]);
 
   const calculateMacros = useCallback(() => {
     if (!gender || !age || !weight || !height || !activity || !goal) return;

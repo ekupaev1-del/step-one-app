@@ -1,7 +1,10 @@
 "use client";
 
 import { Suspense } from "react";
+import { useSearchParams } from "next/navigation";
 import { QuestionnaireFormContent } from "../questionnaire";
+
+export const dynamic = "force-dynamic";
 
 function LoadingFallback() {
   return (
@@ -11,10 +14,18 @@ function LoadingFallback() {
   );
 }
 
+// Обертка для получения searchParams в клиентском компоненте
+function RegistrationPageContent() {
+  const searchParams = useSearchParams();
+  const userIdParam = searchParams.get("id");
+  
+  return <QuestionnaireFormContent initialUserId={userIdParam} />;
+}
+
 export default function RegistrationPage() {
   return (
     <Suspense fallback={<LoadingFallback />}>
-      <QuestionnaireFormContent />
+      <RegistrationPageContent />
     </Suspense>
   );
 }
