@@ -96,15 +96,33 @@ export function QuestionnaireFormContent({ initialUserId }: { initialUserId?: st
 
   // Проверяем id при монтировании
   useEffect(() => {
+    console.log("[QuestionnaireFormContent] initialUserId:", initialUserId);
     if (initialUserId) {
       const n = Number(initialUserId);
       if (Number.isFinite(n) && n > 0) {
         setUserId(n);
         setError(null);
+        console.log("[QuestionnaireFormContent] ✅ userId установлен:", n);
       } else {
+        console.error("[QuestionnaireFormContent] ❌ Некорректный id:", initialUserId);
         setError("Некорректный id пользователя");
       }
     } else {
+      console.error("[QuestionnaireFormContent] ❌ ID не передан, initialUserId:", initialUserId);
+      // Пробуем получить из URL напрямую как fallback
+      if (typeof window !== "undefined") {
+        const urlParams = new URLSearchParams(window.location.search);
+        const urlId = urlParams.get("id");
+        if (urlId) {
+          const n = Number(urlId);
+          if (Number.isFinite(n) && n > 0) {
+            console.log("[QuestionnaireFormContent] ✅ Получен id из URL:", n);
+            setUserId(n);
+            setError(null);
+            return;
+          }
+        }
+      }
       setError("ID не передан. Запустите анкету через Telegram бота");
     }
   }, [initialUserId]);
