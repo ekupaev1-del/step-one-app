@@ -419,27 +419,30 @@ bot.on("message", async (ctx, next) => {
       console.log("[bot] Chat ID:", chat_id);
       console.log("[bot] Telegram ID:", telegram_id);
       
-      // ШАГ 1: Отправляем подтверждение с правильным текстом
+      // КРИТИЧЕСКИ ВАЖНО: Отправляем сообщения ВСЕГДА, даже если пользователь не найден
+      // Это гарантирует, что пользователь получит ответ
       const confirmationMessage = "✅ Ваши данные успешно сохранены! Теперь можете отправлять фото/текст/аудио еды — я всё проанализирую.";
+      const userIdToUse = user?.id || null;
+      
+      // ШАГ 1: Отправляем подтверждение
+      let confirmationSent = false;
       try {
         await ctx.reply(confirmationMessage);
-        console.log("[bot] ✅ Подтверждение отправлено успешно");
+        confirmationSent = true;
+        console.log("[bot] ✅ Подтверждение отправлено успешно через ctx.reply");
       } catch (confirmError: any) {
-        console.error("[bot] ❌ Ошибка отправки подтверждения:", confirmError);
-        console.error("[bot] Confirm error details:", {
-          message: confirmError?.message,
-          code: confirmError?.response?.error_code,
-          description: confirmError?.response?.description
-        });
+        console.error("[bot] ❌ Ошибка отправки подтверждения через ctx.reply:", confirmError);
         // Пробуем через прямой API вызов
         try {
           await ctx.telegram.sendMessage(chat_id, confirmationMessage);
-          console.log("[bot] ✅ Подтверждение отправлено через прямой API");
+          confirmationSent = true;
+          console.log("[bot] ✅ Подтверждение отправлено через ctx.telegram.sendMessage");
         } catch (directError: any) {
-          console.error("[bot] ❌ Критическая ошибка отправки подтверждения:", directError);
-          // Последняя попытка - без форматирования
+          console.error("[bot] ❌ Ошибка отправки подтверждения через прямой API:", directError);
+          // Последняя попытка - без эмодзи
           try {
             await ctx.telegram.sendMessage(chat_id, "Ваши данные успешно сохранены! Теперь можете отправлять фото/текст/аудио еды — я всё проанализирую.");
+            confirmationSent = true;
             console.log("[bot] ✅ Подтверждение отправлено через последнюю попытку");
           } catch (finalConfirmError: any) {
             console.error("[bot] ❌ ФИНАЛЬНАЯ ошибка отправки подтверждения:", finalConfirmError);
@@ -448,12 +451,14 @@ bot.on("message", async (ctx, next) => {
       }
       
       // ШАГ 2: Отправляем главное меню
-      const userIdToUse = user?.id || null;
+      // ВАЖНО: Отправляем меню ВСЕГДА, даже если подтверждение не отправилось
+      let menuSent = false;
       try {
         await sendMainMenu(ctx, userIdToUse, "Выберите действие:");
-        console.log("[bot] ✅ Меню после регистрации отправлено успешно");
+        menuSent = true;
+        console.log("[bot] ✅ Меню после регистрации отправлено успешно через sendMainMenu");
       } catch (menuError: any) {
-        console.error("[bot] ❌ Ошибка отправки меню:", menuError);
+        console.error("[bot] ❌ Ошибка отправки меню через sendMainMenu:", menuError);
         console.error("[bot] Menu error details:", {
           message: menuError?.message,
           code: menuError?.response?.error_code,
@@ -464,20 +469,31 @@ bot.on("message", async (ctx, next) => {
         try {
           await new Promise(resolve => setTimeout(resolve, 500));
           await sendMainMenu(ctx, userIdToUse);
+          menuSent = true;
           console.log("[bot] ✅ Меню отправлено после повторной попытки");
         } catch (retryError: any) {
-          console.error("[bot] ❌ Критическая ошибка отправки меню после повтора:", retryError);
+          console.error("[bot] ❌ Ошибка отправки меню после повтора:", retryError);
           // Последняя попытка - через прямой API вызов
           try {
             const menu = getMainMenuKeyboard(userIdToUse);
             await ctx.telegram.sendMessage(chat_id, "Выберите действие:", {
               reply_markup: { ...menu, replace_keyboard: true }
             });
+            menuSent = true;
             console.log("[bot] ✅ Меню отправлено через прямой API вызов");
           } catch (finalError: any) {
             console.error("[bot] ❌ ФИНАЛЬНАЯ ошибка отправки меню:", finalError);
           }
         }
+      }
+      
+      // Финальная проверка: если ничего не отправилось, логируем критическую ошибку
+      if (!confirmationSent && !menuSent) {
+        console.error("[bot] ❌ КРИТИЧЕСКАЯ ОШИБКА: Не удалось отправить ни подтверждение, ни меню!");
+      } else if (!confirmationSent) {
+        console.warn("[bot] ⚠️ Предупреждение: Подтверждение не отправлено, но меню отправлено");
+      } else if (!menuSent) {
+        console.warn("[bot] ⚠️ Предупреждение: Меню не отправлено, но подтверждение отправлено");
       }
       
       // ВАЖНО: Всегда возвращаем, чтобы не передавать управление дальше

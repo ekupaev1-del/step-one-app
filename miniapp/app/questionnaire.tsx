@@ -379,12 +379,14 @@ export function QuestionnaireFormContent({ initialUserId }: { initialUserId?: st
             });
             console.log("[handleSubmit] Отправка данных в бот:", dataToSend);
             
-            // ВАЖНО: sendData должен быть вызван синхронно, но мы даем время на обработку
+            // ВАЖНО: sendData должен быть вызван синхронно
+            // Telegram WebApp API отправляет данные немедленно, но мы даем время на обработку
             webApp.sendData(dataToSend);
             console.log("[handleSubmit] ✅ sendData вызван");
             
-            // Даем время Telegram API обработать сообщение (минимум 500ms)
-            await new Promise(resolve => setTimeout(resolve, 500));
+            // КРИТИЧЕСКИ ВАЖНО: Даем достаточно времени Telegram API обработать сообщение
+            // Минимум 1000ms для гарантии доставки
+            await new Promise(resolve => setTimeout(resolve, 1000));
             
             console.log("[handleSubmit] ✅ Данные отправлены в бот через sendData");
             return true;
@@ -400,17 +402,24 @@ export function QuestionnaireFormContent({ initialUserId }: { initialUserId?: st
       
       // ВАЖНО: Ждем завершения sendData ПЕРЕД закрытием Mini App
       // Это гарантирует, что бот получит сообщение
-      const sendDataSuccess = await sendDataToBot();
+      let sendDataSuccess = false;
+      for (let attempt = 0; attempt < 3; attempt++) {
+        sendDataSuccess = await sendDataToBot();
+        if (sendDataSuccess) {
+          console.log(`[handleSubmit] ✅ sendData успешно отправлен с попытки ${attempt + 1}`);
+          break;
+        }
+        console.warn(`[handleSubmit] ⚠️ Попытка ${attempt + 1} не удалась, пробуем еще раз...`);
+        await new Promise(resolve => setTimeout(resolve, 500));
+      }
       
       if (!sendDataSuccess) {
-        console.error("[handleSubmit] ❌ Не удалось отправить sendData - пробуем еще раз");
-        // Пробуем еще раз с задержкой
-        await new Promise(resolve => setTimeout(resolve, 300));
-        await sendDataToBot();
+        console.error("[handleSubmit] ❌ КРИТИЧЕСКАЯ ОШИБКА: Не удалось отправить sendData после 3 попыток!");
       }
       
       // Дополнительная задержка перед закрытием для гарантии доставки
-      await new Promise(resolve => setTimeout(resolve, 300));
+      // Увеличено до 500ms для большей надежности
+      await new Promise(resolve => setTimeout(resolve, 500));
 
       // Закрываем Mini App - используем все возможные способы
       const closeMiniApp = (attempt = 0) => {
