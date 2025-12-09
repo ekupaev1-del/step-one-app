@@ -16,7 +16,7 @@ const bot = new Telegraf(env.telegramBotToken);
 // Продакшен-домен мини-приложения (стабильный)
 const MINIAPP_BASE_URL =
   process.env.MINIAPP_BASE_URL ||
-  "https://step-one-app.vercel.app";
+  "https://step-one-pvkktazus-emins-projects-4717eabc.vercel.app";
 
 // ░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░
 //      ЕДИНАЯ ФУНКЦИЯ ГЛАВНОГО МЕНЮ
