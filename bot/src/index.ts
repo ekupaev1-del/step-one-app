@@ -271,10 +271,21 @@ bot.start(async (ctx) => {
     }
 
     // Если анкета заполнена - показываем единое главное меню
-    // Используем ЕДИНСТВЕННУЮ функцию sendMainMenu для гарантии правильного меню
+    // ВАЖНО: Отправляем ОДНО сообщение с текстом и меню вместе
     console.log("[bot] /start: отправка меню для пользователя с id:", userId);
     console.log("[bot] /start: MINIAPP_BASE_URL:", MINIAPP_BASE_URL);
-    await sendMainMenu(ctx, userId, "Добро пожаловать! Выберите действие:");
+    
+    // Используем getMainMenuKeyboard для получения меню
+    const menu = getMainMenuKeyboard(userId);
+    const welcomeMessage = "Добро пожаловать! Выберите действие:";
+    
+    // Отправляем ОДНО сообщение с текстом и меню вместе
+    await ctx.reply(welcomeMessage, {
+      reply_markup: {
+        ...menu,
+        replace_keyboard: true
+      }
+    });
 
     console.log(`[bot] /start успешно завершён для id: ${userId}`);
   } catch (err: any) {
