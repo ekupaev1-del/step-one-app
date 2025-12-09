@@ -113,6 +113,7 @@ export function QuestionnaireFormContent({ initialUserId }: { initialUserId?: st
       if (typeof window !== "undefined") {
         const urlParams = new URLSearchParams(window.location.search);
         const urlId = urlParams.get("id");
+        console.log("[QuestionnaireFormContent] Пробуем получить id из URL, urlId:", urlId);
         if (urlId) {
           const n = Number(urlId);
           if (Number.isFinite(n) && n > 0) {
@@ -122,8 +123,21 @@ export function QuestionnaireFormContent({ initialUserId }: { initialUserId?: st
             return;
           }
         }
+        // Также пробуем из window.location.href
+        const hrefMatch = window.location.href.match(/[?&]id=(\d+)/);
+        if (hrefMatch && hrefMatch[1]) {
+          const n = Number(hrefMatch[1]);
+          if (Number.isFinite(n) && n > 0) {
+            console.log("[QuestionnaireFormContent] ✅ Получен id из href:", n);
+            setUserId(n);
+            setError(null);
+            return;
+          }
+        }
       }
-      setError("ID не передан. Запустите анкету через Telegram бота");
+      // Не показываем ошибку сразу - может быть задержка в получении параметров
+      console.warn("[QuestionnaireFormContent] ⚠️ ID пока не получен, ждем...");
+      // Не устанавливаем ошибку сразу, даем время для получения параметров
     }
   }, [initialUserId]);
 
