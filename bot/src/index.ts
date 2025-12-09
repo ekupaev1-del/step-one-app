@@ -190,6 +190,22 @@ bot.start(async (ctx) => {
 Чтобы мне определить, как вам правильно питаться,
 ответьте на пару вопросов↓`;
       
+      // КРИТИЧЕСКИ ВАЖНО: Используем reply_keyboard (keyboard), НЕ inline_keyboard!
+      // Telegram WebApp sendData() работает ТОЛЬКО для WebApps, открытых через KeyboardButton
+      // Если использовать InlineKeyboardButton, sendData() не будет работать!
+      const registrationKeyboard = {
+        keyboard: [
+          [
+            {
+              text: "📝 Заполнить анкету",
+              web_app: { url }
+            }
+          ]
+        ],
+        resize_keyboard: true,
+        one_time_keyboard: false
+      };
+
       // Пробуем отправить картинку через URL (быстрее для оптимизированных файлов)
       try {
         console.log("[bot] Отправка картинки через URL...");
@@ -198,16 +214,7 @@ bot.start(async (ctx) => {
           {
             caption: welcomeText,
             parse_mode: "HTML",
-            reply_markup: {
-              inline_keyboard: [
-                [
-                  {
-                    text: "📝 Заполнить анкету",
-                    web_app: { url }
-                  }
-                ]
-              ]
-            }
+            reply_markup: registrationKeyboard
           }
         );
         console.log("[bot] ✅ Картинка отправлена через URL");
@@ -231,16 +238,7 @@ bot.start(async (ctx) => {
             {
               caption: welcomeText,
               parse_mode: "HTML",
-              reply_markup: {
-                inline_keyboard: [
-                  [
-                    {
-                      text: "📝 Заполнить анкету",
-                      web_app: { url }
-                    }
-                  ]
-                ]
-              }
+              reply_markup: registrationKeyboard
             }
           );
           console.log("[bot] ✅ Картинка отправлена как файл");
@@ -255,16 +253,7 @@ bot.start(async (ctx) => {
             welcomeText,
             {
               parse_mode: "HTML",
-              reply_markup: {
-                inline_keyboard: [
-                  [
-                    {
-                      text: "📝 Заполнить анкету",
-                      web_app: { url }
-                    }
-                  ]
-                ]
-              }
+              reply_markup: registrationKeyboard
             }
           );
         } catch (replyError: any) {
@@ -273,16 +262,7 @@ bot.start(async (ctx) => {
           await ctx.reply(
             "💪 Добро пожаловать в Step One.\n\nСамое тяжелое вы уже сделали - первый шаг\n\nЯ помогу вам настроить питание под вашу цель:\n- похудеть,\n- набрать вес\n- или просто чувствовать себя лучше и легче.\n\nЧтобы мне определить, как вам правильно питаться,\nответьте на пару вопросов↓",
             {
-              reply_markup: {
-                inline_keyboard: [
-                  [
-                    {
-                      text: "📝 Заполнить анкету",
-                      web_app: { url }
-                    }
-                  ]
-                ]
-              }
+              reply_markup: registrationKeyboard
             }
           );
         }
