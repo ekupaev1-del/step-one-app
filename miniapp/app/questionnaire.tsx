@@ -363,15 +363,12 @@ export function QuestionnaireFormContent({ initialUserId }: { initialUserId?: st
       setLoading(false);
       console.log("[handleSubmit] Данные успешно сохранены");
 
-      // ВАЖНО: Отправляем данные обратно в бот через Telegram WebApp
-      // Это критически важно - бот должен получить уведомление о завершении регистрации
-      let sendDataAttempts = 0;
-      const maxSendDataAttempts = 5;
-      
-      const sendDataToBot = () => {
+      // КРИТИЧЕСКИ ВАЖНО: Отправляем данные в бот ПЕРЕД закрытием Mini App
+      // Бот должен получить уведомление о завершении регистрации
+      const sendDataToBot = async (): Promise<boolean> => {
         try {
           const webApp = webAppRef.current || (typeof window !== "undefined" ? (window as any).Telegram?.WebApp : null);
-          console.log("[handleSubmit] Попытка отправки sendData, попытка:", sendDataAttempts + 1);
+          console.log("[handleSubmit] Попытка отправки sendData в бот");
           console.log("[handleSubmit] webAppRef.current:", webAppRef.current ? "exists" : "null");
           console.log("[handleSubmit] window.Telegram:", typeof window !== "undefined" ? ((window as any).Telegram ? "exists" : "null") : "window undefined");
           
@@ -381,35 +378,39 @@ export function QuestionnaireFormContent({ initialUserId }: { initialUserId?: st
               userId: userId
             });
             console.log("[handleSubmit] Отправка данных в бот:", dataToSend);
+            
+            // ВАЖНО: sendData должен быть вызван синхронно, но мы даем время на обработку
             webApp.sendData(dataToSend);
+            console.log("[handleSubmit] ✅ sendData вызван");
+            
+            // Даем время Telegram API обработать сообщение (минимум 500ms)
+            await new Promise(resolve => setTimeout(resolve, 500));
+            
             console.log("[handleSubmit] ✅ Данные отправлены в бот через sendData");
             return true;
           } else {
-            console.warn(`[handleSubmit] ⚠️ Telegram.WebApp.sendData недоступен (попытка ${sendDataAttempts + 1})`);
+            console.warn("[handleSubmit] ⚠️ Telegram.WebApp.sendData недоступен");
             return false;
           }
         } catch (sendDataError) {
-          console.error(`[handleSubmit] Ошибка отправки данных в бот (попытка ${sendDataAttempts + 1}):`, sendDataError);
+          console.error("[handleSubmit] Ошибка отправки данных в бот:", sendDataError);
           return false;
         }
       };
       
-      // Пробуем отправить сразу
-      if (!sendDataToBot()) {
-        // Если не получилось, пробуем еще раз с задержками
-        const retryInterval = setInterval(() => {
-          sendDataAttempts++;
-          if (sendDataToBot() || sendDataAttempts >= maxSendDataAttempts) {
-            clearInterval(retryInterval);
-            if (sendDataAttempts >= maxSendDataAttempts) {
-              console.error("[handleSubmit] ❌ Не удалось отправить sendData после всех попыток");
-            }
-          }
-        }, 500);
-        
-        // Очищаем интервал через 5 секунд максимум
-        setTimeout(() => clearInterval(retryInterval), 5000);
+      // ВАЖНО: Ждем завершения sendData ПЕРЕД закрытием Mini App
+      // Это гарантирует, что бот получит сообщение
+      const sendDataSuccess = await sendDataToBot();
+      
+      if (!sendDataSuccess) {
+        console.error("[handleSubmit] ❌ Не удалось отправить sendData - пробуем еще раз");
+        // Пробуем еще раз с задержкой
+        await new Promise(resolve => setTimeout(resolve, 300));
+        await sendDataToBot();
       }
+      
+      // Дополнительная задержка перед закрытием для гарантии доставки
+      await new Promise(resolve => setTimeout(resolve, 300));
 
       // Закрываем Mini App - используем все возможные способы
       const closeMiniApp = (attempt = 0) => {
