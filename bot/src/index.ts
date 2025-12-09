@@ -421,31 +421,51 @@ bot.on("message", async (ctx, next) => {
       
       // КРИТИЧЕСКИ ВАЖНО: Отправляем сообщения ВСЕГДА, даже если пользователь не найден
       // Это гарантирует, что пользователь получит ответ
-      const confirmationMessage = "✅ Ваши данные успешно сохранены! Теперь можете отправлять фото/текст/аудио еды — я всё проанализирую.";
+      const confirmationMessage = "Спасибо! Мы сохранили твои данные. Теперь ты можешь отправлять фото, текст или аудио своих блюд — я всё проанализирую.";
       const userIdToUse = user?.id || null;
       
       // ШАГ 1: Отправляем подтверждение
+      // ВАЖНО: Используем прямой вызов ctx.telegram.sendMessage для гарантии доставки
       let confirmationSent = false;
       try {
+        // Пробуем сначала через ctx.reply (более простой способ)
         await ctx.reply(confirmationMessage);
         confirmationSent = true;
         console.log("[bot] ✅ Подтверждение отправлено успешно через ctx.reply");
       } catch (confirmError: any) {
         console.error("[bot] ❌ Ошибка отправки подтверждения через ctx.reply:", confirmError);
-        // Пробуем через прямой API вызов
+        console.error("[bot] Error details:", {
+          message: confirmError?.message,
+          code: confirmError?.response?.error_code,
+          description: confirmError?.response?.description
+        });
+        
+        // Fallback: прямой API вызов через ctx.telegram.sendMessage
         try {
           await ctx.telegram.sendMessage(chat_id, confirmationMessage);
           confirmationSent = true;
           console.log("[bot] ✅ Подтверждение отправлено через ctx.telegram.sendMessage");
         } catch (directError: any) {
           console.error("[bot] ❌ Ошибка отправки подтверждения через прямой API:", directError);
-          // Последняя попытка - без эмодзи
+          console.error("[bot] Direct error details:", {
+            message: directError?.message,
+            code: directError?.response?.error_code,
+            description: directError?.response?.description
+          });
+          
+          // Последняя попытка: еще раз с небольшой задержкой
           try {
-            await ctx.telegram.sendMessage(chat_id, "Ваши данные успешно сохранены! Теперь можете отправлять фото/текст/аудио еды — я всё проанализирую.");
+            await new Promise(resolve => setTimeout(resolve, 300));
+            await ctx.telegram.sendMessage(chat_id, confirmationMessage);
             confirmationSent = true;
-            console.log("[bot] ✅ Подтверждение отправлено через последнюю попытку");
+            console.log("[bot] ✅ Подтверждение отправлено через последнюю попытку с задержкой");
           } catch (finalConfirmError: any) {
             console.error("[bot] ❌ ФИНАЛЬНАЯ ошибка отправки подтверждения:", finalConfirmError);
+            console.error("[bot] Final error details:", {
+              message: finalConfirmError?.message,
+              code: finalConfirmError?.response?.error_code,
+              description: finalConfirmError?.response?.description
+            });
           }
         }
       }
