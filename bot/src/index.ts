@@ -336,14 +336,20 @@ async function handleQuestionnaireSaved(
   const telegram_id = ctx.from?.id || (ctx.callbackQuery as any)?.from?.id;
   const chat_id =
     ctx.chat?.id ||
-
+    (ctx.callbackQuery as any)?.message?.chat?.id ||
+    telegram_id;
+    (ctx.callbackQuery as any)?.message?.chat?.id ||
+    telegram_id;
   if (!telegram_id) {
     console.log("[bot] ❌ Нет telegram_id, пропускаем обработку questionnaire_saved");
     return;
   }
-
   if (!rawData) {
     console.log("[bot] ❌ Нет данных в web_app_data, пропускаем");
+    return;
+  }
+    return;
+  }
 
   let parsedData;
   try {
