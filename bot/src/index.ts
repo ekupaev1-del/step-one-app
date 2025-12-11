@@ -12,11 +12,10 @@ import { startReminderScheduler } from "./services/reminderScheduler.js";
 const bot = new Telegraf(env.telegramBotToken);
 
 // Миниап URL
-// ВАЖНО: Используем ТОЛЬКО production домен для стабильности
-// Preview деплои создают разные домены каждый раз - это ломает web_app URLs
+// Используем preview URL для dev ветки для тестирования
 const MINIAPP_BASE_URL =
   process.env.MINIAPP_BASE_URL ||
-  "https://step-one-app.vercel.app";
+  "https://step-one-app-git-dev-emins-projects-4717eabc.vercel.app";
 
 // ░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░
 //      ЕДИНАЯ ФУНКЦИЯ ГЛАВНОГО МЕНЮ
@@ -42,17 +41,9 @@ function getMainMenuKeyboard(userId: number | null = null): any {
   // Preview деплои создают разные домены - это ломает web_app URLs в Telegram
   const baseUrl = (MINIAPP_BASE_URL || "https://step-one-app.vercel.app").trim().replace(/\/$/, '');
   
-  // #region agent log
-  fetch('http://127.0.0.1:7242/ingest/43e8883f-375d-4d43-af6f-fef79b5ebbe3',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'bot/src/index.ts:43',message:'MINIAPP_BASE_URL used by bot',data:{MINIAPP_BASE_URL,baseUrl,userId},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'H1'})}).catch(()=>{});
-  // #endregion
-  
   // ВАЖНО: URL должны быть правильными - /profile и /report (не /reports!)
   const reportUrl = userId ? `${baseUrl}/report?id=${userId}` : undefined;
   const profileUrl = userId ? `${baseUrl}/profile?id=${userId}` : undefined;
-  
-  // #region agent log
-  fetch('http://127.0.0.1:7242/ingest/43e8883f-375d-4d43-af6f-fef79b5ebbe3',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'bot/src/index.ts:49',message:'Generated web_app URLs',data:{reportUrl,profileUrl},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'H1'})}).catch(()=>{});
-  // #endregion
 
   // ЕДИНСТВЕННОЕ правильное меню - 4 кнопки с правильными URL
   // Кнопки с web_app открывают Mini App напрямую
