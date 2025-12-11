@@ -38,8 +38,9 @@ const MINIAPP_BASE_URL =
  * @returns Объект reply_markup с клавиатурой
  */
 function getMainMenuKeyboard(userId: number | null = null): any {
-  // Используем preview URL для dev ветки чтобы видеть обновления
-  const baseUrl = (MINIAPP_BASE_URL || "https://step-one-app-git-dev-emins-projects-4717eabc.vercel.app").trim().replace(/\/$/, '');
+  // ВАЖНО: Используем ТОЛЬКО production URL для стабильности
+  // Preview деплои создают разные домены - это ломает web_app URLs в Telegram
+  const baseUrl = (MINIAPP_BASE_URL || "https://step-one-app.vercel.app").trim().replace(/\/$/, '');
   
   // ВАЖНО: URL должны быть правильными - /profile и /report (не /reports!)
   const reportUrl = userId ? `${baseUrl}/report?id=${userId}` : undefined;
@@ -335,12 +336,18 @@ async function handleQuestionnaireSaved(
   source: "message" | "callback_query"
 ) {
   console.log(`[bot] ========== ПОЛУЧЕНЫ ДАННЫЕ ИЗ WEBAPP (source=${source}) ==========`);
+  console.log(`[bot] [handleQuestionnaireSaved] rawData тип:`, typeof rawData);
+  console.log(`[bot] [handleQuestionnaireSaved] rawData длина:`, rawData?.length);
+  console.log(`[bot] [handleQuestionnaireSaved] rawData содержимое:`, rawData);
 
   const telegram_id = ctx.from?.id || (ctx.callbackQuery as any)?.from?.id;
   const chat_id =
     ctx.chat?.id ||
     (ctx.callbackQuery as any)?.message?.chat?.id ||
     telegram_id;
+  
+  console.log(`[bot] [handleQuestionnaireSaved] telegram_id:`, telegram_id);
+  console.log(`[bot] [handleQuestionnaireSaved] chat_id:`, chat_id);
 
   if (!telegram_id) {
     console.log("[bot] ❌ Нет telegram_id, пропускаем обработку questionnaire_saved");
