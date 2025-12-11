@@ -379,18 +379,9 @@ export function QuestionnaireFormContent({ initialUserId }: { initialUserId?: st
             });
             console.log("[handleSubmit] Отправка данных в бот:", dataToSend);
             
-            // #region agent log
-            fetch('http://127.0.0.1:7242/ingest/43e8883f-375d-4d43-af6f-fef79b5ebbe3',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'miniapp/app/questionnaire.tsx:384',message:'Before sendData call',data:{userId,dataToSend},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'D'})}).catch(()=>{});
-            // #endregion
-            
             // ВАЖНО: sendData должен быть вызван синхронно
             // Telegram WebApp API отправляет данные немедленно, но мы даем время на обработку
             webApp.sendData(dataToSend);
-            
-            // #region agent log
-            fetch('http://127.0.0.1:7242/ingest/43e8883f-375d-4d43-af6f-fef79b5ebbe3',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'miniapp/app/questionnaire.tsx:387',message:'sendData called',data:{userId},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'D'})}).catch(()=>{});
-            // #endregion
-            
             console.log("[handleSubmit] ✅ sendData вызван");
             
             // КРИТИЧЕСКИ ВАЖНО: Даем достаточно времени Telegram API обработать сообщение
@@ -424,6 +415,27 @@ export function QuestionnaireFormContent({ initialUserId }: { initialUserId?: st
       
       if (!sendDataSuccess) {
         console.error("[handleSubmit] ❌ КРИТИЧЕСКАЯ ОШИБКА: Не удалось отправить sendData после 3 попыток!");
+        console.log("[handleSubmit] Пробуем fallback через /api/notify-bot...");
+        
+        // Fallback: используем API route для уведомления бота напрямую
+        try {
+          const notifyResponse = await fetch("/api/notify-bot", {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+            },
+            body: JSON.stringify({ userId }),
+          });
+          
+          if (notifyResponse.ok) {
+            console.log("[handleSubmit] ✅ Fallback уведомление отправлено успешно через /api/notify-bot");
+          } else {
+            const errorText = await notifyResponse.text();
+            console.error("[handleSubmit] ❌ Ошибка fallback уведомления:", errorText);
+          }
+        } catch (fallbackError) {
+          console.error("[handleSubmit] ❌ КРИТИЧЕСКАЯ ОШИБКА: Fallback также не сработал:", fallbackError);
+        }
       }
       
       // Дополнительная задержка перед закрытием для гарантии доставки
