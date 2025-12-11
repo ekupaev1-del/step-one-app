@@ -483,27 +483,14 @@ async function handleQuestionnaireSaved(
 
 // Обработка данных из WebApp (когда пользователь отправляет данные через sendData)
 bot.on("message", async (ctx, next) => {
-  // Детальное логирование для диагностики
-  const messageType = (ctx.message as any)?.web_app_data ? "web_app_data" : "regular";
-  console.log(`[bot] [MESSAGE HANDLER] Получено сообщение типа: ${messageType}`);
-  
   // Проверяем, есть ли данные из WebApp
-  const webAppData = (ctx.message as any)?.web_app_data;
-  const data = webAppData?.data;
-  
-  console.log(`[bot] [MESSAGE HANDLER] web_app_data присутствует:`, !!webAppData);
-  console.log(`[bot] [MESSAGE HANDLER] data присутствует:`, !!data);
-  if (webAppData) {
-    console.log(`[bot] [MESSAGE HANDLER] web_app_data объект:`, JSON.stringify(webAppData, null, 2));
-  }
+  const data = (ctx.message as any)?.web_app_data?.data;
 
   if (!data) {
-    console.log(`[bot] [MESSAGE HANDLER] Нет web_app_data.data, передаем управление дальше`);
     // Для всех остальных сообщений передаем управление дальше
     return next();
   }
 
-  console.log(`[bot] [MESSAGE HANDLER] ✅ Найдены данные web_app_data, вызываем handleQuestionnaireSaved`);
   await handleQuestionnaireSaved(ctx, data, "message");
   // Если это web_app_data, не передаем дальше
   return;
