@@ -85,7 +85,22 @@ function ReportPageContent() {
   const [editingMeal, setEditingMeal] = useState<Meal | null>(null);
 
   // Инициализация userId
+  // Инициализация userId - оптимизировано для быстрой загрузки
   useEffect(() => {
+    // Сначала пробуем получить из URL напрямую для быстрой загрузки
+    if (typeof window !== "undefined" && !userIdParam) {
+      const urlParams = new URLSearchParams(window.location.search);
+      const fallbackUserId = urlParams.get("id");
+      if (fallbackUserId) {
+        const n = Number(fallbackUserId);
+        if (Number.isFinite(n) && n > 0) {
+          setUserId(n);
+          setError(null);
+          return;
+        }
+      }
+    }
+
     if (userIdParam) {
       const n = Number(userIdParam);
       if (Number.isFinite(n) && n > 0) {
