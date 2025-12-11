@@ -659,18 +659,6 @@ function ReportPageContent() {
                 })}
               </h2>
             </button>
-            <button
-              onClick={() => setShowCalendar(true)}
-              className="flex-1 mx-4"
-            >
-              <h2 className="text-xl font-bold text-textPrimary text-center hover:text-accent transition-colors cursor-pointer underline decoration-2 underline-offset-2">
-                {new Date(selectedDate).toLocaleDateString("ru-RU", {
-                  day: "numeric",
-                  month: "long",
-                  year: "numeric"
-                })}
-              </h2>
-            </button>
               →
             </button>
           </div>
