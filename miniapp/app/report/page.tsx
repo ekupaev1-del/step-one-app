@@ -58,7 +58,7 @@ function LoadingFallback() {
   );
 }
 
-function ReportPageContent(): JSX.Element {
+function ReportPageContent() {
   const searchParams = useSearchParams();
   const userIdParam = searchParams.get("id");
   
