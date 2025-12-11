@@ -576,6 +576,8 @@ function ReportPageContent(): ReactElement {
     setError(null);
     setEditingMeal(null);
     loadDayReport(newDateKey, true);
+    loadCalendar();
+  };
 
 
   /**
