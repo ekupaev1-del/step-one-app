@@ -544,6 +544,29 @@ function ReportPageContent() {
     newMonth.setMonth(newMonth.getMonth() + delta);
     setCurrentMonth(newMonth);
   };
+  /**
+   * Переключение дня (для навигации в детальном отчёте)
+   */
+  const changeDay = (delta: number) => {
+    if (!selectedDate) return;
+    
+    const currentDate = new Date(selectedDate);
+    currentDate.setDate(currentDate.getDate() + delta);
+    const newDateKey = currentDate.toISOString().split("T")[0];
+    
+    // Обновляем месяц календаря, если перешли в другой месяц
+    const newMonth = new Date(currentDate);
+    newMonth.setDate(1);
+    setCurrentMonth(newMonth);
+    
+    // Загружаем отчёт за новый день
+    setDayReport(null);
+    setError(null);
+    setEditingMeal(null);
+    loadDayReport(newDateKey, true);
+    loadCalendar();
+  };
+
 
   /**
    * Генерация календаря
