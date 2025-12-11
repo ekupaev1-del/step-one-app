@@ -70,7 +70,6 @@ function getMainMenuKeyboard(userId: number | null = null): any {
   // Логируем для отладки
   console.log("[getMainMenuKeyboard] userId:", userId);
   console.log("[getMainMenuKeyboard] baseUrl:", baseUrl);
-  console.log("[getMainMenuKeyboard] profileUrl:", profileUrl);
   console.log("[getMainMenuKeyboard] reportUrl:", reportUrl);
 
   return keyboard;
@@ -192,8 +191,6 @@ bot.start(async (ctx) => {
     if (!isQuestionnaireFilled) {
       const url = `${MINIAPP_BASE_URL}/registration?id=${userId}`;
       console.log(`[bot] Показываю приветствие для нового пользователя`);
-
-      // Отправляем приветственное сообщение с картинкой
       // Используем оптимизированную версию для быстрой отправки
       const welcomeImageUrl = `${MINIAPP_BASE_URL}/images/welcome-optimized.png`;
       
@@ -339,9 +336,6 @@ async function handleQuestionnaireSaved(
   const telegram_id = ctx.from?.id || (ctx.callbackQuery as any)?.from?.id;
   const chat_id =
     ctx.chat?.id ||
-    (ctx.callbackQuery as any)?.message?.chat?.id ||
-    telegram_id;
-  
 
   if (!telegram_id) {
     console.log("[bot] ❌ Нет telegram_id, пропускаем обработку questionnaire_saved");
@@ -350,8 +344,6 @@ async function handleQuestionnaireSaved(
 
   if (!rawData) {
     console.log("[bot] ❌ Нет данных в web_app_data, пропускаем");
-    return;
-  }
 
   let parsedData;
   try {
