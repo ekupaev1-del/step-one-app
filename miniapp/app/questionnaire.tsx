@@ -402,40 +402,38 @@ export function QuestionnaireFormContent({ initialUserId }: { initialUserId?: st
       
       // ВАЖНО: Ждем завершения sendData ПЕРЕД закрытием Mini App
       // Это гарантирует, что бот получит сообщение
-      let sendDataSuccess = false;
-      for (let attempt = 0; attempt < 3; attempt++) {
-        sendDataSuccess = await sendDataToBot();
-        if (sendDataSuccess) {
-          console.log(`[handleSubmit] ✅ sendData успешно отправлен с попытки ${attempt + 1}`);
-          break;
+      // ВАЖНО: Всегда используем fallback через /api/notify-bot для гарантии доставки
+      // sendData может "успешно" вызваться, но данные не дойдут до бота
+      console.log("[handleSubmit] Отправка уведомления боту через /api/notify-bot...");
+      
+      try {
+        const notifyResponse = await fetch("/api/notify-bot", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({ userId }),
+        });
+        
+        if (notifyResponse.ok) {
+          console.log("[handleSubmit] ✅ Уведомление отправлено успешно через /api/notify-bot");
+        } else {
+          const errorText = await notifyResponse.text();
+          console.error("[handleSubmit] ❌ Ошибка уведомления:", errorText);
         }
-        console.warn(`[handleSubmit] ⚠️ Попытка ${attempt + 1} не удалась, пробуем еще раз...`);
-        await new Promise(resolve => setTimeout(resolve, 500));
+      } catch (notifyError) {
+        console.error("[handleSubmit] ❌ КРИТИЧЕСКАЯ ОШИБКА: Не удалось отправить уведомление:", notifyError);
       }
       
-      if (!sendDataSuccess) {
-        console.error("[handleSubmit] ❌ КРИТИЧЕСКАЯ ОШИБКА: Не удалось отправить sendData после 3 попыток!");
-        console.log("[handleSubmit] Пробуем fallback через /api/notify-bot...");
-        
-        // Fallback: используем API route для уведомления бота напрямую
-        try {
-          const notifyResponse = await fetch("/api/notify-bot", {
-            method: "POST",
-            headers: {
-              "Content-Type": "application/json",
-            },
-            body: JSON.stringify({ userId }),
-          });
-          
-          if (notifyResponse.ok) {
-            console.log("[handleSubmit] ✅ Fallback уведомление отправлено успешно через /api/notify-bot");
-          } else {
-            const errorText = await notifyResponse.text();
-            console.error("[handleSubmit] ❌ Ошибка fallback уведомления:", errorText);
-          }
-        } catch (fallbackError) {
-          console.error("[handleSubmit] ❌ КРИТИЧЕСКАЯ ОШИБКА: Fallback также не сработал:", fallbackError);
+      // Также пробуем sendData как дополнительный способ (но не полагаемся на него)
+      let sendDataSuccess = false;
+      for (let attempt = 0; attempt < 2; attempt++) {
+        sendDataSuccess = await sendDataToBot();
+        if (sendDataSuccess) {
+          console.log(`[handleSubmit] ✅ sendData также отправлен с попытки ${attempt + 1}`);
+          break;
         }
+        await new Promise(resolve => setTimeout(resolve, 300));
       }
       
       // Дополнительная задержка перед закрытием для гарантии доставки
