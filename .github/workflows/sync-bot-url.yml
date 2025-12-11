@@ -1,0 +1,113 @@
+name: 🔄 Синхронизация URL бота с Vercel Preview
+
+on:
+  # Срабатывает после успешного деплоя на Vercel (через webhook или проверку)
+  workflow_dispatch: # Ручной запуск
+  push:
+    branches:
+      - dev
+    paths:
+      - 'miniapp/**'
+      - '.github/workflows/sync-bot-url.yml'
+  # Проверяем каждые 5 минут после push в dev (на случай если Vercel еще не задеплоил)
+  schedule:
+    - cron: '*/5 * * * *' # Каждые 5 минут
+
+jobs:
+  sync-bot-url:
+    runs-on: ubuntu-latest
+    if: github.ref == 'refs/heads/dev' || github.event_name == 'workflow_dispatch'
+    
+    steps:
+      - name: 📥 Checkout код
+        uses: actions/checkout@v4
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+          fetch-depth: 0
+
+      - name: 🔧 Настройка Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+          cache-dependency-path: 'package-lock.json'
+
+      - name: 📦 Установка зависимостей (если нужно)
+        run: |
+          if [ -f "package.json" ]; then
+            npm install
+          else
+            echo "ℹ️ Корневой package.json не найден, пропускаем установку"
+          fi
+
+      - name: 🔍 Получение preview URL из Vercel
+        id: get-preview-url
+        run: |
+          echo "🔍 Получаю последний preview deployment из Vercel..."
+          
+          # Получаем последний preview deployment для ветки dev
+          RESPONSE=$(node scripts/get-vercel-preview-url.js)
+          
+          if [ -z "$RESPONSE" ] || [ "$RESPONSE" == "null" ]; then
+            echo "⚠️ Preview URL не найден. Пропускаем обновление."
+            echo "preview_url=" >> $GITHUB_OUTPUT
+            echo "should_update=false" >> $GITHUB_OUTPUT
+            exit 0
+          fi
+          
+          PREVIEW_URL=$(echo "$RESPONSE" | jq -r '.url // empty')
+          
+          if [ -z "$PREVIEW_URL" ] || [ "$PREVIEW_URL" == "null" ]; then
+            echo "⚠️ Preview URL пустой. Пропускаем обновление."
+            echo "preview_url=" >> $GITHUB_OUTPUT
+            echo "should_update=false" >> $GITHUB_OUTPUT
+            exit 0
+          fi
+          
+          echo "✅ Найден preview URL: $PREVIEW_URL"
+          echo "preview_url=$PREVIEW_URL" >> $GITHUB_OUTPUT
+          echo "should_update=true" >> $GITHUB_OUTPUT
+
+      - name: 🔄 Обновление MINIAPP_BASE_URL в боте
+        id: update-url
+        if: steps.get-preview-url.outputs.should_update == 'true'
+        run: |
+          PREVIEW_URL="${{ steps.get-preview-url.outputs.preview_url }}"
+          
+          if [ -z "$PREVIEW_URL" ]; then
+            echo "❌ Preview URL пустой, пропускаем обновление"
+            echo "has_changes=false" >> $GITHUB_OUTPUT
+            exit 0
+          fi
+          
+          echo "🔄 Обновляю MINIAPP_BASE_URL на: $PREVIEW_URL"
+          
+          # Обновляем bot/src/index.ts
+          node scripts/update-bot-url.js "$PREVIEW_URL"
+          
+          # Проверяем, были ли изменения
+          if git diff --quiet bot/src/index.ts; then
+            echo "ℹ️ URL уже актуален, изменений не требуется"
+            echo "has_changes=false" >> $GITHUB_OUTPUT
+          else
+            echo "✅ Файл обновлен"
+            echo "has_changes=true" >> $GITHUB_OUTPUT
+          fi
+
+      - name: 💾 Коммит и push изменений
+        if: steps.get-preview-url.outputs.should_update == 'true' && steps.update-url.outputs.has_changes == 'true'
+        run: |
+          git config --local user.email "action@github.com"
+          git config --local user.name "GitHub Action"
+          
+          git add bot/src/index.ts
+          git commit -m "🤖 Автообновление: синхронизация MINIAPP_BASE_URL с Vercel Preview [skip vercel]"
+          
+          echo "📤 Пушим изменения в dev..."
+          git push origin dev
+
+      - name: 📊 Результат
+        run: |
+          echo "✅ Синхронизация завершена"
+          echo "Preview URL: ${{ steps.get-preview-url.outputs.preview_url }}"
+          echo "Обновлено: ${{ steps.update-url.outputs.has_changes }}"
