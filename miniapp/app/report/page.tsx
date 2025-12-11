@@ -659,13 +659,18 @@ function ReportPageContent() {
                 })}
               </h2>
             </button>
-            
             <button
-              onClick={() => changeDay(1)}
-              disabled={loadingDayReport || loading}
-              className="px-4 py-2 bg-accent/20 text-accent font-medium rounded-lg hover:bg-accent/30 transition-colors disabled:opacity-50"
-              title="Следующий день"
+              onClick={() => setShowCalendar(true)}
+              className="flex-1 mx-4"
             >
+              <h2 className="text-xl font-bold text-textPrimary text-center hover:text-accent transition-colors cursor-pointer underline decoration-2 underline-offset-2">
+                {new Date(selectedDate).toLocaleDateString("ru-RU", {
+                  day: "numeric",
+                  month: "long",
+                  year: "numeric"
+                })}
+              </h2>
+            </button>
               →
             </button>
           </div>
