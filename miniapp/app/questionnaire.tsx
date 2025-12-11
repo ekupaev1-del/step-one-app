@@ -742,8 +742,6 @@ export function QuestionnaireFormContent({ initialUserId }: { initialUserId?: st
               </div>
             </div>
           )}
-          )}
-
           {loading && (
             <div className="text-center text-textSecondary text-sm py-2 mb-4">
               Сохранение...
