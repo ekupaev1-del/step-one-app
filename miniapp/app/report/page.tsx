@@ -1,7 +1,7 @@
 "use client";
 
 import { useSearchParams } from "next/navigation";
-import { useState, useEffect, Suspense, useRef } from "react";
+import { useState, useEffect, Suspense, useRef, type ReactElement } from "react";
 import "../globals.css";
 import AppLayout from "../components/AppLayout";
 import DayNutritionInfographic from "../components/DayNutritionInfographic";
@@ -58,7 +58,7 @@ function LoadingFallback() {
   );
 }
 
-function ReportPageContent() {
+function ReportPageContent(): ReactElement {
   const searchParams = useSearchParams();
   const userIdParam = searchParams.get("id");
   
