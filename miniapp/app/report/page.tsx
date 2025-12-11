@@ -1011,6 +1011,7 @@ function ReportPageContent(): JSX.Element {
     </AppLayout>
   );
 }
+}
 
 function EditMealForm({
   meal,
