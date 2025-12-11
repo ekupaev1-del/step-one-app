@@ -30,3 +30,9 @@ COMMENT ON COLUMN users.water_goal_ml IS 'Дневная норма воды в 
 
 
 
+
+
+
+
+
+
