@@ -415,6 +415,27 @@ export function QuestionnaireFormContent({ initialUserId }: { initialUserId?: st
       
       if (!sendDataSuccess) {
         console.error("[handleSubmit] ❌ КРИТИЧЕСКАЯ ОШИБКА: Не удалось отправить sendData после 3 попыток!");
+        console.log("[handleSubmit] Пробуем fallback через /api/notify-bot...");
+        
+        // Fallback: используем API route для уведомления бота напрямую
+        try {
+          const notifyResponse = await fetch("/api/notify-bot", {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+            },
+            body: JSON.stringify({ userId }),
+          });
+          
+          if (notifyResponse.ok) {
+            console.log("[handleSubmit] ✅ Fallback уведомление отправлено успешно через /api/notify-bot");
+          } else {
+            const errorText = await notifyResponse.text();
+            console.error("[handleSubmit] ❌ Ошибка fallback уведомления:", errorText);
+          }
+        } catch (fallbackError) {
+          console.error("[handleSubmit] ❌ КРИТИЧЕСКАЯ ОШИБКА: Fallback также не сработал:", fallbackError);
+        }
       }
       
       // Дополнительная задержка перед закрытием для гарантии доставки
