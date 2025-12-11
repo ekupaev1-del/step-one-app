@@ -415,27 +415,6 @@ export function QuestionnaireFormContent({ initialUserId }: { initialUserId?: st
       
       if (!sendDataSuccess) {
         console.error("[handleSubmit] ❌ КРИТИЧЕСКАЯ ОШИБКА: Не удалось отправить sendData после 3 попыток!");
-        
-        // Fallback: уведомляем бота напрямую через API, чтобы он отправил подтверждение и меню
-        try {
-          console.log("[handleSubmit] ⚠️ Запуск резервного уведомления бота через /api/notify-bot");
-          const notifyResponse = await fetch("/api/notify-bot", {
-            method: "POST",
-            headers: {
-              "Content-Type": "application/json"
-            },
-            body: JSON.stringify({ userId })
-          });
-          
-          if (!notifyResponse.ok) {
-            const notifyData = await notifyResponse.json().catch(() => ({}));
-            console.error("[handleSubmit] ❌ Резервное уведомление бота не удалось:", notifyData);
-          } else {
-            console.log("[handleSubmit] ✅ Резервное уведомление бота отправлено");
-          }
-        } catch (notifyError) {
-          console.error("[handleSubmit] ❌ Ошибка резервного уведомления бота:", notifyError);
-        }
       }
       
       // Дополнительная задержка перед закрытием для гарантии доставки
@@ -694,14 +673,16 @@ export function QuestionnaireFormContent({ initialUserId }: { initialUserId?: st
           </h2>
           {calories && protein && fat && carbs && (
             <div className="grid grid-cols-2 gap-4 mb-8">
-              {/* Калории */}
-              <div className="p-5 bg-white rounded-xl border border-gray-100 shadow-sm">
-                <div className="flex items-center gap-2 mb-2">
-                  <span className="text-lg">🔥</span>
-                  <span className="text-xs text-textSecondary">Калории</span>
+              {/* Вода */}
+              {waterGoal && (
+                <div className="p-5 bg-white rounded-xl border border-gray-100 shadow-sm">
+                  <div className="flex items-center gap-2 mb-2">
+                    <span className="text-lg">💧</span>
+                    <span className="text-xs text-textSecondary">Вода</span>
+                  </div>
+                  <div className="text-2xl font-bold text-textPrimary">{waterGoal} <span className="text-sm font-normal text-textSecondary">мл/день</span></div>
                 </div>
-                <div className="text-2xl font-bold text-textPrimary">{calories} <span className="text-sm font-normal text-textSecondary">ккал</span></div>
-              </div>
+              )}
 
               {/* Белки */}
               <div className="p-5 bg-white rounded-xl border border-gray-100 shadow-sm">
@@ -730,16 +711,14 @@ export function QuestionnaireFormContent({ initialUserId }: { initialUserId?: st
                 <div className="text-2xl font-bold text-textPrimary">{carbs} <span className="text-sm font-normal text-textSecondary">г</span></div>
               </div>
 
-              {/* Вода */}
-              {waterGoal && (
-                <div className="p-5 bg-white rounded-xl border border-gray-100 shadow-sm col-span-2">
-                  <div className="flex items-center gap-2 mb-2">
-                    <span className="text-lg">💧</span>
-                    <span className="text-xs text-textSecondary">Вода</span>
-                  </div>
-                  <div className="text-2xl font-bold text-textPrimary">{waterGoal} <span className="text-sm font-normal text-textSecondary">мл/день</span></div>
+              {/* Калории */}
+              <div className="p-5 bg-white rounded-xl border border-gray-100 shadow-sm col-span-2">
+                <div className="flex items-center justify-center gap-2 mb-2">
+                  <span className="text-lg">🔥</span>
+                  <span className="text-xs text-textSecondary">Калории</span>
                 </div>
-              )}
+                <div className="text-2xl font-bold text-textPrimary text-center">{calories} <span className="text-sm font-normal text-textSecondary">ккал</span></div>
+              </div>
             </div>
           )}
 
