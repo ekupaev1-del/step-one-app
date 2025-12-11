@@ -576,8 +576,6 @@ function ReportPageContent() {
     setError(null);
     setEditingMeal(null);
     loadDayReport(newDateKey, true);
-    loadCalendar();
-  };
 
 
   /**
