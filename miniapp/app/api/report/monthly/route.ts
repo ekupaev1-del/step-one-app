@@ -117,11 +117,17 @@ export async function GET(req: Request) {
     }
 
     // Агрегируем данные по дням
+    // ВАЖНО: Используем локальное время для правильной группировки по дням
+    // toISOString() возвращает UTC, что может сдвигать дату для пользователей в отрицательных часовых поясах
     const dataByDate = new Map<string, { calories: number; protein: number; fat: number; carbs: number }>();
     
     (meals || []).forEach(meal => {
       const mealDate = new Date(meal.created_at);
-      const dayKey = mealDate.toISOString().split("T")[0]; // YYYY-MM-DD
+      // Используем локальное время для получения правильной даты
+      const year = mealDate.getFullYear();
+      const month = String(mealDate.getMonth() + 1).padStart(2, '0');
+      const day = String(mealDate.getDate()).padStart(2, '0');
+      const dayKey = `${year}-${month}-${day}`; // YYYY-MM-DD в локальном времени
       
       const current = dataByDate.get(dayKey) || { calories: 0, protein: 0, fat: 0, carbs: 0 };
       dataByDate.set(dayKey, {
@@ -157,6 +163,9 @@ export async function GET(req: Request) {
     );
   }
 }
+
+
+
 
 
 
