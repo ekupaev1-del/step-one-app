@@ -578,8 +578,6 @@ function ReportPageContent() {
     loadDayReport(newDateKey, true);
     loadCalendar();
   };
-    loadCalendar();
-  };
 
 
   /**
