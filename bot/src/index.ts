@@ -70,6 +70,7 @@ function getMainMenuKeyboard(userId: number | null = null): any {
   // Логируем для отладки
   console.log("[getMainMenuKeyboard] userId:", userId);
   console.log("[getMainMenuKeyboard] baseUrl:", baseUrl);
+  console.log("[getMainMenuKeyboard] MINIAPP_BASE_URL:", MINIAPP_BASE_URL);
   console.log("[getMainMenuKeyboard] profileUrl:", profileUrl);
   console.log("[getMainMenuKeyboard] reportUrl:", reportUrl);
 
@@ -191,6 +192,8 @@ bot.start(async (ctx) => {
     // Если анкета не заполнена - показываем приветствие (только новая анкета)
     if (!isQuestionnaireFilled) {
       const url = `${MINIAPP_BASE_URL}/registration?id=${userId}`;
+      console.log(`[bot] MINIAPP_BASE_URL:`, MINIAPP_BASE_URL);
+      console.log(`[bot] Registration URL:`, url);
       console.log(`[bot] Показываю приветствие для нового пользователя`);
 
       // Отправляем приветственное сообщение с картинкой
