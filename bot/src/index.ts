@@ -12,10 +12,11 @@ import { startReminderScheduler } from "./services/reminderScheduler.js";
 const bot = new Telegraf(env.telegramBotToken);
 
 // Миниап URL
-// Используем preview URL для dev ветки для тестирования
+// ВАЖНО: Используем ТОЛЬКО production домен для стабильности
+// Preview деплои создают разные домены каждый раз - это ломает web_app URLs
 const MINIAPP_BASE_URL =
   process.env.MINIAPP_BASE_URL ||
-  "https://step-one-app-git-dev-emins-projects-4717eabc.vercel.app";
+  "https://step-one-app.vercel.app";
 
 // ░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░
 //      ЕДИНАЯ ФУНКЦИЯ ГЛАВНОГО МЕНЮ
@@ -37,9 +38,8 @@ const MINIAPP_BASE_URL =
  * @returns Объект reply_markup с клавиатурой
  */
 function getMainMenuKeyboard(userId: number | null = null): any {
-  // ВАЖНО: Используем ТОЛЬКО production URL для стабильности
-  // Preview деплои создают разные домены - это ломает web_app URLs в Telegram
-  const baseUrl = (MINIAPP_BASE_URL || "https://step-one-app.vercel.app").trim().replace(/\/$/, '');
+  // Используем preview URL для dev ветки
+  const baseUrl = (MINIAPP_BASE_URL || "https://step-one-app-git-dev-emins-projects-4717eabc.vercel.app").trim().replace(/\/$/, '');
   
   // ВАЖНО: URL должны быть правильными - /profile и /report (не /reports!)
   const reportUrl = userId ? `${baseUrl}/report?id=${userId}` : undefined;
