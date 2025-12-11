@@ -659,6 +659,12 @@ function ReportPageContent() {
                 })}
               </h2>
             </button>
+            <button
+              onClick={() => changeDay(1)}
+              disabled={loadingDayReport || loading}
+              className="px-4 py-2 bg-accent/20 text-accent font-medium rounded-lg hover:bg-accent/30 transition-colors disabled:opacity-50"
+              title="Следующий день"
+            >
               →
             </button>
           </div>
