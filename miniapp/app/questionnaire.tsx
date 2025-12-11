@@ -379,9 +379,18 @@ export function QuestionnaireFormContent({ initialUserId }: { initialUserId?: st
             });
             console.log("[handleSubmit] Отправка данных в бот:", dataToSend);
             
+            // #region agent log
+            fetch('http://127.0.0.1:7242/ingest/43e8883f-375d-4d43-af6f-fef79b5ebbe3',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'miniapp/app/questionnaire.tsx:384',message:'Before sendData call',data:{userId,dataToSend},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'D'})}).catch(()=>{});
+            // #endregion
+            
             // ВАЖНО: sendData должен быть вызван синхронно
             // Telegram WebApp API отправляет данные немедленно, но мы даем время на обработку
             webApp.sendData(dataToSend);
+            
+            // #region agent log
+            fetch('http://127.0.0.1:7242/ingest/43e8883f-375d-4d43-af6f-fef79b5ebbe3',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'miniapp/app/questionnaire.tsx:387',message:'sendData called',data:{userId},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'D'})}).catch(()=>{});
+            // #endregion
+            
             console.log("[handleSubmit] ✅ sendData вызван");
             
             // КРИТИЧЕСКИ ВАЖНО: Даем достаточно времени Telegram API обработать сообщение
@@ -673,16 +682,14 @@ export function QuestionnaireFormContent({ initialUserId }: { initialUserId?: st
           </h2>
           {calories && protein && fat && carbs && (
             <div className="grid grid-cols-2 gap-4 mb-8">
-              {/* Вода */}
-              {waterGoal && (
-                <div className="p-5 bg-white rounded-xl border border-gray-100 shadow-sm">
-                  <div className="flex items-center gap-2 mb-2">
-                    <span className="text-lg">💧</span>
-                    <span className="text-xs text-textSecondary">Вода</span>
-                  </div>
-                  <div className="text-2xl font-bold text-textPrimary">{waterGoal} <span className="text-sm font-normal text-textSecondary">мл/день</span></div>
+              {/* Калории */}
+              <div className="p-5 bg-white rounded-xl border border-gray-100 shadow-sm">
+                <div className="flex items-center gap-2 mb-2">
+                  <span className="text-lg">🔥</span>
+                  <span className="text-xs text-textSecondary">Калории</span>
                 </div>
-              )}
+                <div className="text-2xl font-bold text-textPrimary">{calories} <span className="text-sm font-normal text-textSecondary">ккал</span></div>
+              </div>
 
               {/* Белки */}
               <div className="p-5 bg-white rounded-xl border border-gray-100 shadow-sm">
@@ -711,14 +718,16 @@ export function QuestionnaireFormContent({ initialUserId }: { initialUserId?: st
                 <div className="text-2xl font-bold text-textPrimary">{carbs} <span className="text-sm font-normal text-textSecondary">г</span></div>
               </div>
 
-              {/* Калории */}
-              <div className="p-5 bg-white rounded-xl border border-gray-100 shadow-sm col-span-2">
-                <div className="flex items-center justify-center gap-2 mb-2">
-                  <span className="text-lg">🔥</span>
-                  <span className="text-xs text-textSecondary">Калории</span>
+              {/* Вода */}
+              {waterGoal && (
+                <div className="p-5 bg-white rounded-xl border border-gray-100 shadow-sm col-span-2">
+                  <div className="flex items-center gap-2 mb-2">
+                    <span className="text-lg">💧</span>
+                    <span className="text-xs text-textSecondary">Вода</span>
+                  </div>
+                  <div className="text-2xl font-bold text-textPrimary">{waterGoal} <span className="text-sm font-normal text-textSecondary">мл/день</span></div>
                 </div>
-                <div className="text-2xl font-bold text-textPrimary text-center">{calories} <span className="text-sm font-normal text-textSecondary">ккал</span></div>
-              </div>
+              )}
             </div>
           )}
 

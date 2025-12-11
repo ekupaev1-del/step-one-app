@@ -38,7 +38,7 @@ const MINIAPP_BASE_URL =
  * @returns Объект reply_markup с клавиатурой
  */
 function getMainMenuKeyboard(userId: number | null = null): any {
-  // Используем preview URL для dev ветки
+  // Используем preview URL для dev ветки чтобы видеть обновления
   const baseUrl = (MINIAPP_BASE_URL || "https://step-one-app-git-dev-emins-projects-4717eabc.vercel.app").trim().replace(/\/$/, '');
   
   // ВАЖНО: URL должны быть правильными - /profile и /report (не /reports!)
