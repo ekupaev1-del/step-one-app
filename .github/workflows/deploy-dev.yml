@@ -1,0 +1,188 @@
+name: 🚀 Автоматический деплой бота (dev)
+
+on:
+  push:
+    branches:
+      - dev
+    paths:
+      - 'bot/**'
+      - 'miniapp/**'
+      - '.github/workflows/deploy-dev.yml'
+  workflow_dispatch: # Ручной запуск
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    if: github.ref == 'refs/heads/dev'
+    
+    steps:
+      - name: 📥 Checkout код
+        uses: actions/checkout@v4
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+          fetch-depth: 0
+
+      - name: 🔧 Настройка Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+          cache-dependency-path: 'bot/package-lock.json'
+
+      - name: 📦 Установка зависимостей бота
+        working-directory: ./bot
+        run: npm ci
+
+      - name: 🔨 Сборка бота
+        working-directory: ./bot
+        run: npm run build
+
+      - name: 🔍 Получение preview URL из Vercel
+        id: get-preview-url
+        env:
+          VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
+          VERCEL_PROJECT_ID: ${{ secrets.VERCEL_PROJECT_ID }}
+        run: |
+          echo "🔍 Получаю последний preview deployment из Vercel..."
+          
+          # Устанавливаем Vercel CLI
+          npm install -g vercel@latest
+          
+          # Получаем последний preview deployment
+          PREVIEW_URL=$(node scripts/get-vercel-preview-url.js | jq -r '.url // empty')
+          
+          if [ -z "$PREVIEW_URL" ] || [ "$PREVIEW_URL" == "null" ]; then
+            echo "⚠️ Preview URL не найден. Используем последний известный или production."
+            PREVIEW_URL="https://step-one-app.vercel.app"
+          fi
+          
+          echo "✅ Найден preview URL: $PREVIEW_URL"
+          echo "preview_url=$PREVIEW_URL" >> $GITHUB_OUTPUT
+
+      - name: ✅ Проверка доступности preview URL
+        id: health-check-url
+        run: |
+          PREVIEW_URL="${{ steps.get-preview-url.outputs.preview_url }}"
+          echo "🔍 Проверяю доступность: $PREVIEW_URL"
+          
+          HTTP_CODE=$(curl -s -o /dev/null -w "%{http_code}" --max-time 10 "$PREVIEW_URL" || echo "000")
+          
+          if [ "$HTTP_CODE" == "200" ] || [ "$HTTP_CODE" == "301" ] || [ "$HTTP_CODE" == "302" ]; then
+            echo "✅ URL доступен (HTTP $HTTP_CODE)"
+            echo "url_valid=true" >> $GITHUB_OUTPUT
+          else
+            echo "⚠️ URL недоступен (HTTP $HTTP_CODE), но продолжаем"
+            echo "url_valid=false" >> $GITHUB_OUTPUT
+          fi
+
+      - name: 🔄 Обновление MINIAPP_BASE_URL
+        id: update-url
+        run: |
+          PREVIEW_URL="${{ steps.get-preview-url.outputs.preview_url }}"
+          
+          echo "🔄 Обновляю MINIAPP_BASE_URL на: $PREVIEW_URL"
+          
+          # Обновляем bot/src/index.ts
+          node scripts/update-bot-url.js "$PREVIEW_URL"
+          
+          # Проверяем, были ли изменения
+          if git diff --quiet bot/src/index.ts; then
+            echo "ℹ️ URL уже актуален, изменений не требуется"
+            echo "has_changes=false" >> $GITHUB_OUTPUT
+          else
+            echo "✅ Файл обновлен"
+            echo "has_changes=true" >> $GITHUB_OUTPUT
+            git diff bot/src/index.ts
+          fi
+
+      - name: 💾 Коммит и push изменений
+        id: commit
+        if: steps.update-url.outputs.has_changes == 'true'
+        run: |
+          git config --local user.email "action@github.com"
+          git config --local user.name "GitHub Action"
+          
+          git add bot/src/index.ts
+          git commit -m "🤖 Автообновление: синхронизация MINIAPP_BASE_URL с Vercel Preview [skip vercel]"
+          
+          # Сохраняем хеш коммита ПЕРЕД push
+          COMMIT_HASH=$(git rev-parse HEAD)
+          echo "commit_hash=$COMMIT_HASH" >> $GITHUB_OUTPUT
+          echo "✅ Коммит создан: $COMMIT_HASH"
+          
+          echo "📤 Пушим изменения в dev..."
+          git push origin dev
+
+      - name: 🔄 Рестарт бота на сервере (SSH)
+        if: steps.update-url.outputs.has_changes == 'true' && secrets.SSH_HOST != ''
+        env:
+          SSH_HOST: ${{ secrets.SSH_HOST }}
+          SSH_USER: ${{ secrets.SSH_USER }}
+          SSH_KEY: ${{ secrets.SSH_PRIVATE_KEY }}
+        run: |
+          echo "🔄 Подключаюсь к серверу для рестарта бота..."
+          
+          # Создаем временный файл для SSH ключа
+          mkdir -p ~/.ssh
+          echo "$SSH_KEY" > ~/.ssh/deploy_key
+          chmod 600 ~/.ssh/deploy_key
+          
+          # Добавляем сервер в known_hosts
+          ssh-keyscan -H "$SSH_HOST" >> ~/.ssh/known_hosts 2>/dev/null || true
+          
+          # Выполняем команды на сервере
+          ssh -i ~/.ssh/deploy_key -o StrictHostKeyChecking=no "$SSH_USER@$SSH_HOST" << 'EOF'
+            cd /path/to/step-one-app/bot || cd ~/step-one-app/bot || cd /opt/step-one-app/bot
+            git pull origin dev
+            npm install --production
+            npm run build
+            pm2 restart step-one-bot || pm2 start ecosystem.config.js
+            pm2 save
+            echo "✅ Бот перезапущен"
+          EOF
+          
+          echo "✅ Рестарт бота выполнен"
+
+      - name: 🏥 Health-check бота
+        id: health-check-bot
+        if: steps.update-url.outputs.has_changes == 'true'
+        env:
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TEST_CHAT_ID: ${{ secrets.TEST_CHAT_ID }}
+        run: |
+          echo "🏥 Выполняю health-check бота..."
+          
+          if [ -z "$TELEGRAM_BOT_TOKEN" ] || [ -z "$TEST_CHAT_ID" ]; then
+            echo "⚠️ TELEGRAM_BOT_TOKEN или TEST_CHAT_ID не установлены, пропускаю health-check"
+            echo "health_check=skipped" >> $GITHUB_OUTPUT
+            exit 0
+          fi
+          
+          # Отправляем тестовое сообщение
+          RESPONSE=$(curl -s -X POST "https://api.telegram.org/bot$TELEGRAM_BOT_TOKEN/sendMessage" \
+            -d "chat_id=$TEST_CHAT_ID" \
+            -d "text=🧪 Health-check: бот обновлен и работает" \
+            -d "parse_mode=HTML")
+          
+          if echo "$RESPONSE" | grep -q '"ok":true'; then
+            echo "✅ Health-check пройден: бот отвечает"
+            echo "health_check=ok" >> $GITHUB_OUTPUT
+          else
+            echo "⚠️ Health-check не пройден, но это не критично"
+            echo "health_check=failed" >> $GITHUB_OUTPUT
+          fi
+
+      - name: 📊 Итоговый отчет
+        run: |
+          echo "## 🎉 Деплой завершен" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### 📋 Результаты:" >> $GITHUB_STEP_SUMMARY
+          echo "- **Preview URL:** ${{ steps.get-preview-url.outputs.preview_url }}" >> $GITHUB_STEP_SUMMARY
+          echo "- **URL валиден:** ${{ steps.health-check-url.outputs.url_valid }}" >> $GITHUB_STEP_SUMMARY
+          echo "- **Изменения:** ${{ steps.update-url.outputs.has_changes }}" >> $GITHUB_STEP_SUMMARY
+          if [ "${{ steps.update-url.outputs.has_changes }}" == "true" ] && [ -n "${{ steps.commit.outputs.commit_hash }}" ]; then
+            echo "- **Коммит:** \`${{ steps.commit.outputs.commit_hash }}\`" >> $GITHUB_STEP_SUMMARY
+          fi
+          echo "- **Health-check:** ${{ steps.health-check-bot.outputs.health_check }}" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "✅ Все шаги выполнены успешно!" >> $GITHUB_STEP_SUMMARY

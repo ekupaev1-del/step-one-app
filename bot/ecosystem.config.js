@@ -3,7 +3,6 @@ module.exports = {
     {
       name: "step-one-bot",
       script: "dist/index.js",
-      cwd: "/path/to/step-one-app/bot",
       instances: 1,
       exec_mode: "fork",
       watch: false,
@@ -18,6 +17,12 @@ module.exports = {
       autorestart: true,
       max_restarts: 10,
       min_uptime: "10s",
+      // Автоматический рестарт при изменении файлов (опционально)
+      watch: false, // Отключено для стабильности, можно включить для dev
+      ignore_watch: ["node_modules", "logs", "*.log"],
+      // Хуки для автоматического рестарта после деплоя
+      restart_delay: 4000,
+      exp_backoff_restart_delay: 100,
     },
   ],
 };
