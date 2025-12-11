@@ -415,6 +415,27 @@ export function QuestionnaireFormContent({ initialUserId }: { initialUserId?: st
       
       if (!sendDataSuccess) {
         console.error("[handleSubmit] ❌ КРИТИЧЕСКАЯ ОШИБКА: Не удалось отправить sendData после 3 попыток!");
+        
+        // Fallback: уведомляем бота напрямую через API, чтобы он отправил подтверждение и меню
+        try {
+          console.log("[handleSubmit] ⚠️ Запуск резервного уведомления бота через /api/notify-bot");
+          const notifyResponse = await fetch("/api/notify-bot", {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json"
+            },
+            body: JSON.stringify({ userId })
+          });
+          
+          if (!notifyResponse.ok) {
+            const notifyData = await notifyResponse.json().catch(() => ({}));
+            console.error("[handleSubmit] ❌ Резервное уведомление бота не удалось:", notifyData);
+          } else {
+            console.log("[handleSubmit] ✅ Резервное уведомление бота отправлено");
+          }
+        } catch (notifyError) {
+          console.error("[handleSubmit] ❌ Ошибка резервного уведомления бота:", notifyError);
+        }
       }
       
       // Дополнительная задержка перед закрытием для гарантии доставки
