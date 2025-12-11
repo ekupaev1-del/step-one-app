@@ -93,9 +93,3 @@ function getDayStatus(actualCalories: number, targetCalories: number): "green" |
 
 
 
-
-
-
-
-
-
