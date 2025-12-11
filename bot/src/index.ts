@@ -70,7 +70,6 @@ function getMainMenuKeyboard(userId: number | null = null): any {
   // Логируем для отладки
   console.log("[getMainMenuKeyboard] userId:", userId);
   console.log("[getMainMenuKeyboard] baseUrl:", baseUrl);
-  console.log("[getMainMenuKeyboard] MINIAPP_BASE_URL:", MINIAPP_BASE_URL);
   console.log("[getMainMenuKeyboard] profileUrl:", profileUrl);
   console.log("[getMainMenuKeyboard] reportUrl:", reportUrl);
 
@@ -192,8 +191,6 @@ bot.start(async (ctx) => {
     // Если анкета не заполнена - показываем приветствие (только новая анкета)
     if (!isQuestionnaireFilled) {
       const url = `${MINIAPP_BASE_URL}/registration?id=${userId}`;
-      console.log(`[bot] MINIAPP_BASE_URL:`, MINIAPP_BASE_URL);
-      console.log(`[bot] Registration URL:`, url);
       console.log(`[bot] Показываю приветствие для нового пользователя`);
 
       // Отправляем приветственное сообщение с картинкой
@@ -291,7 +288,6 @@ bot.start(async (ctx) => {
     // Если анкета заполнена - показываем единое главное меню
     // ВАЖНО: Отправляем ОДНО сообщение с текстом и меню вместе
     console.log("[bot] /start: отправка меню для пользователя с id:", userId);
-    console.log("[bot] /start: MINIAPP_BASE_URL:", MINIAPP_BASE_URL);
     
     // Используем getMainMenuKeyboard для получения меню
     const menu = getMainMenuKeyboard(userId);
@@ -339,9 +335,6 @@ async function handleQuestionnaireSaved(
   source: "message" | "callback_query"
 ) {
   console.log(`[bot] ========== ПОЛУЧЕНЫ ДАННЫЕ ИЗ WEBAPP (source=${source}) ==========`);
-  console.log(`[bot] [handleQuestionnaireSaved] rawData тип:`, typeof rawData);
-  console.log(`[bot] [handleQuestionnaireSaved] rawData длина:`, rawData?.length);
-  console.log(`[bot] [handleQuestionnaireSaved] rawData содержимое:`, rawData);
 
   const telegram_id = ctx.from?.id || (ctx.callbackQuery as any)?.from?.id;
   const chat_id =
@@ -349,8 +342,6 @@ async function handleQuestionnaireSaved(
     (ctx.callbackQuery as any)?.message?.chat?.id ||
     telegram_id;
   
-  console.log(`[bot] [handleQuestionnaireSaved] telegram_id:`, telegram_id);
-  console.log(`[bot] [handleQuestionnaireSaved] chat_id:`, chat_id);
 
   if (!telegram_id) {
     console.log("[bot] ❌ Нет telegram_id, пропускаем обработку questionnaire_saved");
