@@ -636,18 +636,6 @@ function ReportPageContent() {
       <AppLayout>
         <div key={`report-${selectedDate}-${refreshKey}`} className="min-h-screen bg-background p-4 py-8">
         <div className="max-w-md mx-auto bg-white rounded-2xl shadow-soft p-8">
-          {/* Месяц сверху - кликабельный для открытия календаря */}
-          <div className="mb-4">
-            <button
-              onClick={() => setShowCalendar(true)}
-              className="w-full"
-            >
-              <h3 className="text-lg font-semibold text-textPrimary text-center hover:text-accent transition-colors cursor-pointer">
-                📅 {new Date(selectedDate).toLocaleDateString("ru-RU", { month: "long", year: "numeric" })}
-              </h3>
-            </button>
-          </div>
-
           {/* Навигация по дням с стрелками */}
           <div className="flex items-center justify-between mb-6">
             <button
@@ -659,13 +647,18 @@ function ReportPageContent() {
               ←
             </button>
             
-            <h2 className="text-xl font-bold text-textPrimary text-center flex-1 mx-4">
-              📋 Отчёт за {new Date(selectedDate).toLocaleDateString("ru-RU", {
-                day: "numeric",
-                month: "long",
-                year: "numeric"
-              })}
-            </h2>
+            <button
+              onClick={() => setShowCalendar(true)}
+              className="flex-1 mx-4"
+            >
+              <h2 className="text-xl font-bold text-textPrimary text-center hover:text-accent transition-colors cursor-pointer underline decoration-2 underline-offset-2">
+                {new Date(selectedDate).toLocaleDateString("ru-RU", {
+                  day: "numeric",
+                  month: "long",
+                  year: "numeric"
+                })}
+              </h2>
+            </button>
             
             <button
               onClick={() => changeDay(1)}
