@@ -177,3 +177,10 @@ export default function DayNutritionInfographic({ stats }: { stats: DayStats }) 
 
 
 
+
+
+
+
+
+
+
