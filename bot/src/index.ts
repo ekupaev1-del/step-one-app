@@ -338,8 +338,6 @@ async function handleQuestionnaireSaved(
     ctx.chat?.id ||
     (ctx.callbackQuery as any)?.message?.chat?.id ||
     telegram_id;
-    (ctx.callbackQuery as any)?.message?.chat?.id ||
-    telegram_id;
   if (!telegram_id) {
     console.log("[bot] ❌ Нет telegram_id, пропускаем обработку questionnaire_saved");
     return;

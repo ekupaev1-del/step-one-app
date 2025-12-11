@@ -603,44 +603,71 @@ function ReportPageContent() {
       <AppLayout>
         <div key={`report-${selectedDate}-${refreshKey}`} className="min-h-screen bg-background p-4 py-8">
         <div className="max-w-md mx-auto bg-white rounded-2xl shadow-soft p-8">
+          {/* Месяц сверху */}
+          <div className="mb-4">
+            <h3 className="text-lg font-semibold text-textPrimary text-center">
+              {new Date(selectedDate).toLocaleDateString("ru-RU", { month: "long", year: "numeric" })}
+            </h3>
+          </div>
+
+          {/* Навигация по дням с стрелками */}
           <div className="flex items-center justify-between mb-6">
-            <h2 className="text-xl font-bold text-textPrimary">
+            <button
+              onClick={() => changeDay(-1)}
+              disabled={loadingDayReport || loading}
+              className="px-4 py-2 bg-accent/20 text-accent font-medium rounded-lg hover:bg-accent/30 transition-colors disabled:opacity-50"
+              title="Предыдущий день"
+            >
+              ←
+            </button>
+            
+            <h2 className="text-xl font-bold text-textPrimary text-center flex-1 mx-4">
               📋 Отчёт за {new Date(selectedDate).toLocaleDateString("ru-RU", {
                 day: "numeric",
                 month: "long",
                 year: "numeric"
               })}
             </h2>
-            <div className="flex items-center gap-2">
-              <button
-                onClick={() => {
-                  console.log("[manual-refresh] Ручное обновление отчёта");
-                  setDayReport(null);
-                  setLoadingDayReport(true);
-                  loadDayReport(selectedDate);
-                  loadCalendar();
-                }}
-                disabled={loadingDayReport || loading}
-                className="px-3 py-1.5 text-sm bg-accent/20 text-accent font-medium rounded-lg hover:bg-accent/30 transition-colors disabled:opacity-50"
-                title="Обновить отчёт"
-              >
-                🔄
-              </button>
-              <button
-                onClick={() => {
-                  setSelectedDate(null);
-                  setDayReport(null);
-                  setEditingMeal(null);
-                  // Обновляем календарь при возврате
-                  loadCalendar();
-                }}
-                className="text-textSecondary hover:text-textPrimary"
-              >
-                ← Назад
-              </button>
-            </div>
+            
+            <button
+              onClick={() => changeDay(1)}
+              disabled={loadingDayReport || loading}
+              className="px-4 py-2 bg-accent/20 text-accent font-medium rounded-lg hover:bg-accent/30 transition-colors disabled:opacity-50"
+              title="Следующий день"
+            >
+              →
+            </button>
           </div>
 
+          {/* Кнопки действий */}
+          <div className="flex items-center justify-between mb-4">
+            <button
+              onClick={() => {
+                setSelectedDate(null);
+                setDayReport(null);
+                setEditingMeal(null);
+                // Обновляем календарь при возврате
+                loadCalendar();
+              }}
+              className="text-textSecondary hover:text-textPrimary text-sm"
+            >
+              ← Назад к календарю
+            </button>
+            <button
+              onClick={() => {
+                console.log("[manual-refresh] Ручное обновление отчёта");
+                setDayReport(null);
+                setLoadingDayReport(true);
+                loadDayReport(selectedDate);
+                loadCalendar();
+              }}
+              disabled={loadingDayReport || loading}
+              className="px-3 py-1.5 text-sm bg-accent/20 text-accent font-medium rounded-lg hover:bg-accent/30 transition-colors disabled:opacity-50"
+              title="Обновить отчёт"
+            >
+              🔄
+            </button>
+          </div>
           {error && (
             <div className="p-4 bg-red-50 border border-red-200 rounded-lg text-red-700 text-sm mb-4">
               {error}
