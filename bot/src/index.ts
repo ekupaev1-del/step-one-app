@@ -85,21 +85,40 @@ function getMainMenuKeyboard(userId: number | null = null): any {
  * @param message - Текст сообщения (опционально)
  * @returns Promise<void>
  */
-async function sendMainMenu(ctx: any, userId: number | null, message?: string): Promise<void> {
+async function sendMainMenu(
+  ctx: any,
+  userId: number | null,
+  message?: string,
+  chatIdOverride?: number
+): Promise<void> {
   try {
+    const targetChatId = chatIdOverride ?? ctx.chat?.id ?? ctx.from?.id;
+    if (!targetChatId) {
+      console.error("[sendMainMenu] ❌ Нет chatId для отправки меню", {
+        chatFromCtx: ctx.chat?.id,
+        fromId: ctx.from?.id,
+        chatIdOverride
+      });
+      throw new Error("chatId is missing for sendMainMenu");
+    }
+
     const menu = getMainMenuKeyboard(userId);
     const menuText = message || "Выберите действие:";
     
     console.log("[sendMainMenu] Отправка меню для userId:", userId);
     console.log("[sendMainMenu] MINIAPP_BASE_URL:", MINIAPP_BASE_URL);
-    console.log("[sendMainMenu] Chat ID:", ctx.chat?.id);
+    console.log("[sendMainMenu] Chat ID:", targetChatId);
     
-    await ctx.reply(menuText, {
-      reply_markup: {
-        ...menu,
-        replace_keyboard: true // Принудительно заменяем старое меню
+    await ctx.telegram.sendMessage(
+      targetChatId,
+      menuText,
+      {
+        reply_markup: {
+          ...menu,
+          replace_keyboard: true // Принудительно заменяем старое меню
+        }
       }
-    });
+    );
     
     console.log("[sendMainMenu] ✅ Меню отправлено успешно");
   } catch (error: any) {
@@ -311,210 +330,180 @@ bot.start(async (ctx) => {
 //      Обработка данных из WebApp
 // ░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░
 
+async function handleQuestionnaireSaved(
+  ctx: any,
+  rawData: string,
+  source: "message" | "callback_query"
+) {
+  console.log(`[bot] ========== ПОЛУЧЕНЫ ДАННЫЕ ИЗ WEBAPP (source=${source}) ==========`);
+
+  const telegram_id = ctx.from?.id || (ctx.callbackQuery as any)?.from?.id;
+  const chat_id =
+    ctx.chat?.id ||
+    (ctx.callbackQuery as any)?.message?.chat?.id ||
+    telegram_id;
+
+  if (!telegram_id) {
+    console.log("[bot] ❌ Нет telegram_id, пропускаем обработку questionnaire_saved");
+    return;
+  }
+
+  if (!rawData) {
+    console.log("[bot] ❌ Нет данных в web_app_data, пропускаем");
+    return;
+  }
+
+  let parsedData;
+  try {
+    parsedData = JSON.parse(rawData);
+    console.log("[bot] Распарсенные данные:", JSON.stringify(parsedData, null, 2));
+  } catch (e) {
+    console.error("[bot] ❌ Ошибка парсинга данных из WebApp:", e);
+    return;
+  }
+
+  if (parsedData.action !== "questionnaire_saved") {
+    console.log("[bot] Неизвестное действие:", parsedData.action);
+    return;
+  }
+
+  console.log("[bot] ========== ОБРАБОТКА QUESTIONNAIRE_SAVED ==========");
+  console.log("[bot] Обработка questionnaire_saved для telegram_id:", telegram_id);
+  console.log("[bot] Chat ID для отправки:", chat_id);
+
+  // ВАЖНО: Получаем СВЕЖИЕ данные пользователя из БД после сохранения анкеты
+  await new Promise((resolve) => setTimeout(resolve, 500));
+
+  // Получаем пользователя с повторными попытками для гарантии актуальных данных
+  let user = null;
+  let attempts = 0;
+  const maxAttempts = 3;
+
+  while (!user && attempts < maxAttempts) {
+    const { data: userData, error: userError } = await supabase
+      .from("users")
+      .select("id, calories")
+      .eq("telegram_id", telegram_id)
+      .maybeSingle();
+
+    if (userError) {
+      console.error(`[bot] Ошибка получения пользователя (попытка ${attempts + 1}):`, userError);
+    }
+
+    if (userData && userData.id) {
+      user = userData;
+      console.log(`[bot] ✅ Пользователь найден: id=${user.id}`);
+      break;
+    }
+    
+    attempts++;
+    if (attempts < maxAttempts) {
+      console.log(`[bot] Пользователь не найден, повторная попытка ${attempts + 1}/${maxAttempts}...`);
+      await new Promise(resolve => setTimeout(resolve, 300));
+    }
+  }
+
+  const userIdFromPayload = parsedData.userId ? Number(parsedData.userId) : null;
+  const userIdToUse = user?.id || (Number.isFinite(userIdFromPayload) ? userIdFromPayload : null);
+
+  console.log("[bot] 📤 Отправка подтверждения и меню после регистрации");
+  console.log("[bot] User found:", user ? `id=${user.id}` : "NOT FOUND");
+  console.log("[bot] Chat ID:", chat_id);
+  console.log("[bot] Telegram ID:", telegram_id);
+
+  const confirmationMessage = "Спасибо! Мы сохранили твои данные. Теперь ты можешь отправлять фото, текст или аудио своих блюд — я всё проанализирую.";
+  const targetChatId = chat_id || telegram_id;
+
+  // ШАГ 1: Отправляем подтверждение
+  let confirmationSent = false;
+  try {
+    await ctx.telegram.sendMessage(targetChatId, confirmationMessage);
+    confirmationSent = true;
+    console.log("[bot] ✅ Подтверждение отправлено через sendMessage");
+  } catch (confirmError: any) {
+    console.error("[bot] ❌ Ошибка отправки подтверждения:", confirmError);
+    console.error("[bot] Error details:", {
+      message: confirmError?.message,
+      code: confirmError?.response?.error_code,
+      description: confirmError?.response?.description
+    });
+  }
+  
+  // ШАГ 2: Отправляем главное меню
+  let menuSent = false;
+  try {
+    await sendMainMenu(ctx, userIdToUse, "Выберите действие:", targetChatId);
+    menuSent = true;
+    console.log("[bot] ✅ Меню после регистрации отправлено успешно через sendMainMenu");
+  } catch (menuError: any) {
+    console.error("[bot] ❌ Ошибка отправки меню через sendMainMenu:", menuError);
+    console.error("[bot] Menu error details:", {
+      message: menuError?.message,
+      code: menuError?.response?.error_code,
+      description: menuError?.response?.description
+    });
+    
+    // Пробуем отправить меню еще раз с задержкой
+    try {
+      await new Promise(resolve => setTimeout(resolve, 500));
+      await sendMainMenu(ctx, userIdToUse, undefined, targetChatId);
+      menuSent = true;
+      console.log("[bot] ✅ Меню отправлено после повторной попытки");
+    } catch (retryError: any) {
+      console.error("[bot] ❌ Ошибка отправки меню после повтора:", retryError);
+      // Последняя попытка - через прямой API вызов
+      try {
+        const menu = getMainMenuKeyboard(userIdToUse);
+        await ctx.telegram.sendMessage(targetChatId, "Выберите действие:", {
+          reply_markup: { ...menu, replace_keyboard: true }
+        });
+        menuSent = true;
+        console.log("[bot] ✅ Меню отправлено через прямой API вызов");
+      } catch (finalError: any) {
+        console.error("[bot] ❌ ФИНАЛЬНАЯ ошибка отправки меню:", finalError);
+      }
+    }
+  }
+  
+  // Финальная проверка: если ничего не отправилось, логируем критическую ошибку
+  if (!confirmationSent && !menuSent) {
+    console.error("[bot] ❌ КРИТИЧЕСКАЯ ОШИБКА: Не удалось отправить ни подтверждение, ни меню!");
+  } else if (!confirmationSent) {
+    console.warn("[bot] ⚠️ Предупреждение: Подтверждение не отправлено, но меню отправлено");
+  } else if (!menuSent) {
+    console.warn("[bot] ⚠️ Предупреждение: Меню не отправлено, но подтверждение отправлено");
+  }
+}
+
 // Обработка данных из WebApp (когда пользователь отправляет данные через sendData)
 bot.on("message", async (ctx, next) => {
   // Проверяем, есть ли данные из WebApp
-  if (ctx.message && "web_app_data" in ctx.message) {
-    console.log("[bot] ========== ПОЛУЧЕНЫ ДАННЫЕ ИЗ WEBAPP ==========");
-    console.log("[bot] Полное сообщение:", JSON.stringify(ctx.message, null, 2));
-    
-    const telegram_id = ctx.from?.id;
-    const chat_id = ctx.chat?.id;
-    console.log("[bot] telegram_id:", telegram_id);
-    console.log("[bot] chat_id:", chat_id);
-    
-    if (!telegram_id) {
-      console.log("[bot] ❌ Нет telegram_id, пропускаем");
-      return next();
-    }
+  const data = (ctx.message as any)?.web_app_data?.data;
 
-    if (!chat_id) {
-      console.error("[bot] ❌ КРИТИЧЕСКАЯ ОШИБКА: Нет chat_id!");
-      // Пробуем отправить сообщение используя telegram_id как chat_id
-      try {
-        await ctx.telegram.sendMessage(telegram_id, "✅ Ваши данные сохранены. Добро пожаловать!");
-        const menu = getMainMenuKeyboard(null);
-        await ctx.telegram.sendMessage(telegram_id, "Выберите действие:", {
-          reply_markup: { ...menu, replace_keyboard: true }
-        });
-      } catch (e: any) {
-        console.error("[bot] ❌ Не удалось отправить сообщение без chat_id:", e);
-      }
-      return;
-    }
-
-    const data = (ctx.message as any).web_app_data?.data;
-    console.log("[bot] Данные из WebApp (raw):", data);
-    if (!data) {
-      console.log("[bot] ❌ Нет данных в web_app_data, пропускаем");
-      return next();
-    }
-
-    let parsedData;
-    try {
-      parsedData = JSON.parse(data);
-      console.log("[bot] Распарсенные данные:", JSON.stringify(parsedData, null, 2));
-    } catch (e) {
-      console.error("[bot] ❌ Ошибка парсинга данных из WebApp:", e);
-      return next();
-    }
-
-    // Если анкета сохранена - отправляем приветственное сообщение с меню
-    if (parsedData.action === "questionnaire_saved") {
-      console.log("[bot] ========== ОБРАБОТКА QUESTIONNAIRE_SAVED ==========");
-      console.log("[bot] Обработка questionnaire_saved для telegram_id:", telegram_id);
-      console.log("[bot] Chat ID для отправки:", chat_id);
-      console.log("[bot] Parsed data:", JSON.stringify(parsedData, null, 2));
-      
-      // ВАЖНО: Получаем СВЕЖИЕ данные пользователя из БД после сохранения анкеты
-      // Ждем небольшую задержку, чтобы БД точно обновилась
-      await new Promise(resolve => setTimeout(resolve, 500));
-      
-      // Получаем пользователя с повторными попытками для гарантии актуальных данных
-      let user = null;
-      let attempts = 0;
-      const maxAttempts = 3;
-      
-      while (!user && attempts < maxAttempts) {
-        const { data: userData, error: userError } = await supabase
-          .from("users")
-          .select("id, calories")
-          .eq("telegram_id", telegram_id)
-          .maybeSingle();
-
-        if (userError) {
-          console.error(`[bot] Ошибка получения пользователя (попытка ${attempts + 1}):`, userError);
-        }
-
-        if (userData && userData.id) {
-          user = userData;
-          console.log(`[bot] ✅ Пользователь найден: id=${user.id}`);
-          break;
-        }
-        
-        attempts++;
-        if (attempts < maxAttempts) {
-          console.log(`[bot] Пользователь не найден, повторная попытка ${attempts + 1}/${maxAttempts}...`);
-          await new Promise(resolve => setTimeout(resolve, 300));
-        }
-      }
-
-      // ВАЖНО: Отправляем сообщения ВСЕГДА, даже если пользователь не найден
-      // Это гарантирует, что пользователь получит ответ
-      console.log("[bot] 📤 Отправка подтверждения и меню после регистрации");
-      console.log("[bot] User found:", user ? `id=${user.id}` : "NOT FOUND");
-      console.log("[bot] Chat ID:", chat_id);
-      console.log("[bot] Telegram ID:", telegram_id);
-      
-      // КРИТИЧЕСКИ ВАЖНО: Отправляем сообщения ВСЕГДА, даже если пользователь не найден
-      // Это гарантирует, что пользователь получит ответ
-      const confirmationMessage = "Спасибо! Мы сохранили твои данные. Теперь ты можешь отправлять фото, текст или аудио своих блюд — я всё проанализирую.";
-      const userIdToUse = user?.id || null;
-      
-      // ШАГ 1: Отправляем подтверждение
-      // ВАЖНО: Используем прямой вызов ctx.telegram.sendMessage для гарантии доставки
-      let confirmationSent = false;
-      try {
-        // Пробуем сначала через ctx.reply (более простой способ)
-        await ctx.reply(confirmationMessage);
-        confirmationSent = true;
-        console.log("[bot] ✅ Подтверждение отправлено успешно через ctx.reply");
-      } catch (confirmError: any) {
-        console.error("[bot] ❌ Ошибка отправки подтверждения через ctx.reply:", confirmError);
-        console.error("[bot] Error details:", {
-          message: confirmError?.message,
-          code: confirmError?.response?.error_code,
-          description: confirmError?.response?.description
-        });
-        
-        // Fallback: прямой API вызов через ctx.telegram.sendMessage
-        try {
-          await ctx.telegram.sendMessage(chat_id, confirmationMessage);
-          confirmationSent = true;
-          console.log("[bot] ✅ Подтверждение отправлено через ctx.telegram.sendMessage");
-        } catch (directError: any) {
-          console.error("[bot] ❌ Ошибка отправки подтверждения через прямой API:", directError);
-          console.error("[bot] Direct error details:", {
-            message: directError?.message,
-            code: directError?.response?.error_code,
-            description: directError?.response?.description
-          });
-          
-          // Последняя попытка: еще раз с небольшой задержкой
-          try {
-            await new Promise(resolve => setTimeout(resolve, 300));
-            await ctx.telegram.sendMessage(chat_id, confirmationMessage);
-            confirmationSent = true;
-            console.log("[bot] ✅ Подтверждение отправлено через последнюю попытку с задержкой");
-          } catch (finalConfirmError: any) {
-            console.error("[bot] ❌ ФИНАЛЬНАЯ ошибка отправки подтверждения:", finalConfirmError);
-            console.error("[bot] Final error details:", {
-              message: finalConfirmError?.message,
-              code: finalConfirmError?.response?.error_code,
-              description: finalConfirmError?.response?.description
-            });
-          }
-        }
-      }
-      
-      // ШАГ 2: Отправляем главное меню
-      // ВАЖНО: Отправляем меню ВСЕГДА, даже если подтверждение не отправилось
-      let menuSent = false;
-      try {
-        await sendMainMenu(ctx, userIdToUse, "Выберите действие:");
-        menuSent = true;
-        console.log("[bot] ✅ Меню после регистрации отправлено успешно через sendMainMenu");
-      } catch (menuError: any) {
-        console.error("[bot] ❌ Ошибка отправки меню через sendMainMenu:", menuError);
-        console.error("[bot] Menu error details:", {
-          message: menuError?.message,
-          code: menuError?.response?.error_code,
-          description: menuError?.response?.description
-        });
-        
-        // Пробуем отправить меню еще раз с задержкой
-        try {
-          await new Promise(resolve => setTimeout(resolve, 500));
-          await sendMainMenu(ctx, userIdToUse);
-          menuSent = true;
-          console.log("[bot] ✅ Меню отправлено после повторной попытки");
-        } catch (retryError: any) {
-          console.error("[bot] ❌ Ошибка отправки меню после повтора:", retryError);
-          // Последняя попытка - через прямой API вызов
-          try {
-            const menu = getMainMenuKeyboard(userIdToUse);
-            await ctx.telegram.sendMessage(chat_id, "Выберите действие:", {
-              reply_markup: { ...menu, replace_keyboard: true }
-            });
-            menuSent = true;
-            console.log("[bot] ✅ Меню отправлено через прямой API вызов");
-          } catch (finalError: any) {
-            console.error("[bot] ❌ ФИНАЛЬНАЯ ошибка отправки меню:", finalError);
-          }
-        }
-      }
-      
-      // Финальная проверка: если ничего не отправилось, логируем критическую ошибку
-      if (!confirmationSent && !menuSent) {
-        console.error("[bot] ❌ КРИТИЧЕСКАЯ ОШИБКА: Не удалось отправить ни подтверждение, ни меню!");
-      } else if (!confirmationSent) {
-        console.warn("[bot] ⚠️ Предупреждение: Подтверждение не отправлено, но меню отправлено");
-      } else if (!menuSent) {
-        console.warn("[bot] ⚠️ Предупреждение: Меню не отправлено, но подтверждение отправлено");
-      }
-      
-      // ВАЖНО: Всегда возвращаем, чтобы не передавать управление дальше
-      return;
-    } else {
-      console.log("[bot] Неизвестное действие:", parsedData.action);
-    }
-    
-    // Если это web_app_data, не передаем дальше
-    return;
+  if (!data) {
+    // Для всех остальных сообщений передаем управление дальше
+    return next();
   }
-  
-  // Для всех остальных сообщений передаем управление дальше
-  return next();
+
+  await handleQuestionnaireSaved(ctx, data, "message");
+  // Если это web_app_data, не передаем дальше
+  return;
+});
+
+// Дополнительный обработчик для случая, когда Telegram присылает web_app_data в callback_query
+bot.on("callback_query", async (ctx, next) => {
+  const callbackWebAppData = (ctx.callbackQuery as any)?.web_app_data?.data;
+  if (!callbackWebAppData) {
+    return next();
+  }
+
+  await handleQuestionnaireSaved(ctx, callbackWebAppData, "callback_query");
+
+  try {
+    await ctx.answerCbQuery();
+  } catch (err) {
+    console.error("[bot] Ошибка answerCbQuery для web_app_data:", err);
+  }
 });
 
 // ░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░
