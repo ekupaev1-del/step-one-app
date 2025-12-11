@@ -1011,6 +1011,7 @@ function ReportPageContent() {
     </AppLayout>
   );
 }
+}
 
 function EditMealForm({
   meal,
