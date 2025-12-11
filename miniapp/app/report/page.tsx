@@ -810,6 +810,120 @@ function ReportPageContent() {
           ) : null}
         </div>
       </div>
+      
+      {/* Модальное окно календаря */}
+      {showCalendar && (
+        <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4" onClick={() => setShowCalendar(false)}>
+          <div className="bg-white rounded-2xl shadow-soft p-6 max-w-md w-full max-h-[90vh] overflow-y-auto" onClick={(e) => e.stopPropagation()}>
+            <div className="flex items-center justify-between mb-4">
+              <h2 className="text-xl font-bold text-textPrimary">📅 Выберите день</h2>
+              <button
+                onClick={() => setShowCalendar(false)}
+                className="text-textSecondary hover:text-textPrimary text-2xl"
+              >
+                ✕
+              </button>
+            </div>
+
+            {/* Переключение месяцев */}
+            <div className="flex items-center justify-between mb-4">
+              <button
+                onClick={() => changeMonth(-1)}
+                disabled={loadingCalendar}
+                className="px-4 py-2 bg-accent/20 text-accent font-medium rounded-lg hover:bg-accent/30 transition-colors disabled:opacity-50"
+              >
+                ←
+              </button>
+              <h3 className="text-lg font-semibold text-textPrimary">
+                {currentMonth.toLocaleDateString("ru-RU", { month: "long", year: "numeric" })}
+              </h3>
+              <button
+                onClick={() => changeMonth(1)}
+                disabled={loadingCalendar}
+                className="px-4 py-2 bg-accent/20 text-accent font-medium rounded-lg hover:bg-accent/30 transition-colors disabled:opacity-50"
+              >
+                →
+              </button>
+            </div>
+
+            {/* Календарь */}
+            <div className="mb-4">
+              <div className="grid grid-cols-7 gap-2 mb-2">
+                {["Пн", "Вт", "Ср", "Чт", "Пт", "Сб", "Вс"].map((day) => (
+                  <div key={day} className="text-center text-sm font-medium text-textSecondary py-2">
+                    {day}
+                  </div>
+                ))}
+              </div>
+              <div className="grid grid-cols-7 gap-2">
+                {getCalendarDays().map((day, index) => {
+                  if (day === null) {
+                    return <div key={`empty-${index}`} className="aspect-square" />;
+                  }
+
+                  const dateKey = getDateKey(day);
+                  const dayData = calendarDays.find(d => d.date === dateKey);
+                  const isToday = dateKey === new Date().toISOString().split("T")[0];
+                  const isSelected = dateKey === selectedDate;
+
+                  // Определяем классы в зависимости от статуса
+                  let dayClasses = 'aspect-square rounded-lg font-medium text-sm transition-colors ';
+                  
+                  if (dayData && dayData.status !== 'none') {
+                    switch (dayData.status) {
+                      case 'green':
+                        dayClasses += 'bg-green-500 text-white hover:bg-green-600 ';
+                        break;
+                      case 'yellow':
+                        dayClasses += 'bg-yellow-500 text-white hover:bg-yellow-600 ';
+                        break;
+                      case 'red':
+                        dayClasses += 'bg-red-500 text-white hover:bg-red-600 ';
+                        break;
+                      default:
+                        dayClasses += 'bg-gray-100 text-textPrimary hover:bg-gray-200 ';
+                    }
+                  } else {
+                    dayClasses += 'bg-gray-100 text-textPrimary hover:bg-gray-200 ';
+                  }
+
+                  if (isToday) {
+                    dayClasses += 'ring-2 ring-accent ring-offset-2 ';
+                  }
+                  
+                  if (isSelected) {
+                    dayClasses += 'ring-2 ring-blue-500 ring-offset-2 ';
+                  }
+
+                  return (
+                    <button
+                      key={day}
+                      onClick={async () => {
+                        setShowCalendar(false);
+                        setDayReport(null);
+                        setError(null);
+                        setEditingMeal(null);
+                        await loadCalendar();
+                        await loadDayReport(dateKey, true);
+                      }}
+                      className={dayClasses.trim()}
+                      title={dayData ? `${dayData.actualCalories.toFixed(0)} / ${dayData.targetCalories.toFixed(0)} ккал` : undefined}
+                    >
+                      {day}
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+
+            {loadingCalendar && (
+              <div className="text-center text-textSecondary text-sm py-2">
+                Загрузка...
+              </div>
+            )}
+          </div>
+        </div>
+      )}
       </AppLayout>
     );
   }
