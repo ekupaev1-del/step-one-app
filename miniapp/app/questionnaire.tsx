@@ -673,9 +673,6 @@ export function QuestionnaireFormContent({ initialUserId }: { initialUserId?: st
           </h2>
           {calories && protein && fat && carbs && (
             <div className="grid grid-cols-2 gap-4 mb-8">
-              {/* #region agent log */}
-              {typeof window !== 'undefined' && fetch('http://127.0.0.1:7242/ingest/43e8883f-375d-4d43-af6f-fef79b5ebbe3',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'miniapp/app/questionnaire.tsx:674',message:'QuestionnaireFormContent render values',data:{calories,protein,fat,carbs,waterGoal,currentUrl:window.location.href},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'H5'})}).catch(()=>{})}
-              {/* #endregion */}
               
               {/* Вода */}
               {waterGoal && (
