@@ -76,6 +76,7 @@ function ReportPageContent() {
   const [dayReport, setDayReport] = useState<DayReport | null>(null);
   const [loadingDayReport, setLoadingDayReport] = useState(false);
   const [refreshKey, setRefreshKey] = useState(0); // Ключ для принудительного re-render
+  const [showCalendar, setShowCalendar] = useState(false); // Показывать ли календарь
 
   // Таймер для предотвращения слишком частых обновлений
   const lastUpdateRef = useRef<number>(0);
@@ -120,6 +121,16 @@ function ReportPageContent() {
       loadCalendar();
     }
   }, [userId, currentMonth]);
+
+  // Автоматически загружаем отчёт за сегодня при первом открытии
+  useEffect(() => {
+    if (userId && !selectedDate) {
+      const today = new Date();
+      const todayKey = today.toISOString().split("T")[0];
+      setSelectedDate(todayKey);
+      loadDayReport(todayKey, true);
+    }
+  }, [userId]);
 
   // УМНОЕ АВТОМАТИЧЕСКОЕ ОБНОВЛЕНИЕ: только при реальном переключении на окно
   useEffect(() => {
@@ -544,6 +555,29 @@ function ReportPageContent() {
     newMonth.setMonth(newMonth.getMonth() + delta);
     setCurrentMonth(newMonth);
   };
+
+  /**
+   * Переключение дня (для навигации в детальном отчёте)
+   */
+  const changeDay = (delta: number) => {
+    if (!selectedDate) return;
+    
+    const currentDate = new Date(selectedDate);
+    currentDate.setDate(currentDate.getDate() + delta);
+    const newDateKey = currentDate.toISOString().split("T")[0];
+    
+    // Обновляем месяц календаря, если перешли в другой месяц
+    const newMonth = new Date(currentDate);
+    newMonth.setDate(1);
+    setCurrentMonth(newMonth);
+    
+    // Загружаем отчёт за новый день
+    setDayReport(null);
+    setError(null);
+    setEditingMeal(null);
+    loadDayReport(newDateKey, true);
+    loadCalendar();
+  };
   /**
    * Переключение дня (для навигации в детальном отчёте)
    */
@@ -626,11 +660,16 @@ function ReportPageContent() {
       <AppLayout>
         <div key={`report-${selectedDate}-${refreshKey}`} className="min-h-screen bg-background p-4 py-8">
         <div className="max-w-md mx-auto bg-white rounded-2xl shadow-soft p-8">
-          {/* Месяц сверху */}
+          {/* Месяц сверху - кликабельный для открытия календаря */}
           <div className="mb-4">
-            <h3 className="text-lg font-semibold text-textPrimary text-center">
-              {new Date(selectedDate).toLocaleDateString("ru-RU", { month: "long", year: "numeric" })}
-            </h3>
+            <button
+              onClick={() => setShowCalendar(true)}
+              className="w-full"
+            >
+              <h3 className="text-lg font-semibold text-textPrimary text-center hover:text-accent transition-colors cursor-pointer">
+                📅 {new Date(selectedDate).toLocaleDateString("ru-RU", { month: "long", year: "numeric" })}
+              </h3>
+            </button>
           </div>
 
           {/* Навигация по дням с стрелками */}
@@ -663,19 +702,7 @@ function ReportPageContent() {
           </div>
 
           {/* Кнопки действий */}
-          <div className="flex items-center justify-between mb-4">
-            <button
-              onClick={() => {
-                setSelectedDate(null);
-                setDayReport(null);
-                setEditingMeal(null);
-                // Обновляем календарь при возврате
-                loadCalendar();
-              }}
-              className="text-textSecondary hover:text-textPrimary text-sm"
-            >
-              ← Назад к календарю
-            </button>
+          <div className="flex items-center justify-end mb-4">
             <button
               onClick={() => {
                 console.log("[manual-refresh] Ручное обновление отчёта");
