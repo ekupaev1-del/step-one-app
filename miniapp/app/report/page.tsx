@@ -651,7 +651,7 @@ function ReportPageContent(): ReactElement {
             
             <button
               onClick={() => setShowCalendar(true)}
-              className="px-4 py-2 bg-accent/20 text-accent font-medium rounded-lg hover:bg-accent/30 transition-colors"
+              className="flex-1 mx-4 px-4 py-2 bg-accent/20 text-accent font-medium rounded-lg hover:bg-accent/30 transition-colors"
               title="Выбрать дату"
             >
               {new Date(selectedDate).toLocaleDateString("ru-RU", {
@@ -659,6 +659,45 @@ function ReportPageContent(): ReactElement {
                 month: "long",
                 year: "numeric"
               })}
+            </button>
+            
+            <button
+              onClick={() => changeDay(1)}
+              disabled={loadingDayReport || loading}
+              className="px-4 py-2 bg-accent/20 text-accent font-medium rounded-lg hover:bg-accent/30 transition-colors disabled:opacity-50"
+              title="Следующий день"
+            >
+              →
+            </button>
+          </div>
+            <button
+              onClick={() => changeDay(-1)}
+              disabled={loadingDayReport || loading}
+              className="px-4 py-2 bg-accent/20 text-accent font-medium rounded-lg hover:bg-accent/30 transition-colors disabled:opacity-50"
+              title="Предыдущий день"
+            >
+              ←
+            </button>
+            
+            <button
+              onClick={() => setShowCalendar(true)}
+              className="flex-1 mx-4 px-4 py-2 bg-accent/20 text-accent font-medium rounded-lg hover:bg-accent/30 transition-colors"
+              title="Выбрать дату"
+            >
+              {new Date(selectedDate).toLocaleDateString("ru-RU", {
+                day: "numeric",
+                month: "long",
+                year: "numeric"
+              })}
+            </button>
+            
+            <button
+              onClick={() => changeDay(1)}
+              disabled={loadingDayReport || loading}
+              className="px-4 py-2 bg-accent/20 text-accent font-medium rounded-lg hover:bg-accent/30 transition-colors disabled:opacity-50"
+              title="Следующий день"
+            >
+              →
             </button>
           </div>
           {error && (
