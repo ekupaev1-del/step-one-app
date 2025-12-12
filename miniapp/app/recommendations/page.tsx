@@ -28,6 +28,7 @@ function RecommendationsPageContent(): ReactElement {
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [recommendations, setRecommendations] = useState<Recommendation[]>([]);
+  const [days, setDays] = useState<number>(14);
 
   useEffect(() => {
     if (userIdParam) {
@@ -53,7 +54,7 @@ function RecommendationsPageContent(): ReactElement {
       setError(null);
 
       try {
-        const response = await fetch(`/api/recommendations?userId=${userId}`);
+        const response = await fetch(`/api/recommendations?userId=${userId}&days=${days}`);
         const data = await response.json();
 
         if (!response.ok || !data.ok) {
@@ -70,7 +71,7 @@ function RecommendationsPageContent(): ReactElement {
     };
 
     loadRecommendations();
-  }, [userId]);
+  }, [userId, days]);
 
   if (error && !userId) {
     return (
@@ -117,9 +118,24 @@ function RecommendationsPageContent(): ReactElement {
     <AppLayout>
       <div className="min-h-screen bg-background p-4 py-8 pb-24">
         <div className="max-w-md mx-auto bg-white rounded-2xl shadow-soft p-8">
-          <h1 className="text-2xl font-bold mb-6 text-textPrimary text-center">
-            💡 Умные рекомендации
-          </h1>
+          <div className="flex flex-col gap-2 mb-6">
+            <h1 className="text-2xl font-bold text-textPrimary text-center">Рекомендации</h1>
+            <p className="text-sm text-textSecondary text-center">
+              Средние за {days === 1 ? "1 день" : days === 7 ? "7 дней" : days === 30 ? "30 дней" : days === 365 ? "365 дней" : `${days} дней`}
+            </p>
+            <div className="flex justify-center">
+              <select
+                value={days}
+                onChange={(e) => setDays(Number(e.target.value))}
+                className="px-3 py-2 rounded-lg border border-gray-200 text-sm bg-white shadow-sm focus:outline-none focus:border-accent"
+              >
+                <option value={1}>За 1 день</option>
+                <option value={7}>За 7 дней</option>
+                <option value={30}>За 30 дней</option>
+                <option value={365}>За 365 дней</option>
+              </select>
+            </div>
+          </div>
 
           {loading ? (
             <div className="text-center text-textSecondary py-8">Загрузка рекомендаций...</div>

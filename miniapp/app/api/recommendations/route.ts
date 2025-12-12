@@ -71,10 +71,17 @@ export async function GET(req: Request) {
       water: user.water_goal_ml || 0,
     };
 
-    // Получаем данные за последние 14 дней
+    // Параметр периода (в днях): поддерживаем 1,7,30,365; по умолчанию 14
+    const daysParam = url.searchParams.get("days");
+    const allowed = [1, 7, 30, 365, 14];
+    let days = Number(daysParam);
+    if (!Number.isFinite(days) || !allowed.includes(days)) {
+      days = 14;
+    }
+
     const endDate = new Date();
     const startDate = new Date();
-    startDate.setDate(startDate.getDate() - 14);
+    startDate.setDate(startDate.getDate() - days);
 
     const startUTCStr = startDate.toISOString();
     const endUTCStr = endDate.toISOString();
@@ -126,7 +133,7 @@ export async function GET(req: Request) {
 
     // Вычисляем средние значения за период
     const daysCount = Object.keys(dailyTotals).length;
-    if (daysCount < 3) {
+    if (daysCount === 0) {
       return NextResponse.json({
         ok: true,
         recommendations: []
