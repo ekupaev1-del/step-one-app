@@ -58,9 +58,6 @@ function getMainMenuKeyboard(userId: number | null = null): any {
       ],
       [
         { text: "⏰ Напомнить о приёме пищи" }
-      ],
-      [
-        // { text: "💡 Рекомендации" } // скрыто
       ]
     ],
     resize_keyboard: true,
@@ -844,6 +841,25 @@ function formatProgressMessage(
   return message;
 }
 
+
+async function getWaterProgressByTelegram(telegramId: number): Promise<{ totalMl: number; goalMl: number | null } | null> {
+  try {
+    const { data: user } = await supabase
+      .from("users")
+      .select("id")
+      .eq("telegram_id", telegramId)
+      .maybeSingle();
+
+    if (!user?.id) return null;
+
+    const { totalMl, goalMl } = await getDailyWaterSummary(user.id);
+    return { totalMl, goalMl };
+  } catch (e) {
+    console.error("[getWaterProgressByTelegram] error", e);
+    return null;
+  }
+}
+
 // ░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░
 //      Обработка текстовых сообщений
 // ░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░
@@ -935,7 +951,8 @@ bot.on("text", async (ctx) => {
         const dailyNorm = await getUserDailyNorm(telegram_id);
 
         // Формируем ответ с общим отчетом
-        const response = `✅ Добавлено:\nвода\n🔥 0 ккал | 🥚 0.0г | 🥥 0.0г | 🍚 0.0г\n\n${formatProgressMessage(todayMeals, dailyNorm, { totalMl, goalMl })}`;
+        const waterInfo = await getWaterProgressByTelegram(telegram_id);
+    const response = `✅ Добавлено:\nвода\n🔥 0 ккал | 🥚 0.0г | 🥥 0.0г | 🍚 0.0г\n\n${formatProgressMessage(todayMeals, dailyNorm, { totalMl, goalMl })}`;
 
         return ctx.reply(response);
       } catch (error: any) {
@@ -999,7 +1016,7 @@ bot.on("text", async (ctx) => {
       await sendMainMenu(
         ctx,
         user?.id || null,
-        `✅ Удалено: ${lastMeal.meal_text} (${lastMeal.calories} ккал)\n\n${formatProgressMessage(todayMeals, dailyNorm)}`
+        `✅ Удалено: ${lastMeal.meal_text} (${lastMeal.calories} ккал)\n\n${formatProgressMessage(todayMeals, dailyNorm, waterInfo || undefined)}`
       );
       return;
     }
@@ -1272,7 +1289,8 @@ bot.on("text", async (ctx) => {
     const dailyNorm = await getUserDailyNorm(telegram_id);
 
     // Формируем ответ
-    const response = `✅ Добавлено:\n${mealAnalysis.description}\n🔥 ${mealAnalysis.calories} ккал | 🥚 ${mealAnalysis.protein.toFixed(1)}г | 🥥 ${mealAnalysis.fat.toFixed(1)}г | 🍚 ${mealAnalysis.carbs.toFixed(1)}г\n\n${formatProgressMessage(todayMeals, dailyNorm)}`;
+    const waterInfo = await getWaterProgressByTelegram(telegram_id);
+    const response = `✅ Добавлено:\n${mealAnalysis.description}\n🔥 ${mealAnalysis.calories} ккал | 🥚 ${mealAnalysis.protein.toFixed(1)}г | 🥥 ${mealAnalysis.fat.toFixed(1)}г | 🍚 ${mealAnalysis.carbs.toFixed(1)}г\n\n${formatProgressMessage(todayMeals, dailyNorm, waterInfo || undefined)}`;
 
     await ctx.telegram.editMessageText(
       ctx.chat!.id,
@@ -1517,7 +1535,9 @@ bot.on("callback_query", async (ctx) => {
         const dailyNorm = await getUserDailyNorm(telegram_id);
 
         // Формируем ответ с общим отчетом
-        const response = `✅ Добавлено:\nвода\n🔥 0 ккал | 🥚 0.0г | 🥥 0.0г | 🍚 0.0г\n\n${formatProgressMessage(todayMeals, dailyNorm, { totalMl, goalMl })}`;
+        const waterInfo = await getWaterProgressByTelegram(telegram_id);
+    const waterInfo = await getWaterProgressByTelegram(telegram_id);
+    const response = `✅ Добавлено:\nвода\n🔥 0 ккал | 🥚 0.0г | 🥥 0.0г | 🍚 0.0г\n\n${formatProgressMessage(todayMeals, dailyNorm, { totalMl, goalMl })}`;
 
         return ctx.editMessageText(response);
       } catch (error: any) {
@@ -1585,7 +1605,7 @@ bot.command("отменить", async (ctx) => {
     const dailyNorm = await getUserDailyNorm(telegram_id);
 
     ctx.reply(
-      `✅ Удалено: ${lastMeal.meal_text} (${lastMeal.calories} ккал)\n\n${formatProgressMessage(todayMeals, dailyNorm)}`
+      `✅ Удалено: ${lastMeal.meal_text} (${lastMeal.calories} ккал)\n\n${formatProgressMessage(todayMeals, dailyNorm, waterInfo || undefined)}`
     );
   } catch (error) {
     console.error("[bot] Ошибка /отменить:", error);
@@ -1636,7 +1656,7 @@ bot.command("отчет", async (ctx) => {
       report += `${index + 1}. ${meal.meal_text} (${time})\n   🔥 ${meal.calories} ккал | 🥚 ${Number(meal.protein).toFixed(1)}г | 🥥 ${Number(meal.fat).toFixed(1)}г | 🍚 ${Number(meal.carbs || 0).toFixed(1)}г\n\n`;
     });
 
-    report += `\n${formatProgressMessage(todayMeals, dailyNorm)}`;
+    report += `\n${formatProgressMessage(todayMeals, dailyNorm, waterInfo || undefined)}`;
 
     ctx.reply(report);
   } catch (error) {
@@ -1866,7 +1886,8 @@ bot.on("photo", async (ctx) => {
     const dailyNorm = await getUserDailyNorm(telegram_id);
 
     // Формируем ответ
-    const response = `✅ Добавлено:\n${mealAnalysis.description}\n🔥 ${mealAnalysis.calories} ккал | 🥚 ${mealAnalysis.protein.toFixed(1)}г | 🥥 ${mealAnalysis.fat.toFixed(1)}г | 🍚 ${mealAnalysis.carbs.toFixed(1)}г\n\n${formatProgressMessage(todayMeals, dailyNorm)}`;
+    const waterInfo = await getWaterProgressByTelegram(telegram_id);
+    const response = `✅ Добавлено:\n${mealAnalysis.description}\n🔥 ${mealAnalysis.calories} ккал | 🥚 ${mealAnalysis.protein.toFixed(1)}г | 🥥 ${mealAnalysis.fat.toFixed(1)}г | 🍚 ${mealAnalysis.carbs.toFixed(1)}г\n\n${formatProgressMessage(todayMeals, dailyNorm, waterInfo || undefined)}`;
 
     await ctx.telegram.editMessageText(
       ctx.chat!.id,
@@ -2039,7 +2060,8 @@ bot.on("voice", async (ctx) => {
     const dailyNorm = await getUserDailyNorm(telegram_id);
 
     // Формируем ответ
-    const response = `✅ Добавлено:\n${mealAnalysis.description}\n🔥 ${mealAnalysis.calories} ккал | 🥚 ${mealAnalysis.protein.toFixed(1)}г | 🥥 ${mealAnalysis.fat.toFixed(1)}г | 🍚 ${mealAnalysis.carbs.toFixed(1)}г\n\n${formatProgressMessage(todayMeals, dailyNorm)}`;
+    const waterInfo = await getWaterProgressByTelegram(telegram_id);
+    const response = `✅ Добавлено:\n${mealAnalysis.description}\n🔥 ${mealAnalysis.calories} ккал | 🥚 ${mealAnalysis.protein.toFixed(1)}г | 🥥 ${mealAnalysis.fat.toFixed(1)}г | 🍚 ${mealAnalysis.carbs.toFixed(1)}г\n\n${formatProgressMessage(todayMeals, dailyNorm, waterInfo || undefined)}`;
 
     await ctx.telegram.editMessageText(
       ctx.chat!.id,
