@@ -1,7 +1,8 @@
 import { NextResponse } from "next/server";
 import OpenAI from "openai";
 
-const client = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
+export const runtime = "nodejs";
+export const dynamic = "force-dynamic";
 
 export async function POST(req: Request) {
   try {
@@ -15,6 +16,14 @@ export async function POST(req: Request) {
 Строго запрещено выдавать готовые меню или расписание приемов пищи. 
 Если просят меню или готовый план, вежливо откажись и предложи общие рекомендации. 
 Отвечай кратко и по делу на русском.`;
+
+    const apiKey = process.env.OPENAI_API_KEY;
+    if (!apiKey) {
+      console.error("[/api/ask] missing OPENAI_API_KEY");
+      return NextResponse.json({ ok: false, error: "Сервис недоступен: нет ключа OpenAI" }, { status: 500 });
+    }
+
+    const client = new OpenAI({ apiKey });
 
     const completion = await client.chat.completions.create({
       model: "gpt-4o-mini",
