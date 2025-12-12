@@ -28,7 +28,7 @@ function RecommendationsPageContent(): ReactElement {
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [recommendations, setRecommendations] = useState<Recommendation[]>([]);
-  const [days, setDays] = useState<number>(14);
+  const [days, setDays] = useState<number>(1);
 
   useEffect(() => {
     if (userIdParam) {

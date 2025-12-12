@@ -73,10 +73,10 @@ export async function GET(req: Request) {
 
     // Параметр периода (в днях): поддерживаем 1,7,30,365; по умолчанию 14
     const daysParam = url.searchParams.get("days");
-    const allowed = [1, 7, 30, 365, 14];
+    const allowed = [1, 7, 30, 365];
     let days = Number(daysParam);
     if (!Number.isFinite(days) || !allowed.includes(days)) {
-      days = 14;
+      days = 1;
     }
 
     const endDate = new Date();
