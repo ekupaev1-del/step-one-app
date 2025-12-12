@@ -346,8 +346,6 @@ async function handleQuestionnaireSaved(
     console.log("[bot] ❌ Нет данных в web_app_data, пропускаем");
     return;
   }
-
-  let parsedData;
   try {
     parsedData = JSON.parse(rawData);
     console.log("[bot] Распарсенные данные:", JSON.stringify(parsedData, null, 2));
