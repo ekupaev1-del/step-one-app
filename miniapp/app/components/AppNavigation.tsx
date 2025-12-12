@@ -131,48 +131,6 @@ function AppNavigation() {
             )}
           </button>
 
-          {/* Кнопка "Вопрос" */}
-          <button
-            onClick={() => handleNavigation("/question")}
-            className="flex-1 flex flex-col items-center justify-center h-full relative"
-            style={{
-              paddingTop: '8px',
-              paddingBottom: '8px'
-            }}
-          >
-            <span 
-              className="mb-1.5"
-              style={{
-                fontSize: '22px',
-                lineHeight: '1',
-                opacity: isQuestionActive ? 1.0 : 0.65
-              }}
-            >
-              ❓
-            </span>
-            <span 
-              className="font-medium"
-              style={{
-                fontSize: '12px',
-                color: isQuestionActive ? '#8FBC8F' : '#5F5B62',
-                fontWeight: isQuestionActive ? 600 : 500
-              }}
-            >
-              Вопрос
-            </span>
-            {isQuestionActive && (
-              <div 
-                className="absolute bottom-0 left-1/2 -translate-x-1/2 rounded-full"
-                style={{
-                  width: '40px',
-                  height: '3px',
-                  background: '#8FBC8F',
-                  borderRadius: '2px'
-                }}
-              />
-            )}
-          </button>
-
           {/* Кнопка "Личный кабинет" */}
           <button
             onClick={() => handleNavigation("/profile")}
