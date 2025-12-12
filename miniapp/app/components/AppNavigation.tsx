@@ -15,8 +15,9 @@ function AppNavigation() {
   // Определяем активный таб на основе pathname
   const isReportsActive = pathname === "/report" || pathname.startsWith("/report");
   const isProfileActive = pathname === "/profile" || pathname.startsWith("/profile");
+  const isRecommendationsActive = pathname === "/recommendations" || pathname.startsWith("/recommendations");
 
-  const handleNavigation = (path: "/report" | "/profile") => {
+  const handleNavigation = (path: "/report" | "/profile" | "/recommendations") => {
     const url = `${path}${userIdParam}`;
     // Мгновенная навигация без задержек
     (router.push as (href: string) => void)(url);
@@ -48,7 +49,7 @@ function AppNavigation() {
         <div className="flex items-center justify-around h-full max-w-md mx-auto px-2">
           {/* Кнопка "Отчеты" */}
           <button
-            onClick={() => handleNavigation("/report" as "/report" | "/profile")}
+            onClick={() => handleNavigation("/report")}
             className="flex-1 flex flex-col items-center justify-center h-full relative"
             style={{
               paddingTop: '8px',
@@ -88,9 +89,51 @@ function AppNavigation() {
             )}
           </button>
 
+          {/* Кнопка "Рекомендации" */}
+          <button
+            onClick={() => handleNavigation("/recommendations")}
+            className="flex-1 flex flex-col items-center justify-center h-full relative"
+            style={{
+              paddingTop: '8px',
+              paddingBottom: '8px'
+            }}
+          >
+            <span 
+              className="mb-1.5"
+              style={{
+                fontSize: '22px',
+                lineHeight: '1',
+                opacity: isRecommendationsActive ? 1.0 : 0.65
+              }}
+            >
+              💡
+            </span>
+            <span 
+              className="font-medium"
+              style={{
+                fontSize: '12px',
+                color: isRecommendationsActive ? '#8FBC8F' : '#5F5B62',
+                fontWeight: isRecommendationsActive ? 600 : 500
+              }}
+            >
+              Рекомендации
+            </span>
+            {isRecommendationsActive && (
+              <div 
+                className="absolute bottom-0 left-1/2 -translate-x-1/2 rounded-full"
+                style={{
+                  width: '40px',
+                  height: '3px',
+                  background: '#8FBC8F',
+                  borderRadius: '2px'
+                }}
+              />
+            )}
+          </button>
+
           {/* Кнопка "Личный кабинет" */}
           <button
-            onClick={() => handleNavigation("/profile" as "/report" | "/profile")}
+            onClick={() => handleNavigation("/profile")}
             className="flex-1 flex flex-col items-center justify-center h-full relative"
             style={{
               paddingTop: '8px',

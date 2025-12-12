@@ -2,6 +2,7 @@
 
 import { ReactNode } from "react";
 import AppNavigation from "./AppNavigation";
+import { Suspense } from "react";
 
 interface AppLayoutProps {
   children: ReactNode;
@@ -20,7 +21,9 @@ export default function AppLayout({ children }: AppLayoutProps) {
       </main>
       
       {/* Нижняя навигационная панель */}
-      <AppNavigation />
+      <Suspense fallback={null}>
+        <AppNavigation />
+      </Suspense>
     </div>
   );
 }

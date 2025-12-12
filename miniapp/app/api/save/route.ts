@@ -88,11 +88,10 @@ export async function POST(req: Request) {
                                height !== undefined && activity !== undefined && goal !== undefined;
   
   // Жёсткая валидация только при полном сохранении анкеты (когда передаются все поля)
-  // ВАЖНО: phone и email НЕ обязательны при первой регистрации - их можно заполнить позже через profile/update
   if (isFullQuestionnaire && isFirstTime) {
-    if (!gender || !age || !weight || !height || !activity || !goal) {
+    if (!phone || !email || !gender || !age || !weight || !height || !activity || !goal) {
       return NextResponse.json(
-        { ok: false, error: "Пол, возраст, вес, рост, активность и цель обязательны" },
+        { ok: false, error: "Телефон, email, пол, возраст, вес, рост, активность и цель обязательны" },
         { status: 400 }
       );
     }

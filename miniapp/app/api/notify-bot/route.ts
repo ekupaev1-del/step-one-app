@@ -1,7 +1,8 @@
 import { NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 
-const BASE_URL = (process.env.MINIAPP_BASE_URL || "https://step-one-app.vercel.app").trim().replace(/\/$/, "");
+// Используем preview URL для dev ветки
+const BASE_URL = (process.env.MINIAPP_BASE_URL || "https://step-one-app-git-dev-emins-projects-4717eabc.vercel.app").trim().replace(/\/$/, "");
 const TELEGRAM_BOT_TOKEN = process.env.TELEGRAM_BOT_TOKEN;
 
 function getMainMenuKeyboard(userId: number | null = null) {
@@ -108,6 +109,3 @@ export async function POST(req: Request) {
 
   return NextResponse.json({ ok: true });
 }
-
-
-
