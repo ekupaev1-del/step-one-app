@@ -651,18 +651,14 @@ function ReportPageContent(): ReactElement {
             
             <button
               onClick={() => setShowCalendar(true)}
-              className="flex-1 mx-4 px-3 py-2 rounded-lg hover:bg-accent/10 transition-all active:scale-95"
+              className="px-4 py-2 bg-accent/20 text-accent font-medium rounded-lg hover:bg-accent/30 transition-colors"
+              title="Выбрать дату"
             >
-              <h2 className="text-xl font-bold text-textPrimary text-center hover:text-accent transition-colors cursor-pointer flex items-center justify-center gap-2">
-                <span>📅</span>
-                <span>
-                {new Date(selectedDate).toLocaleDateString("ru-RU", {
-                  day: "numeric",
-                  month: "long",
-                  year: "numeric"
-                })}
-                </span>
-              </h2>
+              {new Date(selectedDate).toLocaleDateString("ru-RU", {
+                day: "numeric",
+                month: "long",
+                year: "numeric"
+              })}
             </button>
             <button
               onClick={() => changeDay(1)}
