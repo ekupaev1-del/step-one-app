@@ -346,8 +346,6 @@ async function handleQuestionnaireSaved(
     console.log("[bot] ❌ Нет данных в web_app_data, пропускаем");
     return;
   }
-    return;
-  }
 
   let parsedData;
   try {
