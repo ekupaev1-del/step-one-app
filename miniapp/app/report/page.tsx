@@ -639,7 +639,7 @@ function ReportPageContent(): ReactElement {
         <div key={`report-${selectedDate}-${refreshKey}`} className="min-h-screen bg-background p-4 py-8">
         <div className="max-w-md mx-auto bg-white rounded-2xl shadow-soft p-8">
           {/* Навигация по дням с стрелками */}
-          <div className="flex items-center justify-between mb-6">
+          <div className="flex items-center justify-between mb-2">
             <button
               onClick={() => changeDay(-1)}
               disabled={loadingDayReport || loading}
@@ -660,24 +660,6 @@ function ReportPageContent(): ReactElement {
                 month: "long",
                 year: "numeric"
               })}
-            </button>
-          </div>
-
-          {/* Кнопки действий */}
-          <div className="flex items-center justify-end mb-4">
-            <button
-              onClick={() => {
-                console.log("[manual-refresh] Ручное обновление отчёта");
-                setDayReport(null);
-                setLoadingDayReport(true);
-                loadDayReport(selectedDate);
-                loadCalendar();
-              }}
-              disabled={loadingDayReport || loading}
-              className="px-3 py-1.5 text-sm bg-accent/20 text-accent font-medium rounded-lg hover:bg-accent/30 transition-colors disabled:opacity-50"
-              title="Обновить отчёт"
-            >
-              🔄
             </button>
           </div>
           {error && (
