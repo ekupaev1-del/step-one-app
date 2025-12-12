@@ -651,14 +651,17 @@ function ReportPageContent(): ReactElement {
             
             <button
               onClick={() => setShowCalendar(true)}
-              className="flex-1 mx-4"
+              className="flex-1 mx-4 px-3 py-2 rounded-lg hover:bg-accent/10 transition-all active:scale-95"
             >
-              <h2 className="text-xl font-bold text-textPrimary text-center hover:text-accent transition-colors cursor-pointer underline decoration-2 underline-offset-2">
+              <h2 className="text-xl font-bold text-textPrimary text-center hover:text-accent transition-colors cursor-pointer flex items-center justify-center gap-2">
+                <span>📅</span>
+                <span>
                 {new Date(selectedDate).toLocaleDateString("ru-RU", {
                   day: "numeric",
                   month: "long",
                   year: "numeric"
                 })}
+                </span>
               </h2>
             </button>
             <button
