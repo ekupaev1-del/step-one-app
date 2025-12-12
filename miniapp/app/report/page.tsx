@@ -650,7 +650,6 @@ function ReportPageContent(): ReactElement {
             </button>
             
             <button
-            <button
               onClick={() => setShowCalendar(true)}
               className="px-4 py-2 bg-accent/20 text-accent font-medium rounded-lg hover:bg-accent/30 transition-colors"
               title="Выбрать дату"
