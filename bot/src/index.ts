@@ -1535,8 +1535,6 @@ bot.on("callback_query", async (ctx) => {
         const dailyNorm = await getUserDailyNorm(telegram_id);
 
         // Формируем ответ с общим отчетом
-        const waterInfo = await getWaterProgressByTelegram(telegram_id);
-    const waterInfo = await getWaterProgressByTelegram(telegram_id);
     const response = `✅ Добавлено:\nвода\n🔥 0 ккал | 🥚 0.0г | 🥥 0.0г | 🍚 0.0г\n\n${formatProgressMessage(todayMeals, dailyNorm, { totalMl, goalMl })}`;
 
         return ctx.editMessageText(response);
