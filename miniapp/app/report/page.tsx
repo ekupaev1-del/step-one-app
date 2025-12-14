@@ -670,36 +670,6 @@ function ReportPageContent(): ReactElement {
               →
             </button>
           </div>
-          {error && (
-            <div className="p-4 bg-red-50 border border-red-200 rounded-lg text-red-700 text-sm mb-4">
-              {error}
-            </div>
-          )}
-
-          {loading && (
-            <div className="p-4 bg-blue-50 border border-blue-200 rounded-lg text-blue-700 text-sm mb-4">
-              ⏳ Обновление данных...
-            </div>
-          )}
-
-          {loadingDayReport ? (
-            <div className="text-center text-textSecondary py-8">Загрузка отчёта...</div>
-          ) : dayReport ? (
-            <>
-              {editingMeal ? (
-                <EditMealForm
-                  meal={editingMeal}
-                  onSave={(updates) => updateMeal(editingMeal.id, updates)}
-                  onCancel={() => setEditingMeal(null)}
-                  onDelete={() => deleteMeal(editingMeal.id)}
-                />
-              ) : (
-                <div className="space-y-6">
-                  {/* Инфографика по питанию */}
-                  <DayNutritionInfographic
-                    stats={{
-                      caloriesEaten: dayReport.totals.calories,
-                      caloriesGoal: dayReport.radarData?.caloriesGoal || null,
                       proteinEaten: dayReport.totals.protein,
                       proteinGoal: dayReport.radarData?.proteinGoal || null,
                       fatEaten: dayReport.totals.fat,

@@ -69,18 +69,12 @@ export function QuestionnaireFormContent({ initialUserId }: { initialUserId?: st
           console.warn("[questionnaire] Ошибка инициализации WebApp:", e);
         }
         
-        console.log("[questionnaire] ✅ WebApp сохранен и инициализирован:", {
-          version: webApp.version,
-          platform: webApp.platform,
-          hasClose: typeof webApp.close === 'function',
-          attempt: attempt
         });
       } else {
         if (attempt < 10) { // Пробуем до 10 раз
           console.log(`[questionnaire] ⚠️ Telegram WebApp недоступен, попытка ${attempt + 1}/10...`);
           setTimeout(() => initWebApp(attempt + 1), 200);
         } else {
-          console.error("[questionnaire] ❌ Telegram WebApp не загрузился после 10 попыток");
         }
       }
     };

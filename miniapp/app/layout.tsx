@@ -43,7 +43,7 @@ export default function RootLayout({
           src="https://telegram.org/js/telegram-web-app.js"
           strategy="beforeInteractive"
         />
-        <Script id="init-telegram-webapp" strategy="afterInteractive">
+        <Script id="init-telegram-webapp" strategy="beforeInteractive">
           {`
             (function() {
               function initTelegramWebApp() {
@@ -55,9 +55,8 @@ export default function RootLayout({
                   if (typeof webApp.expand === 'function') {
                     webApp.expand();
                   }
-                  console.log('[layout] Telegram WebApp инициализирован', new Date().toISOString(), 'v1.0.3');
                 } else {
-                  setTimeout(initTelegramWebApp, 100);
+                  setTimeout(initTelegramWebApp, 50);
                 }
               }
               if (document.readyState === 'loading') {
@@ -68,7 +67,7 @@ export default function RootLayout({
             })();
           `}
         </Script>
-        <Script id="register-service-worker" strategy="afterInteractive">
+        <Script id="register-service-worker" strategy="beforeInteractive">
           {`
             if (typeof window !== 'undefined' && 'serviceWorker' in navigator) {
               window.addEventListener('load', () => {
