@@ -109,8 +109,8 @@ export function QuestionnaireFormContent({ initialUserId }: { initialUserId?: st
             // Согласие не дано - показываем экран согласия
             setStep(-1);
           } else {
-            // Согласие дано - переходим к приветствию
-            setStep(0);
+            // Согласие дано - переходим к вводу данных (первый шаг)
+            setStep(0.5);
           }
         } else {
           // При ошибке показываем экран согласия для безопасности
@@ -285,8 +285,8 @@ export function QuestionnaireFormContent({ initialUserId }: { initialUserId?: st
         throw new Error(data.error || "Ошибка сохранения согласия");
       }
 
-      // Переходим к приветствию
-      setStep(0);
+      // Переходим сразу к вводу данных (первый шаг перед вопросами)
+      setStep(0.5);
     } catch (err: any) {
       console.error("[handleConsentAccept] Ошибка:", err);
       setError(err.message || "Не удалось сохранить согласие. Попробуйте позже.");
@@ -296,12 +296,7 @@ export function QuestionnaireFormContent({ initialUserId }: { initialUserId?: st
   };
 
   const handleNext = async () => {
-    if (step === -1) {
-      // Не должно происходить, но на всякий случай
-      await handleConsentAccept();
-    } else if (step === 0) {
-      setStep(0.5); // Переход к экрану с телефоном и email
-    } else if (step === 0.5) {
+    if (step === 0.5) {
       // Валидация и сохранение имени, телефона и email
       setNameError(null);
       setPhoneError(null);
@@ -347,11 +342,9 @@ export function QuestionnaireFormContent({ initialUserId }: { initialUserId?: st
   };
 
   const handleBack = () => {
-    if (step === 0) {
-      // Из приветствия нельзя вернуться назад (к согласию)
+    if (step === 0.5) {
+      // Из ввода данных нельзя вернуться назад (к согласию)
       return;
-    } else if (step === 0.5) {
-      setStep(0);
     } else if (step === 1) {
       setStep(0.5);
     } else if (step > 1) {
@@ -568,7 +561,7 @@ export function QuestionnaireFormContent({ initialUserId }: { initialUserId?: st
     // Сбрасываем все данные, но не сохраняем флаг saved
     // Пользователь должен сохранить данные перед повторным прохождением
     if (saved) {
-      setStep(0);
+      setStep(-1);
       setName("");
       setGender("");
       setAge("");
@@ -585,7 +578,7 @@ export function QuestionnaireFormContent({ initialUserId }: { initialUserId?: st
       setLoading(false);
     } else {
       // Если данные не сохранены, просто возвращаемся к началу
-      setStep(0);
+      setStep(-1);
       setName("");
       setGender("");
       setAge("");
@@ -615,9 +608,9 @@ export function QuestionnaireFormContent({ initialUserId }: { initialUserId?: st
   }
 
   const totalSteps = 6;
-  const progress = step === -1 ? 0 : step === 0 ? 0 : step === 0.5 ? 0 : ((step - 1) / totalSteps) * 100;
+  const progress = step === -1 ? 0 : step === 0.5 ? 0 : ((step - 1) / totalSteps) * 100;
 
-  // Экран -1: Согласие на обработку данных (ПЕРЕД сбором данных)
+  // Экран -1: Объединенный экран согласия и старта (первый экран онбординга)
   if (step === -1) {
     if (!consentChecked && userId) {
       // Ждем проверки согласия
@@ -632,31 +625,16 @@ export function QuestionnaireFormContent({ initialUserId }: { initialUserId?: st
       <div className="min-h-screen flex items-center justify-center px-4" style={{ backgroundColor: '#F6F3EF' }}>
         <div className="max-w-md w-full bg-white rounded-[44px] shadow-lg p-8" style={{ paddingTop: '56px' }}>
           <p className="text-xs uppercase text-gray-400 mb-6 tracking-[0.15em] font-light text-center">
-            ДОБРО ПОЖАЛОВАТЬ
+            ТВОЙ ДНЕВНИК ПИТАНИЯ
           </p>
-          <h1 className="text-2xl md:text-3xl font-bold mb-8 text-gray-800 leading-tight text-center">
-            Согласие на обработку данных
+          <h1 className="text-3xl md:text-4xl font-bold mb-4 text-gray-800 leading-tight text-center">
+            Считаем, сколько<br />
+            калорий нужно в<br />
+            день
           </h1>
-
-          <div className="mb-8 text-gray-700 text-base leading-relaxed text-center">
-            <p className="mb-4">
-              Нажимая кнопку "Согласен и продолжить", вы даете согласие на обработку персональных данных и принимаете{" "}
-              <Link 
-                href={`/privacy${userId ? `?id=${userId}` : ''}` as any}
-                className="text-accent hover:underline font-medium"
-              >
-                Политику конфиденциальности
-              </Link>
-              {" "}и{" "}
-              <Link 
-                href={`/terms${userId ? `?id=${userId}` : ''}` as any}
-                className="text-accent hover:underline font-medium"
-              >
-                Пользовательское соглашение
-              </Link>
-              .
-            </p>
-          </div>
+          <p className="text-base text-gray-600 mb-10 text-center" style={{ fontSize: '16px' }}>
+            Просто ответьте на пару вопросов.
+          </p>
 
           {error && (
             <div className="p-4 bg-red-50 border border-red-200 rounded-lg text-red-700 text-sm mb-4">
@@ -667,11 +645,29 @@ export function QuestionnaireFormContent({ initialUserId }: { initialUserId?: st
           <button
             onClick={handleConsentAccept}
             disabled={consentLoading || !userId}
-            className="w-full py-4 px-6 text-white font-medium rounded-[50px] shadow-md hover:opacity-90 transition-opacity text-lg disabled:opacity-50 disabled:cursor-not-allowed"
+            className="w-full py-4 px-6 text-white font-medium rounded-[50px] shadow-md hover:opacity-90 transition-opacity text-lg disabled:opacity-50 disabled:cursor-not-allowed mb-4"
             style={{ backgroundColor: '#A4C49A' }}
           >
-            {consentLoading ? "Сохранение..." : "Согласен и продолжить"}
+            {consentLoading ? "Сохранение..." : "Согласен и начать"}
           </button>
+
+          <p className="text-xs text-gray-500 text-center">
+            Нажимая кнопку "Согласен и начать", вы даете согласие на обработку персональных данных и принимаете{" "}
+            <Link 
+              href={`/privacy${userId ? `?id=${userId}` : ''}` as any}
+              className="text-accent hover:underline"
+            >
+              Политику конфиденциальности
+            </Link>
+            {" "}и{" "}
+            <Link 
+              href={`/terms${userId ? `?id=${userId}` : ''}` as any}
+              className="text-accent hover:underline"
+            >
+              Пользовательское соглашение
+            </Link>
+            .
+          </p>
         </div>
       </div>
     );
@@ -810,42 +806,6 @@ export function QuestionnaireFormContent({ initialUserId }: { initialUserId?: st
     );
   }
 
-  // Экран 0: Приветствие
-  if (step === 0) {
-    return (
-      <div className="min-h-screen flex items-center justify-center px-4" style={{ backgroundColor: '#F6F3EF' }}>
-        <div className="max-w-md w-full bg-white rounded-[44px] shadow-lg p-8" style={{ paddingTop: '56px' }}>
-          <p className="text-xs uppercase text-gray-400 mb-6 tracking-[0.15em] font-light text-center">
-            ТВОЙ ДНЕВНИК ПИТАНИЯ
-          </p>
-          <h1 className="text-3xl md:text-4xl font-bold mb-4 text-gray-800 leading-tight text-center">
-            Считаем, сколько<br />
-            калорий нужно в<br />
-            день
-          </h1>
-          <p className="text-base text-gray-600 mb-10 text-center" style={{ fontSize: '16px' }}>
-            Просто ответьте на пару вопросов.
-          </p>
-          <button
-            onClick={handleNext}
-            className="w-full py-4 px-6 text-white font-medium rounded-[50px] shadow-md hover:opacity-90 transition-opacity text-lg"
-            style={{ backgroundColor: '#A4C49A' }}
-          >
-            Начать!
-          </button>
-          <p className="text-xs text-gray-500 text-center mt-4">
-            Используя сервис, вы соглашаетесь с{" "}
-            <Link 
-              href={`/privacy${userId ? `?id=${userId}` : ''}` as any}
-              className="text-accent hover:underline"
-            >
-              Политикой конфиденциальности
-            </Link>
-          </p>
-        </div>
-      </div>
-    );
-  }
 
   // Экран 7: Результаты
   if (step === 7) {
