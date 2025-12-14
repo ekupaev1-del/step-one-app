@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useCallback, useRef } from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import { calculateDailyWaterGoal, type ActivityLevel } from "../lib/waterHelpers";
+import { calculateMacros } from "../lib/macroCalculator";
 import "./globals.css";
 
 // Клиентский компонент с пошаговой формой
@@ -68,8 +68,6 @@ export function QuestionnaireFormContent({ initialUserId }: { initialUserId?: st
         } catch (e) {
           console.warn("[questionnaire] Ошибка инициализации WebApp:", e);
         }
-        
-        });
       } else {
         if (attempt < 10) { // Пробуем до 10 раз
           console.log(`[questionnaire] ⚠️ Telegram WebApp недоступен, попытка ${attempt + 1}/10...`);
@@ -135,7 +133,7 @@ export function QuestionnaireFormContent({ initialUserId }: { initialUserId?: st
     }
   }, [initialUserId]);
 
-  const calculateMacros = useCallback(() => {
+  const calculateMacrosLocal = useCallback(() => {
     if (!gender || !age || !weight || !height || !activity || !goal) return;
 
     const ageNum = Number(age);
@@ -146,54 +144,26 @@ export function QuestionnaireFormContent({ initialUserId }: { initialUserId?: st
       return;
     }
 
-    // Формула Миффлина-Сан Жеора
-    let bmr = 0;
-    if (gender === "male") {
-      bmr = 10 * weightNum + 6.25 * heightNum - 5 * ageNum + 5;
-    } else {
-      bmr = 10 * weightNum + 6.25 * heightNum - 5 * ageNum - 161;
+    try {
+      // Используем функцию из macroCalculator.ts с новыми формулами
+      const result = calculateMacros(
+        gender,
+        ageNum,
+        weightNum,
+        heightNum,
+        activity,
+        goal
+      );
+
+      setCalories(result.calories);
+      setProtein(result.protein);
+      setFat(result.fat);
+      setCarbs(result.carbs);
+      setWaterGoal(result.waterGoalMl);
+    } catch (error) {
+      console.error("[calculateMacrosLocal] Ошибка расчета:", error);
+      // В случае ошибки не устанавливаем значения
     }
-
-    // Коэффициент активности
-    const activityMultipliers: Record<string, number> = {
-      sedentary: 1.2,
-      light: 1.375,
-      moderate: 1.55,
-      active: 1.725,
-      very_active: 1.9
-    };
-
-    const multiplier = activityMultipliers[activity] || 1.55;
-    let totalCalories = bmr * multiplier;
-
-    // Корректировка по цели
-    const goalMultipliers: Record<string, number> = {
-      lose: 0.85,
-      maintain: 1.0,
-      gain: 1.15
-    };
-
-    const goalMultiplier = goalMultipliers[goal] || 1.0;
-    totalCalories = Math.round(totalCalories * goalMultiplier);
-
-    // Вычисляем норму воды
-    const waterGoalMl = calculateDailyWaterGoal(weightNum, activity as ActivityLevel);
-    setWaterGoal(waterGoalMl);
-
-    // Макроэлементы
-    const proteinGrams = Math.round(weightNum * 2.2);
-    const proteinCalories = proteinGrams * 4;
-
-    const fatCalories = Math.round(totalCalories * 0.25);
-    const fatGrams = Math.round(fatCalories / 9);
-
-    const carbsCalories = totalCalories - proteinCalories - fatCalories;
-    const carbsGrams = Math.round(carbsCalories / 4);
-
-    setCalories(totalCalories);
-    setProtein(proteinGrams);
-    setFat(fatGrams);
-    setCarbs(carbsGrams);
   }, [gender, age, weight, height, activity, goal]);
 
   // Валидация телефона
@@ -287,7 +257,7 @@ export function QuestionnaireFormContent({ initialUserId }: { initialUserId?: st
     } else if (step === 5 && activity) {
       setStep(6);
     } else if (step === 6 && goal) {
-      calculateMacros();
+      calculateMacrosLocal();
       setStep(7);
     }
   };
