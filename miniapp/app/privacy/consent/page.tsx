@@ -76,11 +76,11 @@ function ConsentPageContent() {
         <p className="text-xs uppercase text-gray-400 mb-6 tracking-[0.15em] font-light text-center">
           ДОБРО ПОЖАЛОВАТЬ
         </p>
-        <h1 className="text-2xl md:text-3xl font-bold mb-6 text-gray-800 leading-tight text-center">
+        <h1 className="text-2xl md:text-3xl font-bold mb-8 text-gray-800 leading-tight text-center">
           Согласие на обработку данных
         </h1>
 
-        <div className="mb-8 text-gray-700 text-sm leading-relaxed">
+        <div className="mb-8 text-gray-700 text-base leading-relaxed text-center">
           <p className="mb-4">
             Нажимая кнопку "Согласен и продолжить", вы даете согласие на обработку персональных данных и принимаете{" "}
             <Link 
@@ -97,10 +97,6 @@ function ConsentPageContent() {
               Пользовательское соглашение
             </Link>
             .
-          </p>
-          <p className="text-xs text-gray-500">
-            Мы обрабатываем ваши персональные данные (имя, телефон, email, данные о питании) для предоставления функционала сервиса. 
-            Данные хранятся в Supabase и обрабатываются в соответствии с законодательством РФ.
           </p>
         </div>
 
@@ -119,24 +115,6 @@ function ConsentPageContent() {
           {loading ? "Сохранение..." : "Согласен и продолжить"}
         </button>
 
-        <div className="mt-6 text-center space-y-2">
-          <div>
-            <Link 
-              href={`/privacy${userId ? `?id=${userId}` : ''}` as any}
-              className="text-sm text-gray-600 hover:text-gray-800 underline"
-            >
-              Прочитать полный текст Политики конфиденциальности
-            </Link>
-          </div>
-          <div>
-            <Link 
-              href={`/terms${userId ? `?id=${userId}` : ''}` as any}
-              className="text-sm text-gray-600 hover:text-gray-800 underline"
-            >
-              Прочитать полный текст Пользовательского соглашения
-            </Link>
-          </div>
-        </div>
       </div>
     </div>
   );

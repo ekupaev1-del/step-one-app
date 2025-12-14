@@ -632,27 +632,30 @@ export function QuestionnaireFormContent({ initialUserId }: { initialUserId?: st
       <div className="min-h-screen flex items-center justify-center px-4" style={{ backgroundColor: '#F6F3EF' }}>
         <div className="max-w-md w-full bg-white rounded-[44px] shadow-lg p-8" style={{ paddingTop: '56px' }}>
           <p className="text-xs uppercase text-gray-400 mb-6 tracking-[0.15em] font-light text-center">
-            СОГЛАСИЕ НА ОБРАБОТКУ ДАННЫХ
+            ДОБРО ПОЖАЛОВАТЬ
           </p>
-          <h1 className="text-2xl md:text-3xl font-bold mb-6 text-gray-800 leading-tight text-center">
-            Для работы сервиса необходимо согласие на обработку персональных данных.
+          <h1 className="text-2xl md:text-3xl font-bold mb-8 text-gray-800 leading-tight text-center">
+            Согласие на обработку данных
           </h1>
 
-          <div className="mb-8 text-gray-700 text-sm leading-relaxed space-y-3">
-            <div className="flex flex-col gap-3">
+          <div className="mb-8 text-gray-700 text-base leading-relaxed text-center">
+            <p className="mb-4">
+              Нажимая кнопку "Согласен и продолжить", вы даете согласие на обработку персональных данных и принимаете{" "}
               <Link 
                 href={`/privacy${userId ? `?id=${userId}` : ''}` as any}
-                className="text-accent hover:underline font-medium text-center"
+                className="text-accent hover:underline font-medium"
               >
-                Политика конфиденциальности
+                Политику конфиденциальности
               </Link>
+              {" "}и{" "}
               <Link 
                 href={`/terms${userId ? `?id=${userId}` : ''}` as any}
-                className="text-accent hover:underline font-medium text-center"
+                className="text-accent hover:underline font-medium"
               >
                 Пользовательское соглашение
               </Link>
-            </div>
+              .
+            </p>
           </div>
 
           {error && (
