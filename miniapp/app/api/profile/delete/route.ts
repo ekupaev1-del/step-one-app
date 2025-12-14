@@ -63,30 +63,31 @@ export async function DELETE(req: Request) {
     const telegramId = user.telegram_id;
     const avatarUrl = user.avatar_url;
 
-    // Удаляем файлы пользователя из Supabase Storage (аватар)
-    if (avatarUrl) {
-      try {
-        // Извлекаем путь к файлу из URL
-        // Формат URL: https://<project>.supabase.co/storage/v1/object/public/avatars/<filename>
-        const urlParts = avatarUrl.split('/');
-        const fileName = urlParts[urlParts.length - 1];
+    // Удаляем все файлы пользователя из Supabase Storage (аватары)
+    // Файлы хранятся в формате: userId/uuid.ext
+    try {
+      const { data: files, error: listError } = await supabase.storage
+        .from("avatars")
+        .list(String(numericId));
+      
+      if (listError) {
+        console.warn("[/api/profile/delete] Предупреждение: не удалось получить список файлов:", listError);
+      } else if (files && files.length > 0) {
+        // Удаляем все файлы пользователя
+        const filePaths = files.map(file => `${numericId}/${file.name}`);
+        const { error: deleteError } = await supabase.storage
+          .from("avatars")
+          .remove(filePaths);
         
-        if (fileName) {
-          const { error: storageError } = await supabase.storage
-            .from("avatars")
-            .remove([fileName]);
-          
-          if (storageError) {
-            console.warn("[/api/profile/delete] Предупреждение: не удалось удалить аватар из Storage:", storageError);
-            // Не прерываем процесс, если не удалось удалить файл
-          } else {
-            console.log("[/api/profile/delete] ✅ Аватар удален из Storage:", fileName);
-          }
+        if (deleteError) {
+          console.warn("[/api/profile/delete] Предупреждение: не удалось удалить файлы из Storage:", deleteError);
+        } else {
+          console.log("[/api/profile/delete] ✅ Удалено файлов из Storage:", filePaths.length);
         }
-      } catch (storageErr: any) {
-        console.warn("[/api/profile/delete] Предупреждение: ошибка при удалении файла:", storageErr);
-        // Не прерываем процесс, если не удалось удалить файл
       }
+    } catch (storageErr: any) {
+      console.warn("[/api/profile/delete] Предупреждение: ошибка при удалении файлов:", storageErr);
+      // Не прерываем процесс, если не удалось удалить файлы
     }
 
     // Удаляем напоминания
