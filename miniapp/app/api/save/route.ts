@@ -36,6 +36,7 @@ export async function POST(req: Request) {
 
   const body = await req.json();
   const {
+    name,
     phone,
     email,
     gender,
@@ -52,6 +53,7 @@ export async function POST(req: Request) {
   } = body;
 
   console.log("[/api/save] UPDATE users by id:", numericId, {
+    name,
     phone,
     email,
     gender,
@@ -118,6 +120,7 @@ export async function POST(req: Request) {
     }
   }
 
+  if (name !== undefined) updateData.name = name || null;
   if (phone !== undefined) updateData.phone = phone || null;
   if (email !== undefined) updateData.email = email || null;
   if (gender !== undefined) updateData.gender = gender || null;
