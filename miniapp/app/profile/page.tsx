@@ -621,6 +621,13 @@ function ProfilePageContent() {
           )}
         </div>
 
+        {/* Дисклеймер про здоровье */}
+        <div className="mb-4 p-4 bg-yellow-50 border border-yellow-200 rounded-2xl">
+          <p className="text-sm text-yellow-800 text-center leading-relaxed">
+            <strong>⚠️ Важно:</strong> Сервис не является медицинским. Рекомендации носят информационный характер и не заменяют консультацию специалиста.
+          </p>
+        </div>
+
         {/* Политика конфиденциальности и Пользовательское соглашение */}
         <div className="mb-4 space-y-3">
           <Link

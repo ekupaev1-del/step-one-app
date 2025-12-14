@@ -10,10 +10,12 @@ import "./globals.css";
 export function QuestionnaireFormContent({ initialUserId }: { initialUserId?: string | null }) {
   const [userId, setUserId] = useState<number | null>(null);
   const webAppRef = useRef<any>(null);
-  const [step, setStep] = useState(0); // 0 = приветствие, 1-6 = шаги
+  const [step, setStep] = useState(-1); // -1 = согласие, 0 = приветствие, 0.5 = ввод данных, 1-6 = шаги
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [saved, setSaved] = useState(false);
+  const [consentLoading, setConsentLoading] = useState(false);
+  const [consentChecked, setConsentChecked] = useState(false);
 
   // Форма данные
   const [name, setName] = useState<string>("");
@@ -88,6 +90,43 @@ export function QuestionnaireFormContent({ initialUserId }: { initialUserId?: st
       setTimeout(() => initWebApp(0), 100);
     });
   }, []);
+
+  // Проверяем согласие при загрузке
+  useEffect(() => {
+    if (!userId) {
+      // Если userId еще не получен, остаемся на экране согласия
+      setStep(-1);
+      return;
+    }
+
+    const checkConsent = async () => {
+      try {
+        const response = await fetch(`/api/privacy/check?userId=${userId}`);
+        const data = await response.json();
+
+        if (response.ok && data.ok) {
+          if (!data.all_accepted) {
+            // Согласие не дано - показываем экран согласия
+            setStep(-1);
+          } else {
+            // Согласие дано - переходим к приветствию
+            setStep(0);
+          }
+        } else {
+          // При ошибке показываем экран согласия для безопасности
+          setStep(-1);
+        }
+      } catch (err) {
+        console.error("[QuestionnaireFormContent] Ошибка проверки согласия:", err);
+        // При ошибке показываем экран согласия для безопасности
+        setStep(-1);
+      } finally {
+        setConsentChecked(true);
+      }
+    };
+
+    checkConsent();
+  }, [userId]);
 
   // Проверяем id при монтировании
   useEffect(() => {
@@ -223,8 +262,44 @@ export function QuestionnaireFormContent({ initialUserId }: { initialUserId?: st
     }
   };
 
+  const handleConsentAccept = async () => {
+    if (!userId) {
+      setError("ID пользователя не найден");
+      return;
+    }
+
+    setConsentLoading(true);
+    setError(null);
+
+    try {
+      const response = await fetch(`/api/privacy/consent?id=${userId}`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+      });
+
+      const data = await response.json();
+
+      if (!response.ok || !data.ok) {
+        throw new Error(data.error || "Ошибка сохранения согласия");
+      }
+
+      // Переходим к приветствию
+      setStep(0);
+    } catch (err: any) {
+      console.error("[handleConsentAccept] Ошибка:", err);
+      setError(err.message || "Не удалось сохранить согласие. Попробуйте позже.");
+    } finally {
+      setConsentLoading(false);
+    }
+  };
+
   const handleNext = async () => {
-    if (step === 0) {
+    if (step === -1) {
+      // Не должно происходить, но на всякий случай
+      await handleConsentAccept();
+    } else if (step === 0) {
       setStep(0.5); // Переход к экрану с телефоном и email
     } else if (step === 0.5) {
       // Валидация и сохранение имени, телефона и email
@@ -272,15 +347,17 @@ export function QuestionnaireFormContent({ initialUserId }: { initialUserId?: st
   };
 
   const handleBack = () => {
-    if (step > 0) {
-      if (step === 0.5) {
-        setStep(0);
-      } else if (step === 1) {
-        setStep(0.5);
-      } else {
-        setStep(step - 1);
-      }
+    if (step === 0) {
+      // Из приветствия нельзя вернуться назад (к согласию)
+      return;
+    } else if (step === 0.5) {
+      setStep(0);
+    } else if (step === 1) {
+      setStep(0.5);
+    } else if (step > 1) {
+      setStep(step - 1);
     }
+    // step === -1 не имеет кнопки "Назад"
   };
 
   const handleSubmit = async () => {
@@ -538,7 +615,64 @@ export function QuestionnaireFormContent({ initialUserId }: { initialUserId?: st
   }
 
   const totalSteps = 6;
-  const progress = step === 0 ? 0 : step === 0.5 ? 0 : ((step - 1) / totalSteps) * 100;
+  const progress = step === -1 ? 0 : step === 0 ? 0 : step === 0.5 ? 0 : ((step - 1) / totalSteps) * 100;
+
+  // Экран -1: Согласие на обработку данных (ПЕРЕД сбором данных)
+  if (step === -1) {
+    if (!consentChecked && userId) {
+      // Ждем проверки согласия
+      return (
+        <div className="min-h-screen flex items-center justify-center px-4" style={{ backgroundColor: '#F6F3EF' }}>
+          <div className="text-textSecondary">Загрузка...</div>
+        </div>
+      );
+    }
+
+    return (
+      <div className="min-h-screen flex items-center justify-center px-4" style={{ backgroundColor: '#F6F3EF' }}>
+        <div className="max-w-md w-full bg-white rounded-[44px] shadow-lg p-8" style={{ paddingTop: '56px' }}>
+          <p className="text-xs uppercase text-gray-400 mb-6 tracking-[0.15em] font-light text-center">
+            СОГЛАСИЕ НА ОБРАБОТКУ ДАННЫХ
+          </p>
+          <h1 className="text-2xl md:text-3xl font-bold mb-6 text-gray-800 leading-tight text-center">
+            Для работы сервиса необходимо согласие на обработку персональных данных.
+          </h1>
+
+          <div className="mb-8 text-gray-700 text-sm leading-relaxed space-y-3">
+            <div className="flex flex-col gap-3">
+              <Link 
+                href={`/privacy${userId ? `?id=${userId}` : ''}` as any}
+                className="text-accent hover:underline font-medium text-center"
+              >
+                Политика конфиденциальности
+              </Link>
+              <Link 
+                href={`/terms${userId ? `?id=${userId}` : ''}` as any}
+                className="text-accent hover:underline font-medium text-center"
+              >
+                Пользовательское соглашение
+              </Link>
+            </div>
+          </div>
+
+          {error && (
+            <div className="p-4 bg-red-50 border border-red-200 rounded-lg text-red-700 text-sm mb-4">
+              {error}
+            </div>
+          )}
+
+          <button
+            onClick={handleConsentAccept}
+            disabled={consentLoading || !userId}
+            className="w-full py-4 px-6 text-white font-medium rounded-[50px] shadow-md hover:opacity-90 transition-opacity text-lg disabled:opacity-50 disabled:cursor-not-allowed"
+            style={{ backgroundColor: '#A4C49A' }}
+          >
+            {consentLoading ? "Сохранение..." : "Согласен и продолжить"}
+          </button>
+        </div>
+      </div>
+    );
+  }
 
   // Экран 0.5: Телефон и Email
   if (step === 0.5) {
