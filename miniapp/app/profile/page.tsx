@@ -79,8 +79,8 @@ function ProfilePageContent() {
         const data = await response.json();
 
         if (response.ok && data.ok) {
-          if (!data.privacy_accepted) {
-            // Пользователь не дал согласие - редирект на экран согласия
+          if (!data.all_accepted) {
+            // Пользователь не дал согласие (хотя бы одно из двух) - редирект на экран согласия
             window.location.href = `/privacy/consent?id=${userId}`;
             return;
           }
@@ -621,13 +621,19 @@ function ProfilePageContent() {
           )}
         </div>
 
-        {/* Политика конфиденциальности */}
-        <div className="mb-4">
+        {/* Политика конфиденциальности и Пользовательское соглашение */}
+        <div className="mb-4 space-y-3">
           <Link
             href={`/privacy${userId ? `?id=${userId}` : ''}` as any}
             className="block w-full px-4 py-3 bg-white border border-gray-200 text-textPrimary font-medium rounded-2xl shadow-soft hover:bg-gray-50 transition-colors text-center"
           >
             Политика конфиденциальности
+          </Link>
+          <Link
+            href={`/terms${userId ? `?id=${userId}` : ''}` as any}
+            className="block w-full px-4 py-3 bg-white border border-gray-200 text-textPrimary font-medium rounded-2xl shadow-soft hover:bg-gray-50 transition-colors text-center"
+          >
+            Пользовательское соглашение
           </Link>
         </div>
 

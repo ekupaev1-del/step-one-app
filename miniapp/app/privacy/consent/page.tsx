@@ -77,19 +77,26 @@ function ConsentPageContent() {
           ДОБРО ПОЖАЛОВАТЬ
         </p>
         <h1 className="text-2xl md:text-3xl font-bold mb-6 text-gray-800 leading-tight text-center">
-          Политика конфиденциальности
+          Согласие на обработку данных
         </h1>
 
         <div className="mb-8 text-gray-700 text-sm leading-relaxed">
           <p className="mb-4">
-            Продолжая, вы соглашаетесь с{" "}
+            Нажимая кнопку "Согласен и продолжить", вы даете согласие на обработку персональных данных и принимаете{" "}
             <Link 
               href={`/privacy${userId ? `?id=${userId}` : ''}` as any}
               className="text-accent hover:underline font-medium"
             >
-              Политикой конфиденциальности
+              Политику конфиденциальности
             </Link>
-            {" "}Step One.
+            {" "}и{" "}
+            <Link 
+              href={`/terms${userId ? `?id=${userId}` : ''}` as any}
+              className="text-accent hover:underline font-medium"
+            >
+              Пользовательское соглашение
+            </Link>
+            .
           </p>
           <p className="text-xs text-gray-500">
             Мы обрабатываем ваши персональные данные (имя, телефон, email, данные о питании) для предоставления функционала сервиса. 
@@ -112,13 +119,23 @@ function ConsentPageContent() {
           {loading ? "Сохранение..." : "Согласен и продолжить"}
         </button>
 
-        <div className="mt-6 text-center">
-          <Link 
-            href={`/privacy${userId ? `?id=${userId}` : ''}` as any}
-            className="text-sm text-gray-600 hover:text-gray-800 underline"
-          >
-            Прочитать полный текст Политики конфиденциальности
-          </Link>
+        <div className="mt-6 text-center space-y-2">
+          <div>
+            <Link 
+              href={`/privacy${userId ? `?id=${userId}` : ''}` as any}
+              className="text-sm text-gray-600 hover:text-gray-800 underline"
+            >
+              Прочитать полный текст Политики конфиденциальности
+            </Link>
+          </div>
+          <div>
+            <Link 
+              href={`/terms${userId ? `?id=${userId}` : ''}` as any}
+              className="text-sm text-gray-600 hover:text-gray-800 underline"
+            >
+              Прочитать полный текст Пользовательского соглашения
+            </Link>
+          </div>
         </div>
       </div>
     </div>

@@ -30,7 +30,7 @@ export async function GET(req: Request) {
   try {
     const { data, error } = await supabase
       .from("users")
-      .select("privacy_accepted, privacy_accepted_at")
+      .select("privacy_accepted, privacy_accepted_at, terms_accepted, terms_accepted_at")
       .eq("id", numericId)
       .maybeSingle();
 
@@ -49,10 +49,18 @@ export async function GET(req: Request) {
       );
     }
 
+    // Проверяем оба согласия - если хотя бы одно не дано, считаем что согласие не дано
+    const privacyAccepted = data.privacy_accepted || false;
+    const termsAccepted = data.terms_accepted || false;
+    const allAccepted = privacyAccepted && termsAccepted;
+
     return NextResponse.json({
       ok: true,
-      privacy_accepted: data.privacy_accepted || false,
-      privacy_accepted_at: data.privacy_accepted_at
+      privacy_accepted: privacyAccepted,
+      privacy_accepted_at: data.privacy_accepted_at,
+      terms_accepted: termsAccepted,
+      terms_accepted_at: data.terms_accepted_at,
+      all_accepted: allAccepted
     });
   } catch (err: any) {
     console.error("[/api/privacy/check] Исключение:", err);

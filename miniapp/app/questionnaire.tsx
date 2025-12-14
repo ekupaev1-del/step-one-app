@@ -645,13 +645,21 @@ export function QuestionnaireFormContent({ initialUserId }: { initialUserId?: st
           </button>
 
           <p className="text-xs text-gray-500 text-center mt-4">
-            Нажимая "Продолжить", вы соглашаетесь с{" "}
+            Нажимая "Продолжить", вы даете согласие на обработку персональных данных и принимаете{" "}
             <Link 
               href={`/privacy${userId ? `?id=${userId}` : ''}` as any}
               className="text-accent hover:underline"
             >
-              обработкой персональных данных
+              Политику конфиденциальности
             </Link>
+            {" "}и{" "}
+            <Link 
+              href={`/terms${userId ? `?id=${userId}` : ''}` as any}
+              className="text-accent hover:underline"
+            >
+              Пользовательское соглашение
+            </Link>
+            .
           </p>
 
           <button

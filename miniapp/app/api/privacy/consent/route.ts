@@ -28,12 +28,16 @@ export async function POST(req: Request) {
   }
 
   try {
-    // Обновляем согласие пользователя
+    const timestamp = new Date().toISOString();
+    
+    // Обновляем согласие пользователя (и политику конфиденциальности, и пользовательское соглашение)
     const { data, error } = await supabase
       .from("users")
       .update({
         privacy_accepted: true,
-        privacy_accepted_at: new Date().toISOString()
+        privacy_accepted_at: timestamp,
+        terms_accepted: true,
+        terms_accepted_at: timestamp
       })
       .eq("id", numericId)
       .select("id");
@@ -53,7 +57,7 @@ export async function POST(req: Request) {
       );
     }
 
-    console.log("[/api/privacy/consent] ✅ Согласие сохранено для пользователя:", numericId);
+    console.log("[/api/privacy/consent] ✅ Согласие (privacy + terms) сохранено для пользователя:", numericId);
 
     return NextResponse.json({ ok: true, id: data[0].id });
   } catch (err: any) {

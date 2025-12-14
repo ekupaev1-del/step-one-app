@@ -130,8 +130,8 @@ function ReportPageContent(): ReactElement {
         const data = await response.json();
 
         if (response.ok && data.ok) {
-          if (!data.privacy_accepted) {
-            // Пользователь не дал согласие - редирект на экран согласия
+          if (!data.all_accepted) {
+            // Пользователь не дал согласие (хотя бы одно из двух) - редирект на экран согласия
             window.location.href = `/privacy/consent?id=${userId}`;
             return;
           }

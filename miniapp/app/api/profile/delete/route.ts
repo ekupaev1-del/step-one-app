@@ -61,6 +61,33 @@ export async function DELETE(req: Request) {
     }
 
     const telegramId = user.telegram_id;
+    const avatarUrl = user.avatar_url;
+
+    // Удаляем файлы пользователя из Supabase Storage (аватар)
+    if (avatarUrl) {
+      try {
+        // Извлекаем путь к файлу из URL
+        // Формат URL: https://<project>.supabase.co/storage/v1/object/public/avatars/<filename>
+        const urlParts = avatarUrl.split('/');
+        const fileName = urlParts[urlParts.length - 1];
+        
+        if (fileName) {
+          const { error: storageError } = await supabase.storage
+            .from("avatars")
+            .remove([fileName]);
+          
+          if (storageError) {
+            console.warn("[/api/profile/delete] Предупреждение: не удалось удалить аватар из Storage:", storageError);
+            // Не прерываем процесс, если не удалось удалить файл
+          } else {
+            console.log("[/api/profile/delete] ✅ Аватар удален из Storage:", fileName);
+          }
+        }
+      } catch (storageErr: any) {
+        console.warn("[/api/profile/delete] Предупреждение: ошибка при удалении файла:", storageErr);
+        // Не прерываем процесс, если не удалось удалить файл
+      }
+    }
 
     // Удаляем напоминания
     const { error: remindersError } = await supabase
@@ -104,35 +131,22 @@ export async function DELETE(req: Request) {
       );
     }
 
-    // Очищаем профиль, оставляя telegram_id и саму строку
-    const { error: userResetError } = await supabase
+    // Полностью удаляем пользователя из таблицы users (отзыв согласия)
+    // Это считается отзывом согласия на обработку персональных данных
+    const { error: userDeleteError } = await supabase
       .from("users")
-      .update({
-        name: null,
-        phone: null,
-        email: null,
-        gender: null,
-        age: null,
-        weight: null,
-        height: null,
-        activity: null,
-        goal: null,
-        calories: null,
-        protein: null,
-        fat: null,
-        carbs: null,
-        water_goal_ml: null,
-        avatar_url: null
-      })
+      .delete()
       .eq("id", numericId);
 
-    if (userResetError) {
-      console.error("[/api/profile/delete] Ошибка очистки пользователя:", userResetError);
+    if (userDeleteError) {
+      console.error("[/api/profile/delete] Ошибка удаления пользователя:", userDeleteError);
       return NextResponse.json(
-        { ok: false, error: "Не удалось очистить профиль" },
+        { ok: false, error: "Не удалось удалить пользователя" },
         { status: 500, headers: corsHeaders }
       );
     }
+
+    console.log("[/api/profile/delete] ✅ Пользователь полностью удален (отзыв согласия):", numericId);
 
     return NextResponse.json({ ok: true }, { headers: corsHeaders });
   } catch (error: any) {
