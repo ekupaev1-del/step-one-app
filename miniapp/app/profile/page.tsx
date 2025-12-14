@@ -2,6 +2,7 @@
 
 import { useSearchParams } from "next/navigation";
 import { useState, useEffect, Suspense, useRef } from "react";
+import Link from "next/link";
 import "../globals.css";
 import AppLayout from "../components/AppLayout";
 
@@ -622,14 +623,12 @@ function ProfilePageContent() {
 
         {/* Политика конфиденциальности */}
         <div className="mb-4">
-          <a
-            href={`/privacy${userId ? `?id=${userId}` : ''}`}
-            target="_blank"
-            rel="noopener noreferrer"
+          <Link
+            href={`/privacy${userId ? `?id=${userId}` : ''}` as any}
             className="block w-full px-4 py-3 bg-white border border-gray-200 text-textPrimary font-medium rounded-2xl shadow-soft hover:bg-gray-50 transition-colors text-center"
           >
             Политика конфиденциальности
-          </a>
+          </Link>
         </div>
 
         {/* Удаление профиля */}

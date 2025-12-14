@@ -3,7 +3,7 @@
 import { useState, useEffect, Suspense } from "react";
 import { useSearchParams, useRouter } from "next/navigation";
 import Link from "next/link";
-import "../globals.css";
+import "../../globals.css";
 
 function ConsentPageContent() {
   const searchParams = useSearchParams();
@@ -84,7 +84,7 @@ function ConsentPageContent() {
           <p className="mb-4">
             Продолжая, вы соглашаетесь с{" "}
             <Link 
-              href={`/privacy${userId ? `?id=${userId}` : ''}`}
+              href={`/privacy${userId ? `?id=${userId}` : ''}` as any}
               className="text-accent hover:underline font-medium"
             >
               Политикой конфиденциальности
@@ -114,7 +114,7 @@ function ConsentPageContent() {
 
         <div className="mt-6 text-center">
           <Link 
-            href={`/privacy${userId ? `?id=${userId}` : ''}`}
+            href={`/privacy${userId ? `?id=${userId}` : ''}` as any}
             className="text-sm text-gray-600 hover:text-gray-800 underline"
           >
             Прочитать полный текст Политики конфиденциальности

@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useCallback, useRef } from "react";
 import { motion, AnimatePresence } from "framer-motion";
+import Link from "next/link";
 import { calculateMacros } from "../lib/macroCalculator";
 import "./globals.css";
 
@@ -645,14 +646,12 @@ export function QuestionnaireFormContent({ initialUserId }: { initialUserId?: st
 
           <p className="text-xs text-gray-500 text-center mt-4">
             Нажимая "Продолжить", вы соглашаетесь с{" "}
-            <a 
-              href={`/privacy${userId ? `?id=${userId}` : ''}`}
-              target="_blank"
-              rel="noopener noreferrer"
+            <Link 
+              href={`/privacy${userId ? `?id=${userId}` : ''}` as any}
               className="text-accent hover:underline"
             >
               обработкой персональных данных
-            </a>
+            </Link>
           </p>
 
           <button
@@ -691,14 +690,12 @@ export function QuestionnaireFormContent({ initialUserId }: { initialUserId?: st
           </button>
           <p className="text-xs text-gray-500 text-center mt-4">
             Используя сервис, вы соглашаетесь с{" "}
-            <a 
-              href={`/privacy${userId ? `?id=${userId}` : ''}`}
-              target="_blank"
-              rel="noopener noreferrer"
+            <Link 
+              href={`/privacy${userId ? `?id=${userId}` : ''}` as any}
               className="text-accent hover:underline"
             >
               Политикой конфиденциальности
-            </a>
+            </Link>
           </p>
         </div>
       </div>
