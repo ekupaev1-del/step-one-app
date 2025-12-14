@@ -740,6 +740,28 @@ function ReportPageContent(): ReactElement {
         </div>
       </div>
       
+      {/* Модальное окно редактирования приёма пищи */}
+      {editingMeal && (
+        <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4" onClick={() => setEditingMeal(null)}>
+          <div className="bg-white rounded-2xl shadow-soft p-6 max-w-md w-full max-h-[90vh] overflow-y-auto" onClick={(e) => e.stopPropagation()}>
+            <EditMealForm
+              meal={editingMeal}
+              onSave={async (updates) => {
+                if (editingMeal) {
+                  await updateMeal(editingMeal.id, updates);
+                }
+              }}
+              onCancel={() => setEditingMeal(null)}
+              onDelete={async () => {
+                if (editingMeal) {
+                  await deleteMeal(editingMeal.id);
+                }
+              }}
+            />
+          </div>
+        </div>
+      )}
+
       {/* Модальное окно календаря */}
       {showCalendar && (
         <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4" onClick={() => setShowCalendar(false)}>
