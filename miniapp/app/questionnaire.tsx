@@ -15,8 +15,10 @@ export function QuestionnaireFormContent({ initialUserId }: { initialUserId?: st
   const [saved, setSaved] = useState(false);
 
   // Форма данные
+  const [name, setName] = useState<string>("");
   const [phone, setPhone] = useState<string>("");
   const [email, setEmail] = useState<string>("");
+  const [nameError, setNameError] = useState<string | null>(null);
   const [phoneError, setPhoneError] = useState<string | null>(null);
   const [emailError, setEmailError] = useState<string | null>(null);
   const [gender, setGender] = useState<string>("");
@@ -196,6 +198,7 @@ export function QuestionnaireFormContent({ initialUserId }: { initialUserId?: st
           "Content-Type": "application/json"
         },
         body: JSON.stringify({
+          name: name.trim(),
           phone: phone.trim(),
           email: email.trim()
         })
@@ -223,13 +226,18 @@ export function QuestionnaireFormContent({ initialUserId }: { initialUserId?: st
     if (step === 0) {
       setStep(0.5); // Переход к экрану с телефоном и email
     } else if (step === 0.5) {
-      // Валидация и сохранение телефона и email
+      // Валидация и сохранение имени, телефона и email
+      setNameError(null);
       setPhoneError(null);
       setEmailError(null);
 
+      const nameValid = name.trim().length >= 2;
       const phoneValid = validatePhone(phone);
       const emailValid = validateEmail(email);
 
+      if (!nameValid) {
+        setNameError("Введите ваше имя (минимум 2 символа)");
+      }
       if (!phoneValid) {
         setPhoneError("Введите корректный номер телефона");
       }
@@ -237,11 +245,11 @@ export function QuestionnaireFormContent({ initialUserId }: { initialUserId?: st
         setEmailError("Введите корректный email адрес");
       }
 
-      if (!phoneValid || !emailValid) {
+      if (!nameValid || !phoneValid || !emailValid) {
         return;
       }
 
-      // Сохраняем телефон и email
+      // Сохраняем имя, телефон и email
       const saved = await savePhoneAndEmail();
       if (saved) {
         setStep(1);
@@ -287,6 +295,7 @@ export function QuestionnaireFormContent({ initialUserId }: { initialUserId?: st
 
     try {
       const payload = {
+        name: name.trim(),
         phone: phone.trim(),
         email: email.trim(),
         gender,
@@ -482,6 +491,7 @@ export function QuestionnaireFormContent({ initialUserId }: { initialUserId?: st
     // Пользователь должен сохранить данные перед повторным прохождением
     if (saved) {
       setStep(0);
+      setName("");
       setGender("");
       setAge("");
       setWeight("");
@@ -498,6 +508,7 @@ export function QuestionnaireFormContent({ initialUserId }: { initialUserId?: st
     } else {
       // Если данные не сохранены, просто возвращаемся к началу
       setStep(0);
+      setName("");
       setGender("");
       setAge("");
       setWeight("");
@@ -537,7 +548,7 @@ export function QuestionnaireFormContent({ initialUserId }: { initialUserId?: st
             КОНТАКТНАЯ ИНФОРМАЦИЯ
           </p>
           <h1 className="text-2xl md:text-3xl font-bold mb-6 text-gray-800 leading-tight text-center">
-            Введите номер телефона и email
+            Введите ваши данные
           </h1>
 
           {error && (
@@ -547,6 +558,31 @@ export function QuestionnaireFormContent({ initialUserId }: { initialUserId?: st
           )}
 
           <div className="space-y-4 mb-6">
+            {/* Имя */}
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-2">
+                Ваше имя
+              </label>
+              <input
+                type="text"
+                value={name}
+                onChange={(e) => {
+                  setName(e.target.value);
+                  setNameError(null);
+                }}
+                placeholder="Например, Иван"
+                className={`w-full px-4 py-3 border-2 rounded-xl focus:outline-none focus:ring-2 transition-colors ${
+                  nameError
+                    ? 'border-red-300 focus:border-red-500 focus:ring-red-200'
+                    : 'border-gray-200 focus:border-accent focus:ring-accent/20'
+                }`}
+                style={{ backgroundColor: '#fff' }}
+              />
+              {nameError && (
+                <p className="mt-1 text-sm text-red-600">{nameError}</p>
+              )}
+            </div>
+
             {/* Телефон */}
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-2">
@@ -600,7 +636,7 @@ export function QuestionnaireFormContent({ initialUserId }: { initialUserId?: st
 
           <button
             onClick={handleNext}
-            disabled={loading || !phone.trim() || !email.trim()}
+            disabled={loading || !name.trim() || !phone.trim() || !email.trim()}
             className="w-full py-4 px-6 text-white font-medium rounded-[50px] shadow-md hover:opacity-90 transition-opacity text-lg disabled:opacity-50 disabled:cursor-not-allowed"
             style={{ backgroundColor: '#A4C49A' }}
           >
@@ -679,7 +715,7 @@ export function QuestionnaireFormContent({ initialUserId }: { initialUserId?: st
               {/* Жиры */}
               <div className="p-5 bg-white rounded-xl border border-gray-100 shadow-sm">
                 <div className="flex items-center gap-2 mb-2">
-                  <span className="text-lg">🥥</span>
+                  <span className="text-lg">🥑</span>
                   <span className="text-xs text-textSecondary">Жиры</span>
                 </div>
                 <div className="text-2xl font-bold text-textPrimary">{fat} <span className="text-sm font-normal text-textSecondary">г</span></div>

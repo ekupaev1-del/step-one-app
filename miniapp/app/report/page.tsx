@@ -713,7 +713,7 @@ function ReportPageContent(): ReactElement {
                             </div>
                           </div>
                           <div className="text-sm text-textSecondary mb-3">
-                            🔥 {meal.calories} ккал | 🥚 {Number(meal.protein).toFixed(1)}г | 🥥 {Number(meal.fat).toFixed(1)}г | 🍚 {Number(meal.carbs || 0).toFixed(1)}г
+                            🔥 {meal.calories} ккал | 🥚 {Number(meal.protein).toFixed(1)}г | 🥑 {Number(meal.fat).toFixed(1)}г | 🍚 {Number(meal.carbs || 0).toFixed(1)}г
                           </div>
                           <div className="flex gap-2">
                             <button
@@ -1036,7 +1036,7 @@ function EditMealForm({
         </div>
 
         <div>
-          <label className="block text-sm font-medium text-textPrimary mb-2">🥥 Жиры (г)</label>
+          <label className="block text-sm font-medium text-textPrimary mb-2">🥑 Жиры (г)</label>
           <input
             type="number"
             step="0.1"

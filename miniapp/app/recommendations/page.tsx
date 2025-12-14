@@ -102,7 +102,7 @@ function RecommendationsPageContent(): ReactElement {
       case "protein":
         return "🥚";
       case "fat":
-        return "🥥";
+        return "🥑";
       case "carbs":
         return "🍚";
       case "calories":

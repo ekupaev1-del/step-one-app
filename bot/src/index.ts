@@ -195,13 +195,11 @@ bot.start(async (ctx) => {
       const welcomeText = `💪 <b>Добро пожаловать в Step One.</b>
 Самое тяжелое вы уже сделали - первый шаг
 
-<u>Я помогу вам настроить питание под вашу цель:</u>
-- похудеть,
-- набрать вес
-- или просто чувствовать себя лучше и легче.
+<u>Я помогу вам настроить питание, чтобы чувствовать себя лучше и легче.</u>
 
 Чтобы мне определить, как вам правильно питаться,
 ответьте на пару вопросов↓`;
+
       
       // Кнопка под постом (inline) как в требуемом макете
       const registrationInlineKeyboard = {
@@ -268,8 +266,11 @@ bot.start(async (ctx) => {
         } catch (replyError: any) {
           console.error("[bot] Ошибка отправки сообщения без картинки:", replyError);
           // Последняя попытка - без форматирования
+          const fallbackText = "💪 Добро пожаловать в Step One.\n\nСамое тяжелое вы уже сделали - первый шаг\n\nЯ помогу вам настроить питание, чтобы чувствовать себя лучше и легче.\n\nЧтобы мне определить, как вам правильно питаться,\nответьте на пару вопросов↓";
+          
+          
           await ctx.reply(
-            "💪 Добро пожаловать в Step One.\n\nСамое тяжелое вы уже сделали - первый шаг\n\nЯ помогу вам настроить питание под вашу цель:\n- похудеть,\n- набрать вес\n- или просто чувствовать себя лучше и легче.\n\nЧтобы мне определить, как вам правильно питаться,\nответьте на пару вопросов↓",
+            fallbackText,
             {
               reply_markup: registrationInlineKeyboard
             }
@@ -816,7 +817,7 @@ function formatProgressMessage(
   let message = "";
   
   if (!norm) {
-    message = `Вы уже съели сегодня:\n🔥 ${eaten.calories} ккал\n🥚 ${eaten.protein.toFixed(1)} г белков\n🥥 ${eaten.fat.toFixed(1)} г жиров\n🍚 ${eaten.carbs.toFixed(1)} г углеводов\n\n⚠️ Пройдите анкету, чтобы увидеть дневную норму.`;
+    message = `Вы уже съели сегодня:\n🔥 ${eaten.calories} ккал\n🥚 ${eaten.protein.toFixed(1)} г белков\n🥑 ${eaten.fat.toFixed(1)} г жиров\n🍚 ${eaten.carbs.toFixed(1)} г углеводов\n\n⚠️ Пройдите анкету, чтобы увидеть дневную норму.`;
   } else {
     const remaining = {
       calories: Math.max(0, norm.calories - eaten.calories),
@@ -825,7 +826,7 @@ function formatProgressMessage(
       carbs: Math.max(0, norm.carbs - eaten.carbs)
     };
 
-    message = `Вы уже съели сегодня:\n🔥 ${eaten.calories} / ${norm.calories} ккал (осталось: ${remaining.calories})\n🥚 ${eaten.protein.toFixed(1)} / ${norm.protein.toFixed(1)} г белков (осталось: ${remaining.protein.toFixed(1)})\n🥥 ${eaten.fat.toFixed(1)} / ${norm.fat.toFixed(1)} г жиров (осталось: ${remaining.fat.toFixed(1)})\n🍚 ${eaten.carbs.toFixed(1)} / ${norm.carbs.toFixed(1)} г углеводов (осталось: ${remaining.carbs.toFixed(1)})`;
+    message = `Вы уже съели сегодня:\n🔥 ${eaten.calories} / ${norm.calories} ккал (осталось: ${remaining.calories})\n🥚 ${eaten.protein.toFixed(1)} / ${norm.protein.toFixed(1)} г белков (осталось: ${remaining.protein.toFixed(1)})\n🥑 ${eaten.fat.toFixed(1)} / ${norm.fat.toFixed(1)} г жиров (осталось: ${remaining.fat.toFixed(1)})\n🍚 ${eaten.carbs.toFixed(1)} / ${norm.carbs.toFixed(1)} г углеводов (осталось: ${remaining.carbs.toFixed(1)})`;
   }
 
   // Добавляем информацию о воде, если она передана
@@ -952,7 +953,7 @@ bot.on("text", async (ctx) => {
 
         // Формируем ответ с общим отчетом
         const waterInfo = await getWaterProgressByTelegram(telegram_id);
-    const response = `✅ Добавлено:\nвода\n🔥 0 ккал | 🥚 0.0г | 🥥 0.0г | 🍚 0.0г\n\n${formatProgressMessage(todayMeals, dailyNorm, { totalMl, goalMl })}`;
+    const response = `✅ Добавлено:\nвода\n🔥 0 ккал | 🥚 0.0г | 🥑 0.0г | 🍚 0.0г\n\n${formatProgressMessage(todayMeals, dailyNorm, { totalMl, goalMl })}`;
 
         return ctx.reply(response);
       } catch (error: any) {
@@ -1290,7 +1291,7 @@ bot.on("text", async (ctx) => {
 
     // Формируем ответ
     const waterInfo = await getWaterProgressByTelegram(telegram_id);
-    const response = `✅ Добавлено:\n${mealAnalysis.description}\n🔥 ${mealAnalysis.calories} ккал | 🥚 ${mealAnalysis.protein.toFixed(1)}г | 🥥 ${mealAnalysis.fat.toFixed(1)}г | 🍚 ${mealAnalysis.carbs.toFixed(1)}г\n\n${formatProgressMessage(todayMeals, dailyNorm, waterInfo || undefined)}`;
+    const response = `✅ Добавлено:\n${mealAnalysis.description}\n🔥 ${mealAnalysis.calories} ккал | 🥚 ${mealAnalysis.protein.toFixed(1)}г | 🥑 ${mealAnalysis.fat.toFixed(1)}г | 🍚 ${mealAnalysis.carbs.toFixed(1)}г\n\n${formatProgressMessage(todayMeals, dailyNorm, waterInfo || undefined)}`;
 
     await ctx.telegram.editMessageText(
       ctx.chat!.id,
@@ -1535,7 +1536,7 @@ bot.on("callback_query", async (ctx) => {
         const dailyNorm = await getUserDailyNorm(telegram_id);
 
         // Формируем ответ с общим отчетом
-    const response = `✅ Добавлено:\nвода\n🔥 0 ккал | 🥚 0.0г | 🥥 0.0г | 🍚 0.0г\n\n${formatProgressMessage(todayMeals, dailyNorm, { totalMl, goalMl })}`;
+    const response = `✅ Добавлено:\nвода\n🔥 0 ккал | 🥚 0.0г | 🥑 0.0г | 🍚 0.0г\n\n${formatProgressMessage(todayMeals, dailyNorm, { totalMl, goalMl })}`;
 
         return ctx.editMessageText(response);
       } catch (error: any) {
@@ -1651,7 +1652,7 @@ bot.command("отчет", async (ctx) => {
         hour: "2-digit",
         minute: "2-digit"
       });
-      report += `${index + 1}. ${meal.meal_text} (${time})\n   🔥 ${meal.calories} ккал | 🥚 ${Number(meal.protein).toFixed(1)}г | 🥥 ${Number(meal.fat).toFixed(1)}г | 🍚 ${Number(meal.carbs || 0).toFixed(1)}г\n\n`;
+      report += `${index + 1}. ${meal.meal_text} (${time})\n   🔥 ${meal.calories} ккал | 🥚 ${Number(meal.protein).toFixed(1)}г | 🥑 ${Number(meal.fat).toFixed(1)}г | 🍚 ${Number(meal.carbs || 0).toFixed(1)}г\n\n`;
     });
 
     report += `\n${formatProgressMessage(todayMeals, dailyNorm, waterInfo || undefined)}`;
@@ -1885,7 +1886,7 @@ bot.on("photo", async (ctx) => {
 
     // Формируем ответ
     const waterInfo = await getWaterProgressByTelegram(telegram_id);
-    const response = `✅ Добавлено:\n${mealAnalysis.description}\n🔥 ${mealAnalysis.calories} ккал | 🥚 ${mealAnalysis.protein.toFixed(1)}г | 🥥 ${mealAnalysis.fat.toFixed(1)}г | 🍚 ${mealAnalysis.carbs.toFixed(1)}г\n\n${formatProgressMessage(todayMeals, dailyNorm, waterInfo || undefined)}`;
+    const response = `✅ Добавлено:\n${mealAnalysis.description}\n🔥 ${mealAnalysis.calories} ккал | 🥚 ${mealAnalysis.protein.toFixed(1)}г | 🥑 ${mealAnalysis.fat.toFixed(1)}г | 🍚 ${mealAnalysis.carbs.toFixed(1)}г\n\n${formatProgressMessage(todayMeals, dailyNorm, waterInfo || undefined)}`;
 
     await ctx.telegram.editMessageText(
       ctx.chat!.id,
@@ -2059,7 +2060,7 @@ bot.on("voice", async (ctx) => {
 
     // Формируем ответ
     const waterInfo = await getWaterProgressByTelegram(telegram_id);
-    const response = `✅ Добавлено:\n${mealAnalysis.description}\n🔥 ${mealAnalysis.calories} ккал | 🥚 ${mealAnalysis.protein.toFixed(1)}г | 🥥 ${mealAnalysis.fat.toFixed(1)}г | 🍚 ${mealAnalysis.carbs.toFixed(1)}г\n\n${formatProgressMessage(todayMeals, dailyNorm, waterInfo || undefined)}`;
+    const response = `✅ Добавлено:\n${mealAnalysis.description}\n🔥 ${mealAnalysis.calories} ккал | 🥚 ${mealAnalysis.protein.toFixed(1)}г | 🥑 ${mealAnalysis.fat.toFixed(1)}г | 🍚 ${mealAnalysis.carbs.toFixed(1)}г\n\n${formatProgressMessage(todayMeals, dailyNorm, waterInfo || undefined)}`;
 
     await ctx.telegram.editMessageText(
       ctx.chat!.id,
