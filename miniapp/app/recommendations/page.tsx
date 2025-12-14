@@ -29,6 +29,7 @@ function RecommendationsPageContent(): ReactElement {
   const [loading, setLoading] = useState(true);
   const [recommendations, setRecommendations] = useState<Recommendation[]>([]);
   const [days, setDays] = useState<number>(1);
+  const [checkingPrivacy, setCheckingPrivacy] = useState(false);
 
   useEffect(() => {
     if (userIdParam) {
@@ -45,6 +46,37 @@ function RecommendationsPageContent(): ReactElement {
       setLoading(false);
     }
   }, [userIdParam]);
+
+  // Проверка согласия с политикой конфиденциальности
+  useEffect(() => {
+    if (!userId) return;
+
+    const checkPrivacy = async () => {
+      setCheckingPrivacy(true);
+      try {
+        const response = await fetch(`/api/privacy/check?userId=${userId}`);
+        const data = await response.json();
+
+        if (response.ok && data.ok) {
+          if (!data.privacy_accepted) {
+            // Пользователь не дал согласие - редирект на экран согласия
+            window.location.href = `/privacy/consent?id=${userId}`;
+            return;
+          }
+        } else {
+          // Если ошибка, разрешаем продолжить (на случай проблем с API)
+          console.warn("[RecommendationsPage] Ошибка проверки согласия:", data.error);
+        }
+      } catch (err) {
+        console.error("[RecommendationsPage] Ошибка проверки согласия:", err);
+        // При ошибке разрешаем продолжить
+      } finally {
+        setCheckingPrivacy(false);
+      }
+    };
+
+    checkPrivacy();
+  }, [userId]);
 
   useEffect(() => {
     if (!userId) return;
@@ -72,6 +104,14 @@ function RecommendationsPageContent(): ReactElement {
 
     loadRecommendations();
   }, [userId, days]);
+
+  if (checkingPrivacy) {
+    return (
+      <div className="min-h-screen flex items-center justify-center p-4 bg-background">
+        <div className="text-textSecondary">Загрузка...</div>
+      </div>
+    );
+  }
 
   if (error && !userId) {
     return (

@@ -85,6 +85,10 @@ function ReportPageContent(): ReactElement {
   // Редактирование
   const [editingMeal, setEditingMeal] = useState<Meal | null>(null);
 
+  // Проверка согласия с политикой конфиденциальности
+  const [checkingPrivacy, setCheckingPrivacy] = useState(false);
+  const [privacyAccepted, setPrivacyAccepted] = useState<boolean | null>(null);
+
   // Инициализация userId
   // Инициализация userId - оптимизировано для быстрой загрузки
   useEffect(() => {
@@ -114,6 +118,40 @@ function ReportPageContent(): ReactElement {
       setError("ID не передан");
     }
   }, [userIdParam]);
+
+  // Проверка согласия с политикой конфиденциальности
+  useEffect(() => {
+    if (!userId) return;
+
+    const checkPrivacy = async () => {
+      setCheckingPrivacy(true);
+      try {
+        const response = await fetch(`/api/privacy/check?userId=${userId}`);
+        const data = await response.json();
+
+        if (response.ok && data.ok) {
+          if (!data.privacy_accepted) {
+            // Пользователь не дал согласие - редирект на экран согласия
+            window.location.href = `/privacy/consent?id=${userId}`;
+            return;
+          }
+          setPrivacyAccepted(true);
+        } else {
+          // Если ошибка, разрешаем продолжить (на случай проблем с API)
+          console.warn("[ReportPage] Ошибка проверки согласия:", data.error);
+          setPrivacyAccepted(true);
+        }
+      } catch (err) {
+        console.error("[ReportPage] Ошибка проверки согласия:", err);
+        // При ошибке разрешаем продолжить
+        setPrivacyAccepted(true);
+      } finally {
+        setCheckingPrivacy(false);
+      }
+    };
+
+    checkPrivacy();
+  }, [userId]);
 
   // Загрузка календаря при изменении месяца
   useEffect(() => {
@@ -620,6 +658,14 @@ function ReportPageContent(): ReactElement {
     const month = currentMonth.getMonth() + 1;
     return `${year}-${String(month).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
   };
+
+  if (checkingPrivacy) {
+    return (
+      <div className="min-h-screen flex items-center justify-center p-4 bg-background">
+        <div className="text-textSecondary">Загрузка...</div>
+      </div>
+    );
+  }
 
   if (error && !userId) {
     return (

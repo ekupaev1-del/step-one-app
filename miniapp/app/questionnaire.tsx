@@ -643,6 +643,18 @@ export function QuestionnaireFormContent({ initialUserId }: { initialUserId?: st
             {loading ? "Сохранение..." : "Продолжить"}
           </button>
 
+          <p className="text-xs text-gray-500 text-center mt-4">
+            Нажимая "Продолжить", вы соглашаетесь с{" "}
+            <a 
+              href={`/privacy${userId ? `?id=${userId}` : ''}`}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="text-accent hover:underline"
+            >
+              обработкой персональных данных
+            </a>
+          </p>
+
           <button
             onClick={handleBack}
             className="w-full mt-4 text-center text-gray-600 text-sm hover:text-gray-800 transition-colors"
@@ -677,6 +689,17 @@ export function QuestionnaireFormContent({ initialUserId }: { initialUserId?: st
           >
             Начать!
           </button>
+          <p className="text-xs text-gray-500 text-center mt-4">
+            Используя сервис, вы соглашаетесь с{" "}
+            <a 
+              href={`/privacy${userId ? `?id=${userId}` : ''}`}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="text-accent hover:underline"
+            >
+              Политикой конфиденциальности
+            </a>
+          </p>
         </div>
       </div>
     );

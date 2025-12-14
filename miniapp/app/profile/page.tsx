@@ -64,6 +64,40 @@ function ProfilePageContent() {
     }
   }, [userIdParam]);
 
+  // Проверка согласия с политикой конфиденциальности
+  const [checkingPrivacy, setCheckingPrivacy] = useState(false);
+
+  // Проверка согласия с политикой конфиденциальности
+  useEffect(() => {
+    if (!userId) return;
+
+    const checkPrivacy = async () => {
+      setCheckingPrivacy(true);
+      try {
+        const response = await fetch(`/api/privacy/check?userId=${userId}`);
+        const data = await response.json();
+
+        if (response.ok && data.ok) {
+          if (!data.privacy_accepted) {
+            // Пользователь не дал согласие - редирект на экран согласия
+            window.location.href = `/privacy/consent?id=${userId}`;
+            return;
+          }
+        } else {
+          // Если ошибка, разрешаем продолжить (на случай проблем с API)
+          console.warn("[ProfilePage] Ошибка проверки согласия:", data.error);
+        }
+      } catch (err) {
+        console.error("[ProfilePage] Ошибка проверки согласия:", err);
+        // При ошибке разрешаем продолжить
+      } finally {
+        setCheckingPrivacy(false);
+      }
+    };
+
+    checkPrivacy();
+  }, [userId]);
+
   // Загрузка данных профиля
   useEffect(() => {
     if (!userId) return;
@@ -272,7 +306,7 @@ function ProfilePageContent() {
     }
   };
 
-  if (loading) {
+  if (loading || checkingPrivacy) {
     return (
       <AppLayout>
         <div className="min-h-screen flex items-center justify-center bg-background">
@@ -584,6 +618,18 @@ function ProfilePageContent() {
               </div>
             </div>
           )}
+        </div>
+
+        {/* Политика конфиденциальности */}
+        <div className="mb-4">
+          <a
+            href={`/privacy${userId ? `?id=${userId}` : ''}`}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="block w-full px-4 py-3 bg-white border border-gray-200 text-textPrimary font-medium rounded-2xl shadow-soft hover:bg-gray-50 transition-colors text-center"
+          >
+            Политика конфиденциальности
+          </a>
         </div>
 
         {/* Удаление профиля */}

@@ -1,7 +1,7 @@
 "use client";
 
 import { Suspense, useEffect, useState } from "react";
-import { useSearchParams } from "next/navigation";
+import { useSearchParams, useRouter } from "next/navigation";
 import { QuestionnaireFormContent } from "../questionnaire";
 
 export const dynamic = "force-dynamic";
@@ -17,8 +17,11 @@ function LoadingFallback() {
 // Клиентский компонент-обертка для получения searchParams
 function RegistrationPageContent() {
   const searchParams = useSearchParams();
+  const router = useRouter();
   const [userId, setUserId] = useState<string | null>(null);
   const [mounted, setMounted] = useState(false);
+  const [checkingPrivacy, setCheckingPrivacy] = useState(true);
+  const [privacyAccepted, setPrivacyAccepted] = useState<boolean | null>(null);
 
   // Быстро получаем userId из URL при монтировании
   useEffect(() => {
@@ -35,8 +38,49 @@ function RegistrationPageContent() {
     }
   }, [searchParams]);
 
+  // Проверяем согласие с политикой конфиденциальности
+  useEffect(() => {
+    if (!mounted || !userId) {
+      setCheckingPrivacy(false);
+      return;
+    }
+
+    const checkPrivacy = async () => {
+      try {
+        const response = await fetch(`/api/privacy/check?userId=${userId}`);
+        const data = await response.json();
+
+        if (response.ok && data.ok) {
+          if (!data.privacy_accepted) {
+            // Пользователь не дал согласие - редирект на экран согласия
+            router.push(`/privacy/consent?id=${userId}`);
+            return;
+          }
+          setPrivacyAccepted(true);
+        } else {
+          // Если ошибка, разрешаем продолжить (на случай проблем с API)
+          console.warn("[RegistrationPage] Ошибка проверки согласия:", data.error);
+          setPrivacyAccepted(true);
+        }
+      } catch (err) {
+        console.error("[RegistrationPage] Ошибка проверки согласия:", err);
+        // При ошибке разрешаем продолжить
+        setPrivacyAccepted(true);
+      } finally {
+        setCheckingPrivacy(false);
+      }
+    };
+
+    checkPrivacy();
+  }, [mounted, userId, router]);
+
   // Показываем контент сразу, не ждем Suspense
-  if (!mounted) {
+  if (!mounted || checkingPrivacy) {
+    return <LoadingFallback />;
+  }
+
+  // Если согласие не дано, редирект уже произошел
+  if (privacyAccepted === false) {
     return <LoadingFallback />;
   }
 
