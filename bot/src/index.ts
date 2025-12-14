@@ -7,6 +7,7 @@ import { openai } from "./services/openai.js";
 import { isWaterRequest, logWaterIntake, getDailyWaterSummary } from "./services/water.js";
 import { createReminder, getUserReminders, deleteReminder, validateTime, type ReminderType } from "./services/reminders.js";
 import { startReminderScheduler } from "./services/reminderScheduler.js";
+import { startInactivityNotificationScheduler } from "./services/inactivityNotifications.js";
 
 // Инициализация бота
 const bot = new Telegraf(env.telegramBotToken);
@@ -2099,3 +2100,7 @@ console.log("🤖 Бот запущен");
 // Запускаем scheduler для напоминаний
 startReminderScheduler(bot);
 console.log("⏰ Scheduler напоминаний запущен");
+
+// Запускаем scheduler для уведомлений о неактивности
+startInactivityNotificationScheduler(bot);
+console.log("📢 Scheduler уведомлений о неактивности запущен");
