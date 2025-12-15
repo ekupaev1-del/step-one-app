@@ -1,9 +1,13 @@
 "use client";
 
 import Link from "next/link";
+import { useSearchParams } from "next/navigation";
+import { Suspense } from "react";
 import "../globals.css";
 
-export default function TermsPage() {
+function TermsPageContent() {
+  const searchParams = useSearchParams();
+  const userId = searchParams.get("id");
   return (
     <div className="min-h-screen bg-background p-4 py-8">
       <div className="max-w-2xl mx-auto bg-white rounded-2xl shadow-soft p-6 md:p-8">
@@ -179,14 +183,35 @@ export default function TermsPage() {
 
           <div className="mt-6">
             <Link 
-              href="/"
-              className="inline-block px-6 py-3 bg-accent text-white font-medium rounded-xl hover:opacity-90 transition-opacity"
+              href={userId ? `/profile?id=${userId}` : "/profile"}
+              className="inline-flex items-center gap-2 px-6 py-3 bg-accent text-white font-medium rounded-xl hover:opacity-90 transition-opacity"
             >
-              Вернуться на главную
+              <svg 
+                xmlns="http://www.w3.org/2000/svg" 
+                className="h-5 w-5" 
+                fill="none" 
+                viewBox="0 0 24 24" 
+                stroke="currentColor"
+              >
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
+              </svg>
+              Назад
             </Link>
           </div>
         </div>
       </div>
     </div>
+  );
+}
+
+export default function TermsPage() {
+  return (
+    <Suspense fallback={
+      <div className="min-h-screen bg-background p-4 py-8 flex items-center justify-center">
+        <div className="text-center">Загрузка...</div>
+      </div>
+    }>
+      <TermsPageContent />
+    </Suspense>
   );
 }
