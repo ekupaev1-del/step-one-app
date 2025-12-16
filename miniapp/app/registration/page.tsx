@@ -38,41 +38,16 @@ function RegistrationPageContent() {
     }
   }, [searchParams]);
 
-  // Проверяем согласие с политикой конфиденциальности
+  // Не проверяем согласие здесь - пусть анкета сама покажет экран согласия
   useEffect(() => {
     if (!mounted || !userId) {
       setCheckingPrivacy(false);
       return;
     }
-
-    const checkPrivacy = async () => {
-      try {
-        const response = await fetch(`/api/privacy/check?userId=${userId}`);
-        const data = await response.json();
-
-        if (response.ok && data.ok) {
-          if (!data.all_accepted) {
-            // Пользователь не дал согласие (хотя бы одно из двух) - редирект на экран согласия
-            router.push(`/privacy/consent?id=${userId}`);
-            return;
-          }
-          setPrivacyAccepted(true);
-        } else {
-          // Если ошибка, разрешаем продолжить (на случай проблем с API)
-          console.warn("[RegistrationPage] Ошибка проверки согласия:", data.error);
-          setPrivacyAccepted(true);
-        }
-      } catch (err) {
-        console.error("[RegistrationPage] Ошибка проверки согласия:", err);
-        // При ошибке разрешаем продолжить
-        setPrivacyAccepted(true);
-      } finally {
-        setCheckingPrivacy(false);
-      }
-    };
-
-    checkPrivacy();
-  }, [mounted, userId, router]);
+    // Пропускаем проверку - анкета сама покажет экран согласия если нужно
+    setPrivacyAccepted(true);
+    setCheckingPrivacy(false);
+  }, [mounted, userId]);
 
   // Показываем контент сразу, не ждем Suspense
   if (!mounted || checkingPrivacy) {
