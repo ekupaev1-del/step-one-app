@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { createServerSupabaseClient } from "../../../lib/supabaseAdmin";
+import { createServerSupabaseClient } from "../../../../lib/supabaseAdmin";
 import crypto from "crypto";
 
 const AMOUNT = 199;

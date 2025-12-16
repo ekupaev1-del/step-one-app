@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import crypto from "crypto";
-import { createServerSupabaseClient } from "../../../lib/supabaseAdmin";
+import { createServerSupabaseClient } from "../../../../lib/supabaseAdmin";
 
 function md5(input: string) {
   return crypto.createHash("md5").update(input).digest("hex");
