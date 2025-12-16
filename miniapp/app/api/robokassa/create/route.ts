@@ -24,9 +24,26 @@ export async function POST(req: Request) {
     const merchantLogin = process.env.ROBOKASSA_MERCHANT_LOGIN;
     const password1 = process.env.ROBOKASSA_PASSWORD1;
 
+    console.log("[robokassa/create] ========== ENV CHECK ==========");
+    console.log("[robokassa/create] ROBOKASSA_MERCHANT_LOGIN:", merchantLogin ? "SET" : "NOT SET");
+    console.log("[robokassa/create] ROBOKASSA_PASSWORD1:", password1 ? "SET (length: " + password1.length + ")" : "NOT SET");
+    console.log("[robokassa/create] NODE_ENV:", process.env.NODE_ENV);
+    console.log("[robokassa/create] VERCEL_ENV:", process.env.VERCEL_ENV);
+    console.log("[robokassa/create] ================================");
+
     if (!merchantLogin || !password1) {
+      const missing = [];
+      if (!merchantLogin) missing.push("ROBOKASSA_MERCHANT_LOGIN");
+      if (!password1) missing.push("ROBOKASSA_PASSWORD1");
+      
+      console.error("[robokassa/create] ❌ Missing env variables:", missing);
+      
       return NextResponse.json(
-        { ok: false, error: "ROBOKASSA_MERCHANT_LOGIN или PASSWORD1 не заданы" },
+        { 
+          ok: false, 
+          error: `Отсутствуют переменные окружения: ${missing.join(", ")}. Проверьте настройки в Vercel.`,
+          missing
+        },
         { status: 500 }
       );
     }
@@ -47,72 +64,46 @@ export async function POST(req: Request) {
 
     const invoiceId = `inv_${userId}_${Date.now()}`;
 
-    // Пробуем вариант БЕЗ Receipt сначала (если фискализация не настроена)
-    // Если фискализация требуется, можно включить обратно
-    const useReceipt = process.env.ROBOKASSA_USE_RECEIPT === "true";
-    
-    let signatureBase: string;
-    let receiptEncoded: string | undefined;
-    
-    if (useReceipt) {
-      // Формируем чек для фискализации
-      const receipt = {
-        sno: "usn_income",
-        items: [
-          {
-            name: DESCRIPTION,
-            quantity: 1,
-            sum: AMOUNT,
-            payment_method: "full_payment",
-            payment_object: "service",
-            tax: "none",
-          },
-        ],
-      };
-      const receiptJson = JSON.stringify(receipt);
-      receiptEncoded = encodeURIComponent(receiptJson);
-      // Подпись с Receipt: MerchantLogin:OutSum:InvId:Receipt:Password1
-      signatureBase = `${merchantLogin}:${AMOUNT}:${invoiceId}:${receiptJson}:${password1}`;
-    } else {
-      // Подпись без Receipt: MerchantLogin:OutSum:InvId:Password1
-      signatureBase = `${merchantLogin}:${AMOUNT}:${invoiceId}:${password1}`;
-    }
-    
+    // Формат суммы для Robokassa: должна быть строка с точкой (например "199.00")
+    const amountStr = AMOUNT.toFixed(2);
+
+    // МАКСИМАЛЬНО ПРОСТОЙ ВАРИАНТ - только обязательные параметры
+    // Подпись: MerchantLogin:OutSum:InvId:Password1
+    // ВАЖНО: В подписи используется строка суммы как есть
+    const signatureBase = `${merchantLogin}:${amountStr}:${invoiceId}:${password1}`;
     const signatureValue = md5(signatureBase).toLowerCase();
 
+    console.log("[robokassa/create] ========== PAYMENT CREATION ==========");
     console.log("[robokassa/create] MerchantLogin:", merchantLogin);
     console.log("[robokassa/create] Amount:", AMOUNT);
     console.log("[robokassa/create] InvoiceId:", invoiceId);
-    console.log("[robokassa/create] Use Receipt:", useReceipt);
     console.log("[robokassa/create] Signature base:", signatureBase);
     console.log("[robokassa/create] Signature value:", signatureValue);
 
-    // Формируем параметры запроса
-    // ВАЖНО: Description должен быть URL-encoded для корректной передачи кириллицы
+    // Формируем URL вручную для полного контроля
+    // ВАЖНО: Description должен быть URL-encoded
     const descriptionEncoded = encodeURIComponent(DESCRIPTION);
     
-    const params = new URLSearchParams();
-    params.append("MerchantLogin", merchantLogin);
-    params.append("OutSum", AMOUNT.toString());
-    params.append("InvId", invoiceId);
-    params.append("Description", descriptionEncoded);
-    params.append("Recurring", "true");
-    if (receiptEncoded) {
-      params.append("Receipt", receiptEncoded);
-    }
-    params.append("SignatureValue", signatureValue);
-    params.append("Culture", "ru");
-    params.append("Encoding", "utf-8");
+    // Собираем параметры в правильном порядке
+    // Сначала пробуем БЕЗ Recurring, чтобы проверить базовую оплату
+    const params: string[] = [];
+    params.push(`MerchantLogin=${encodeURIComponent(merchantLogin)}`);
+    params.push(`OutSum=${amountStr}`); // Используем формат с точкой
+    params.push(`InvId=${invoiceId}`);
+    params.push(`Description=${descriptionEncoded}`);
+    params.push(`SignatureValue=${signatureValue}`);
+    params.push(`Culture=ru`);
     
-    const paramsString = params.toString();
-    console.log("[robokassa/create] Final params:", paramsString);
-    console.log("[robokassa/create] Description encoded:", descriptionEncoded);
-
-    // URL для оплаты
+    // Recurring добавляем только если явно указано
+    // Пока убираем, чтобы проверить базовую оплату
+    // params.push(`Recurring=true`);
+    
+    const paramsString = params.join("&");
     const robokassaUrl = "https://auth.robokassa.ru/Merchant/Index.aspx";
     const paymentUrl = `${robokassaUrl}?${paramsString}`;
     
-    console.log("[robokassa/create] Payment URL (first 200 chars):", paymentUrl.substring(0, 200));
+    console.log("[robokassa/create] Payment URL:", paymentUrl);
+    console.log("[robokassa/create] ======================================");
 
     // Сохраняем pending платеж
     await supabase.from("payments").insert({

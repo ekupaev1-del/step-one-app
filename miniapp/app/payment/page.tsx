@@ -32,12 +32,26 @@ function PaymentContent() {
         body: JSON.stringify({ userId }),
       });
       const data = await res.json();
+      
+      console.log("[payment] Response status:", res.status);
+      console.log("[payment] Response data:", data);
+      
       if (!res.ok || !data.ok) {
-        throw new Error(data.error || "Ошибка создания платежа");
+        const errorMsg = data.error || "Ошибка создания платежа";
+        const details = data.details ? `\n\nДетали: ${JSON.stringify(data.details, null, 2)}` : "";
+        const missing = data.missing ? `\n\nОтсутствуют переменные: ${data.missing.join(", ")}` : "";
+        throw new Error(errorMsg + details + missing);
       }
+      
+      if (!data.paymentUrl) {
+        throw new Error("URL оплаты не получен от сервера");
+      }
+      
+      console.log("[payment] Redirecting to:", data.paymentUrl);
       window.location.href = data.paymentUrl;
     } catch (e: any) {
-      setError(e.message || "Ошибка создания платежа");
+      console.error("[payment] Error:", e);
+      setError(e.message || "Ошибка создания платежа. Проверьте логи сервера.");
     } finally {
       setLoading(false);
     }
