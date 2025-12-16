@@ -13,10 +13,25 @@ export async function GET(req: Request) {
 
     const testAmount = 199;
     const testInvoiceId = "test_inv_123";
+    const testDescription = "Подписка на сервис питания Step One";
     
-    // Тестовая подпись без Receipt
-    const signatureBase = `${merchantLogin}:${testAmount}:${testInvoiceId}:${password1}`;
+    // Тестовая подпись - используем просто число без .00
+    const amountStr = testAmount.toString();
+    const signatureBase = `${merchantLogin}:${amountStr}:${testInvoiceId}:${password1}`;
     const signatureValue = md5(signatureBase).toLowerCase();
+    
+    // Формируем тестовый URL
+    const descriptionEncoded = encodeURIComponent(testDescription);
+    const params: string[] = [];
+    params.push(`MerchantLogin=${encodeURIComponent(merchantLogin || "")}`);
+    params.push(`OutSum=${amountStr}`);
+    params.push(`InvId=${testInvoiceId}`);
+    params.push(`Description=${descriptionEncoded}`);
+    params.push(`SignatureValue=${signatureValue}`);
+    params.push(`Culture=ru`);
+    
+    const paramsString = params.join("&");
+    const testUrl = `https://auth.robokassa.ru/Merchant/Index.aspx?${paramsString}`;
 
     return NextResponse.json({
       ok: true,
@@ -24,10 +39,13 @@ export async function GET(req: Request) {
       hasPassword1: !!password1,
       hasPassword2: !!password2,
       merchantLogin: merchantLogin || "NOT SET",
+      password1Length: password1 ? password1.length : 0,
       testSignature: {
         base: signatureBase,
-        value: signatureValue
+        value: signatureValue,
+        length: signatureValue.length
       },
+      testUrl: testUrl,
       env: {
         nodeEnv: process.env.NODE_ENV,
         vercelEnv: process.env.VERCEL_ENV
