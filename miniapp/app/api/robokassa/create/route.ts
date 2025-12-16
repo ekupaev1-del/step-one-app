@@ -88,11 +88,14 @@ export async function POST(req: Request) {
     console.log("[robokassa/create] Signature value:", signatureValue);
 
     // Формируем параметры запроса
+    // ВАЖНО: Description должен быть URL-encoded для корректной передачи кириллицы
+    const descriptionEncoded = encodeURIComponent(DESCRIPTION);
+    
     const params = new URLSearchParams();
     params.append("MerchantLogin", merchantLogin);
     params.append("OutSum", AMOUNT.toString());
     params.append("InvId", invoiceId);
-    params.append("Description", DESCRIPTION);
+    params.append("Description", descriptionEncoded);
     params.append("Recurring", "true");
     if (receiptEncoded) {
       params.append("Receipt", receiptEncoded);
@@ -101,16 +104,15 @@ export async function POST(req: Request) {
     params.append("Culture", "ru");
     params.append("Encoding", "utf-8");
     
-    console.log("[robokassa/create] Final params:", params.toString());
+    const paramsString = params.toString();
+    console.log("[robokassa/create] Final params:", paramsString);
+    console.log("[robokassa/create] Description encoded:", descriptionEncoded);
 
-    // Используем тестовый URL для разработки, если указан в env
-    const robokassaUrl = process.env.ROBOKASSA_TEST_MODE === "true" 
-      ? "https://auth.robokassa.ru/Merchant/Index.aspx"
-      : "https://auth.robokassa.ru/Merchant/Index.aspx";
+    // URL для оплаты
+    const robokassaUrl = "https://auth.robokassa.ru/Merchant/Index.aspx";
+    const paymentUrl = `${robokassaUrl}?${paramsString}`;
     
-    const paymentUrl = `${robokassaUrl}?${params.toString()}`;
-    
-    console.log("[robokassa/create] Payment URL:", paymentUrl);
+    console.log("[robokassa/create] Payment URL (first 200 chars):", paymentUrl.substring(0, 200));
 
     // Сохраняем pending платеж
     await supabase.from("payments").insert({
@@ -122,11 +124,37 @@ export async function POST(req: Request) {
       is_recurring: false,
     });
 
-    return NextResponse.json({ ok: true, paymentUrl, invoiceId });
+    return NextResponse.json({ 
+      ok: true, 
+      paymentUrl, 
+      invoiceId,
+      debug: {
+        merchantLogin: merchantLogin ? "SET" : "NOT SET",
+        hasPassword1: !!password1,
+        useReceipt,
+        signatureLength: signatureValue.length
+      }
+    });
   } catch (error: any) {
     console.error("[robokassa/create] error", error);
+    console.error("[robokassa/create] error stack", error.stack);
+    
+    // Более детальная информация об ошибке
+    const errorDetails = {
+      message: error.message,
+      name: error.name,
+      hasMerchantLogin: !!process.env.ROBOKASSA_MERCHANT_LOGIN,
+      hasPassword1: !!process.env.ROBOKASSA_PASSWORD1,
+    };
+    
+    console.error("[robokassa/create] error details", errorDetails);
+    
     return NextResponse.json(
-      { ok: false, error: error.message || "Internal error" },
+      { 
+        ok: false, 
+        error: error.message || "Internal error",
+        details: process.env.NODE_ENV === "development" ? errorDetails : undefined
+      },
       { status: 500 }
     );
   }
