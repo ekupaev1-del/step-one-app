@@ -40,7 +40,7 @@ function ProfilePageContent() {
   const [avatarUrl, setAvatarUrl] = useState<string | null>(null);
   const [uploadingAvatar, setUploadingAvatar] = useState(false);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
-  const [basicInfoExpanded, setBasicInfoExpanded] = useState(true);
+  const [basicInfoExpanded, setBasicInfoExpanded] = useState(false);
   const [cancellingSubscription, setCancellingSubscription] = useState(false);
 
   // Редактируемые поля
@@ -491,7 +491,7 @@ function ProfilePageContent() {
         <div className="bg-white rounded-2xl shadow-soft p-6 mb-4">
           <button
             onClick={() => setBasicInfoExpanded(!basicInfoExpanded)}
-            className="w-full flex justify-between items-center mb-4"
+            className="w-full flex justify-between items-center"
           >
             <h2 className="text-lg font-semibold text-textPrimary">Основная информация</h2>
             <span className={`transform transition-transform duration-200 ${basicInfoExpanded ? 'rotate-180' : ''}`}>
@@ -500,7 +500,7 @@ function ProfilePageContent() {
           </button>
           
           {basicInfoExpanded && (
-            <>
+            <div className="mt-4">
           {isEditing ? (
             <div className="space-y-4">
               {/* Имя */}
@@ -700,7 +700,7 @@ function ProfilePageContent() {
               </div>
             </div>
           )}
-            </>
+            </div>
           )}
         </div>
 
