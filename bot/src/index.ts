@@ -21,6 +21,101 @@ const MINIAPP_BASE_URL =
   "https://step-one-app-git-dev-emins-projects-4717eabc.vercel.app";
 
 // ░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░
+//      ФУНКЦИИ ПОДПИСКИ
+// ░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░
+
+/**
+ * Проверяет, есть ли у пользователя активная подписка или триал
+ */
+async function checkSubscription(userId: number): Promise<{
+  hasAccess: boolean;
+  status: 'trial' | 'active' | 'expired' | 'none';
+  trialEndAt: Date | null;
+  subscriptionEndAt: Date | null;
+}> {
+  try {
+    const { data: user, error } = await supabase
+      .from("users")
+      .select("subscription_status, trial_end_at, subscription_end_at")
+      .eq("id", userId)
+      .maybeSingle();
+
+    if (error || !user) {
+      console.error("[checkSubscription] Ошибка получения пользователя:", error);
+      return { hasAccess: false, status: 'none', trialEndAt: null, subscriptionEndAt: null };
+    }
+
+    const now = new Date();
+    const status = user.subscription_status || 'none';
+    
+    // Если подписка активна, проверяем дату окончания
+    if (status === 'active' && user.subscription_end_at) {
+      const endAt = new Date(user.subscription_end_at);
+      if (endAt > now) {
+        return { hasAccess: true, status: 'active', trialEndAt: null, subscriptionEndAt: endAt };
+      } else {
+        // Подписка истекла
+        await supabase
+          .from("users")
+          .update({ subscription_status: 'expired' })
+          .eq("id", userId);
+        return { hasAccess: false, status: 'expired', trialEndAt: null, subscriptionEndAt: endAt };
+      }
+    }
+
+    // Если триал, проверяем дату окончания
+    if (status === 'trial' && user.trial_end_at) {
+      const trialEnd = new Date(user.trial_end_at);
+      if (trialEnd > now) {
+        return { hasAccess: true, status: 'trial', trialEndAt: trialEnd, subscriptionEndAt: null };
+      } else {
+        // Триал истек
+        await supabase
+          .from("users")
+          .update({ subscription_status: 'expired' })
+          .eq("id", userId);
+        return { hasAccess: false, status: 'expired', trialEndAt: trialEnd, subscriptionEndAt: null };
+      }
+    }
+
+    // Нет подписки или триала
+    return { hasAccess: false, status: status as any, trialEndAt: null, subscriptionEndAt: null };
+  } catch (error) {
+    console.error("[checkSubscription] Исключение:", error);
+    return { hasAccess: false, status: 'none', trialEndAt: null, subscriptionEndAt: null };
+  }
+}
+
+/**
+ * Активирует триал на 3 дня для пользователя
+ */
+async function activateTrial(userId: number): Promise<boolean> {
+  try {
+    const now = new Date();
+    const trialEndAt = new Date(now.getTime() + 3 * 24 * 60 * 60 * 1000); // +3 дня
+
+    const { error } = await supabase
+      .from("users")
+      .update({
+        subscription_status: 'trial',
+        trial_end_at: trialEndAt.toISOString()
+      })
+      .eq("id", userId);
+
+    if (error) {
+      console.error("[activateTrial] Ошибка активации триала:", error);
+      return false;
+    }
+
+    console.log(`[activateTrial] ✅ Триал активирован для userId=${userId}, до ${trialEndAt.toISOString()}`);
+    return true;
+  } catch (error) {
+    console.error("[activateTrial] Исключение:", error);
+    return false;
+  }
+}
+
+// ░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░
 //      ЕДИНАЯ ФУНКЦИЯ ГЛАВНОГО МЕНЮ
 // ░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░
 
@@ -48,7 +143,7 @@ function getMainMenuKeyboard(userId: number | null = null): any {
   const reportUrl = userId ? `${baseUrl}/report?id=${userId}` : undefined;
   const profileUrl = userId ? `${baseUrl}/profile?id=${userId}` : undefined;
 
-  // ЕДИНСТВЕННОЕ правильное меню - 4 кнопки с правильными URL
+  // ЕДИНСТВЕННОЕ правильное меню - 3 кнопки с правильными URL
   // Кнопки с web_app открывают Mini App напрямую
   const keyboard = {
     keyboard: [
@@ -346,6 +441,8 @@ async function handleQuestionnaireSaved(
     console.log("[bot] ❌ Нет данных в web_app_data, пропускаем");
     return;
   }
+  
+  let parsedData: any;
   try {
     parsedData = JSON.parse(rawData);
     console.log("[bot] Распарсенные данные:", JSON.stringify(parsedData, null, 2));
@@ -403,7 +500,7 @@ async function handleQuestionnaireSaved(
   console.log("[bot] Chat ID:", chat_id);
   console.log("[bot] Telegram ID:", telegram_id);
 
-  const confirmationMessage = "Спасибо! Мы сохранили твои данные. Теперь ты можешь отправлять фото, текст или аудио своих блюд — я всё проанализирую.";
+  const confirmationMessage = "Спасибо! Мы сохранили твои данные.";
   const targetChatId = chat_id || telegram_id;
 
   // ШАГ 1: Отправляем подтверждение
@@ -421,49 +518,56 @@ async function handleQuestionnaireSaved(
     });
   }
   
-  // ШАГ 2: Отправляем главное меню
-  let menuSent = false;
+  // ШАГ 2: Отправляем сообщение о подписке с кнопкой активации триала
+  let subscriptionMessageSent = false;
   try {
-    await sendMainMenu(ctx, userIdToUse, "Выберите действие:", targetChatId);
-    menuSent = true;
-    console.log("[bot] ✅ Меню после регистрации отправлено успешно через sendMainMenu");
-  } catch (menuError: any) {
-    console.error("[bot] ❌ Ошибка отправки меню через sendMainMenu:", menuError);
-    console.error("[bot] Menu error details:", {
-      message: menuError?.message,
-      code: menuError?.response?.error_code,
-      description: menuError?.response?.description
+    const subscriptionMessage = `💳 <b>Подписка Step One</b>
+
+1 месяц стоит 199 ₽
+
+🎁 <b>Триал бесплатный на 3 дня</b>
+
+Когда вы активируете триал, у вас откроется доступ ко всем функциям бота:
+• Анализ еды по фото, тексту и голосу
+• Отслеживание калорий и Б/Ж/У
+• Отчёты и статистика
+• Напоминания о приёме пищи
+
+После окончания триала подписка продлится автоматически.`;
+
+    const subscriptionKeyboard = {
+      inline_keyboard: [
+        [
+          {
+            text: "🎁 Активировать триал на 3 дня",
+            callback_data: `activate_trial_${userIdToUse || 'unknown'}`
+          }
+        ]
+      ]
+    };
+
+    await ctx.telegram.sendMessage(targetChatId, subscriptionMessage, {
+      parse_mode: "HTML",
+      reply_markup: subscriptionKeyboard
     });
-    
-    // Пробуем отправить меню еще раз с задержкой
-    try {
-      await new Promise(resolve => setTimeout(resolve, 500));
-      await sendMainMenu(ctx, userIdToUse, undefined, targetChatId);
-      menuSent = true;
-      console.log("[bot] ✅ Меню отправлено после повторной попытки");
-    } catch (retryError: any) {
-      console.error("[bot] ❌ Ошибка отправки меню после повтора:", retryError);
-      // Последняя попытка - через прямой API вызов
-      try {
-        const menu = getMainMenuKeyboard(userIdToUse);
-        await ctx.telegram.sendMessage(targetChatId, "Выберите действие:", {
-          reply_markup: { ...menu, replace_keyboard: true }
-        });
-        menuSent = true;
-        console.log("[bot] ✅ Меню отправлено через прямой API вызов");
-      } catch (finalError: any) {
-        console.error("[bot] ❌ ФИНАЛЬНАЯ ошибка отправки меню:", finalError);
-      }
-    }
+    subscriptionMessageSent = true;
+    console.log("[bot] ✅ Сообщение о подписке отправлено");
+  } catch (subscriptionError: any) {
+    console.error("[bot] ❌ Ошибка отправки сообщения о подписке:", subscriptionError);
+    console.error("[bot] Subscription error details:", {
+      message: subscriptionError?.message,
+      code: subscriptionError?.response?.error_code,
+      description: subscriptionError?.response?.description
+    });
   }
   
-  // Финальная проверка: если ничего не отправилось, логируем критическую ошибку
-  if (!confirmationSent && !menuSent) {
-    console.error("[bot] ❌ КРИТИЧЕСКАЯ ОШИБКА: Не удалось отправить ни подтверждение, ни меню!");
+  // Финальная проверка
+  if (!confirmationSent && !subscriptionMessageSent) {
+    console.error("[bot] ❌ КРИТИЧЕСКАЯ ОШИБКА: Не удалось отправить ни подтверждение, ни сообщение о подписке!");
   } else if (!confirmationSent) {
-    console.warn("[bot] ⚠️ Предупреждение: Подтверждение не отправлено, но меню отправлено");
-  } else if (!menuSent) {
-    console.warn("[bot] ⚠️ Предупреждение: Меню не отправлено, но подтверждение отправлено");
+    console.warn("[bot] ⚠️ Предупреждение: Подтверждение не отправлено, но сообщение о подписке отправлено");
+  } else if (!subscriptionMessageSent) {
+    console.warn("[bot] ⚠️ Предупреждение: Сообщение о подписке не отправлено, но подтверждение отправлено");
   }
 }
 
@@ -1210,6 +1314,45 @@ bot.on("text", async (ctx) => {
 
     console.log(`[bot] Текстовое сообщение от ${telegram_id}: ${text}`);
 
+    // Получаем userId для проверки подписки
+    const { data: userForSubscription } = await supabase
+      .from("users")
+      .select("id")
+      .eq("telegram_id", telegram_id)
+      .maybeSingle();
+
+    if (userForSubscription?.id) {
+      // Проверяем подписку
+      const subscription = await checkSubscription(userForSubscription.id);
+      if (!subscription.hasAccess) {
+        const paymentUrl = userForSubscription.id 
+          ? `${MINIAPP_BASE_URL}/payment?id=${userForSubscription.id}` 
+          : undefined;
+        
+        let message = "❌ <b>Нет доступа</b>\n\n";
+        if (subscription.status === 'expired') {
+          message += "Ваш триал или подписка истекли.\n\n";
+        } else {
+          message += "Для использования функций бота необходимо активировать триал или оформить подписку.\n\n";
+        }
+        message += "💳 <b>Подписка Step One</b>\n";
+        message += "1 месяц стоит 199 ₽\n\n";
+        message += "🎁 <b>Триал бесплатный на 3 дня</b>";
+
+        const keyboard: any[] = [];
+        if (paymentUrl) {
+          keyboard.push([
+            { text: "💳 Оформить подписку", web_app: { url: paymentUrl } }
+          ]);
+        }
+
+        return ctx.reply(message, {
+          parse_mode: "HTML",
+          reply_markup: keyboard.length > 0 ? { inline_keyboard: keyboard } : undefined
+        });
+      }
+    }
+
     // Показываем, что обрабатываем
     const processingMsg = await ctx.reply("🔍 Анализирую еду...");
 
@@ -1394,6 +1537,100 @@ bot.on("callback_query", async (ctx) => {
     const data = ctx.callbackQuery.data;
     if (!data) {
       return ctx.answerCbQuery();
+    }
+
+    // Обработка активации триала
+    if (data.startsWith("activate_trial_")) {
+      await ctx.answerCbQuery();
+      
+      const userIdStr = data.replace("activate_trial_", "");
+      const userId = userIdStr === 'unknown' ? null : parseInt(userIdStr, 10);
+      
+      // Если userId не передан, пытаемся получить из БД по telegram_id
+      let finalUserId = userId;
+      if (!finalUserId || isNaN(finalUserId)) {
+        const { data: user, error: userError } = await supabase
+          .from("users")
+          .select("id")
+          .eq("telegram_id", telegram_id)
+          .maybeSingle();
+        
+        if (userError || !user) {
+          return ctx.editMessageText("❌ Ошибка: пользователь не найден. Используйте /start для регистрации.");
+        }
+        finalUserId = user.id;
+      }
+
+      // Проверяем, не активирован ли уже триал
+      const subscription = await checkSubscription(finalUserId);
+      if (subscription.hasAccess && subscription.status === 'trial') {
+        const trialEndDate = subscription.trialEndAt 
+          ? new Date(subscription.trialEndAt).toLocaleDateString('ru-RU')
+          : 'неизвестно';
+        return ctx.editMessageText(
+          `✅ Триал уже активирован!\n\nТриал действует до ${trialEndDate}.\n\nТеперь вы можете использовать все функции бота!`,
+          {
+            reply_markup: {
+              inline_keyboard: [
+                [
+                  { text: "🚀 Начать использовать", callback_data: "start_using" }
+                ]
+              ]
+            }
+          }
+        );
+      }
+
+      // Активируем триал
+      const activated = await activateTrial(finalUserId);
+      if (!activated) {
+        return ctx.editMessageText("❌ Ошибка активации триала. Попробуйте позже или обратитесь в поддержку.");
+      }
+
+      // Получаем userId для меню
+      const { data: user } = await supabase
+        .from("users")
+        .select("id")
+        .eq("telegram_id", telegram_id)
+        .maybeSingle();
+
+      // Показываем успешное сообщение и отправляем меню
+      await ctx.editMessageText(
+        "✅ Триал активирован!\n\n🎁 У вас есть 3 дня бесплатного доступа ко всем функциям бота.\n\nПосле окончания триала подписка продлится автоматически за 199 ₽/месяц.",
+        {
+          reply_markup: {
+            inline_keyboard: [
+              [
+                { text: "🚀 Начать использовать", callback_data: "start_using" }
+              ]
+            ]
+          }
+        }
+      );
+
+      // Отправляем главное меню
+      try {
+        await sendMainMenu(ctx, user?.id || finalUserId, "Выберите действие:", ctx.chat?.id || telegram_id);
+      } catch (menuError) {
+        console.error("[bot] Ошибка отправки меню после активации триала:", menuError);
+      }
+
+      return;
+    }
+
+    // Обработка кнопки "Начать использовать"
+    if (data === "start_using") {
+      await ctx.answerCbQuery();
+      
+      const { data: user } = await supabase
+        .from("users")
+        .select("id")
+        .eq("telegram_id", telegram_id)
+        .maybeSingle();
+
+      await ctx.deleteMessage();
+      await sendMainMenu(ctx, user?.id || null, "Выберите действие:", ctx.chat?.id || telegram_id);
+      return;
     }
 
     // Обработка кнопок уведомлений
@@ -1799,6 +2036,45 @@ bot.on("photo", async (ctx) => {
 
     console.log(`[bot] Получено фото от ${telegram_id}`);
 
+    // Получаем userId для проверки подписки
+    const { data: userForSubscription } = await supabase
+      .from("users")
+      .select("id")
+      .eq("telegram_id", telegram_id)
+      .maybeSingle();
+
+    if (userForSubscription?.id) {
+      // Проверяем подписку
+      const subscription = await checkSubscription(userForSubscription.id);
+      if (!subscription.hasAccess) {
+        const paymentUrl = userForSubscription.id 
+          ? `${MINIAPP_BASE_URL}/payment?id=${userForSubscription.id}` 
+          : undefined;
+        
+        let message = "❌ <b>Нет доступа</b>\n\n";
+        if (subscription.status === 'expired') {
+          message += "Ваш триал или подписка истекли.\n\n";
+        } else {
+          message += "Для использования функций бота необходимо активировать триал или оформить подписку.\n\n";
+        }
+        message += "💳 <b>Подписка Step One</b>\n";
+        message += "1 месяц стоит 199 ₽\n\n";
+        message += "🎁 <b>Триал бесплатный на 3 дня</b>";
+
+        const keyboard: any[] = [];
+        if (paymentUrl) {
+          keyboard.push([
+            { text: "💳 Оформить подписку", web_app: { url: paymentUrl } }
+          ]);
+        }
+
+        return ctx.reply(message, {
+          parse_mode: "HTML",
+          reply_markup: keyboard.length > 0 ? { inline_keyboard: keyboard } : undefined
+        });
+      }
+    }
+
     // Показываем, что обрабатываем
     const processingMsg = await ctx.reply("📸 Анализирую фото еды...");
 
@@ -1952,6 +2228,45 @@ bot.on("voice", async (ctx) => {
     }
 
     console.log(`[bot] Получено голосовое сообщение от ${telegram_id}`);
+
+    // Получаем userId для проверки подписки
+    const { data: userForSubscription } = await supabase
+      .from("users")
+      .select("id")
+      .eq("telegram_id", telegram_id)
+      .maybeSingle();
+
+    if (userForSubscription?.id) {
+      // Проверяем подписку
+      const subscription = await checkSubscription(userForSubscription.id);
+      if (!subscription.hasAccess) {
+        const paymentUrl = userForSubscription.id 
+          ? `${MINIAPP_BASE_URL}/payment?id=${userForSubscription.id}` 
+          : undefined;
+        
+        let message = "❌ <b>Нет доступа</b>\n\n";
+        if (subscription.status === 'expired') {
+          message += "Ваш триал или подписка истекли.\n\n";
+        } else {
+          message += "Для использования функций бота необходимо активировать триал или оформить подписку.\n\n";
+        }
+        message += "💳 <b>Подписка Step One</b>\n";
+        message += "1 месяц стоит 199 ₽\n\n";
+        message += "🎁 <b>Триал бесплатный на 3 дня</b>";
+
+        const keyboard: any[] = [];
+        if (paymentUrl) {
+          keyboard.push([
+            { text: "💳 Оформить подписку", web_app: { url: paymentUrl } }
+          ]);
+        }
+
+        return ctx.reply(message, {
+          parse_mode: "HTML",
+          reply_markup: keyboard.length > 0 ? { inline_keyboard: keyboard } : undefined
+        });
+      }
+    }
 
     // Показываем, что обрабатываем
     const processingMsg = await ctx.reply("🎤 Расшифровываю голосовое сообщение...");
