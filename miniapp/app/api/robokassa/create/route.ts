@@ -47,8 +47,10 @@ export async function POST(req: Request) {
 
     const invoiceId = `inv_${userId}_${Date.now()}`;
 
+    // Формируем чек для фискализации
+    // Формируем чек для фискализации
     const receipt = {
-      sno: "none",
+      sno: "usn_income", // Упрощенная система налогообложения
       items: [
         {
           name: DESCRIPTION,
@@ -56,7 +58,7 @@ export async function POST(req: Request) {
           sum: AMOUNT,
           payment_method: "full_payment",
           payment_object: "service",
-          tax: "none",
+          tax: "none", // Без НДС
         },
       ],
     };
@@ -65,8 +67,14 @@ export async function POST(req: Request) {
     const receiptEncoded = encodeURIComponent(receiptJson);
 
     // Подпись для первого платежа: MerchantLogin:OutSum:InvId:Receipt:Password1
+    // ВАЖНО: Receipt должен быть в формате JSON строки (не encoded) для подписи
     const signatureBase = `${merchantLogin}:${AMOUNT}:${invoiceId}:${receiptJson}:${password1}`;
-    const signatureValue = md5(signatureBase);
+    const signatureValue = md5(signatureBase).toLowerCase();
+
+    console.log("[robokassa/create] Signature base:", signatureBase);
+    console.log("[robokassa/create] Receipt JSON:", receiptJson);
+    console.log("[robokassa/create] Receipt encoded:", receiptEncoded);
+    console.log("[robokassa/create] Signature value:", signatureValue);
 
     const params = new URLSearchParams({
       MerchantLogin: merchantLogin,
@@ -79,8 +87,17 @@ export async function POST(req: Request) {
       Culture: "ru",
       Encoding: "utf-8",
     });
+    
+    console.log("[robokassa/create] Params:", Object.fromEntries(params));
 
-    const paymentUrl = `https://auth.robokassa.ru/Merchant/Index.aspx?${params.toString()}`;
+    // Используем тестовый URL для разработки, если указан в env
+    const robokassaUrl = process.env.ROBOKASSA_TEST_MODE === "true" 
+      ? "https://auth.robokassa.ru/Merchant/Index.aspx"
+      : "https://auth.robokassa.ru/Merchant/Index.aspx";
+    
+    const paymentUrl = `${robokassaUrl}?${params.toString()}`;
+    
+    console.log("[robokassa/create] Payment URL:", paymentUrl);
 
     // Сохраняем pending платеж
     await supabase.from("payments").insert({
