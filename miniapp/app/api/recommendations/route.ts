@@ -16,8 +16,9 @@ export async function OPTIONS() {
 
 interface Recommendation {
   type: "protein" | "fat" | "carbs" | "calories" | "water";
-  message: string;
-  suggestion: string;
+  title?: string; // Заголовок рекомендации
+  message: string; // Основной текст
+  suggestion: string; // Рекомендация
   severity: "low" | "medium" | "high";
 }
 
@@ -165,10 +166,12 @@ export async function GET(req: Request) {
       const proteinPercent = (averages.protein / goals.protein) * 100;
       if (proteinPercent < 70) {
         const deficit = goals.protein - averages.protein;
+        const additionalProtein = Math.min(40, Math.max(30, Math.round(deficit * 0.3))); // 30-40г для начала
         recommendations.push({
           type: "protein",
-          message: `Ты часто недобираешь белок — в среднем ${Math.round(averages.protein)}г вместо ${Math.round(goals.protein)}г`,
-          suggestion: `Добавь творог или омлет завтра. Нужно еще примерно ${Math.round(deficit)}г белка в день.`,
+          title: "Главная причина, почему вес может стоять",
+          message: `Ты сильно недобираешь белок.\nИз-за этого нет нормального насыщения и чаще тянет на перекусы.`,
+          suggestion: `Не нужно сразу выходить на ${Math.round(goals.protein)} г.\nНачни с +${additionalProtein}–${additionalProtein + 10} г белка в первой половине дня.`,
           severity: proteinPercent < 50 ? "high" : "medium"
         });
       }
@@ -220,11 +223,11 @@ export async function GET(req: Request) {
     if (goals.calories > 0) {
       const caloriesPercent = (averages.calories / goals.calories) * 100;
       if (caloriesPercent < 80) {
-        const deficit = goals.calories - averages.calories;
         recommendations.push({
           type: "calories",
-          message: `Недостаточно калорий — в среднем ${Math.round(averages.calories)} ккал вместо ${Math.round(goals.calories)} ккал`,
-          suggestion: `Добавь еще один прием пищи или увеличь порции. Нужно еще примерно ${Math.round(deficit)} ккал в день.`,
+          title: "Питание слишком хаотичное",
+          message: `В среднем ты ешь мало и неравномерно.\nИз-за этого телу сложно снижать вес стабильно.`,
+          suggestion: `Добавь один нормальный приём пищи днём.\nНе вечером.`,
           severity: caloriesPercent < 60 ? "high" : "medium"
         });
       } else if (caloriesPercent > 120) {
@@ -241,11 +244,11 @@ export async function GET(req: Request) {
     if (goals.water > 0) {
       const waterPercent = (averages.water / goals.water) * 100;
       if (waterPercent < 70) {
-        const deficit = goals.water - averages.water;
         recommendations.push({
           type: "water",
-          message: `Мало воды — в среднем ${Math.round(averages.water)} мл вместо ${Math.round(goals.water)} мл`,
-          suggestion: `Пей больше воды в течение дня. Нужно еще примерно ${Math.round(deficit)} мл.`,
+          title: "Вода влияет на аппетит",
+          message: `Когда воды мало, организм часто путает жажду с голодом.\nИз-за этого сложнее контролировать питание.`,
+          suggestion: `Начни с простого:\nстакан воды утром и по одному перед приёмами пищи.`,
           severity: waterPercent < 50 ? "high" : "medium"
         });
       }

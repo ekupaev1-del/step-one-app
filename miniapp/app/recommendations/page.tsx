@@ -7,8 +7,9 @@ import AppLayout from "../components/AppLayout";
 
 interface Recommendation {
   type: "protein" | "fat" | "carbs" | "calories" | "water";
-  message: string;
-  suggestion: string;
+  title?: string; // Заголовок рекомендации
+  message: string; // Основной текст
+  suggestion: string; // Рекомендация
   severity: "low" | "medium" | "high";
 }
 
@@ -125,13 +126,14 @@ function RecommendationsPageContent(): ReactElement {
   }
 
   const getSeverityColor = (severity: string) => {
+    // Изменяем цветовую схему: убираем красный, делаем более мягкие цвета
     switch (severity) {
       case "high":
-        return "bg-red-50 border-red-200 text-red-800";
+        return "bg-blue-50 border-blue-200 text-blue-900";
       case "medium":
-        return "bg-yellow-50 border-yellow-200 text-yellow-800";
+        return "bg-blue-50 border-blue-200 text-blue-900";
       case "low":
-        return "bg-blue-50 border-blue-200 text-blue-800";
+        return "bg-blue-50 border-blue-200 text-blue-900";
       default:
         return "bg-gray-50 border-gray-200 text-gray-800";
     }
@@ -198,8 +200,11 @@ function RecommendationsPageContent(): ReactElement {
                   <div className="flex items-start gap-3">
                     <span className="text-2xl">{getTypeIcon(rec.type)}</span>
                     <div className="flex-1">
-                      <p className="font-semibold mb-2">{rec.message}</p>
-                      <p className="text-sm opacity-90">{rec.suggestion}</p>
+                      {rec.title && (
+                        <h3 className="font-bold text-base mb-2">{rec.title}</h3>
+                      )}
+                      <p className="text-sm mb-2 whitespace-pre-line">{rec.message}</p>
+                      <p className="text-sm opacity-90 whitespace-pre-line">{rec.suggestion}</p>
                     </div>
                   </div>
                 </div>
