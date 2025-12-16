@@ -160,11 +160,22 @@ export async function checkAndSendInactivityNotifications(bot: Telegraf): Promis
           lastNotificationSent.set(userId, now.getTime());
           notificationsSent++;
         } catch (sendError: any) {
-          // Игнорируем ошибки отправки (пользователь мог заблокировать бота)
-          if (sendError?.response?.error_code === 403) {
-            console.warn(`[inactivityNotifications] Пользователь ${telegramId} заблокировал бота, пропускаем`);
+          // Игнорируем ошибки отправки (пользователь мог заблокировать бота или удалить чат)
+          const errorCode = sendError?.response?.error_code;
+          const errorDescription = sendError?.response?.description || '';
+          
+          if (errorCode === 403 || errorCode === 400) {
+            // 403 = пользователь заблокировал бота
+            // 400 с "chat not found" = чат не найден (пользователь удалил бота или чат)
+            if (errorCode === 400 && errorDescription.includes('chat not found')) {
+              console.warn(`[inactivityNotifications] Чат не найден для пользователя ${telegramId} (${userId}), пропускаем`);
+            } else if (errorCode === 403) {
+              console.warn(`[inactivityNotifications] Пользователь ${telegramId} (${userId}) заблокировал бота, пропускаем`);
+            } else {
+              console.warn(`[inactivityNotifications] Ошибка ${errorCode} при отправке пользователю ${telegramId} (${userId}): ${errorDescription}`);
+            }
           } else {
-            console.error(`[inactivityNotifications] Ошибка отправки уведомления пользователю ${telegramId}:`, sendError);
+            console.error(`[inactivityNotifications] Ошибка отправки уведомления пользователю ${telegramId} (${userId}):`, sendError);
           }
         }
       } catch (userError: any) {
