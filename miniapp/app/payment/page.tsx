@@ -145,7 +145,14 @@ function PaymentContent() {
 
 export default function PaymentPage() {
   return (
-    <Suspense fallback={<div className="min-h-screen flex items-center justify-center">Загрузка...</div>}>
+    <Suspense fallback={
+      <div className="min-h-screen flex items-center justify-center bg-background">
+        <div className="text-center">
+          <div className="text-lg font-semibold text-textPrimary mb-2">Загрузка...</div>
+          <div className="text-sm text-textSecondary">Подготовка страницы оплаты</div>
+        </div>
+      </div>
+    }>
       <PaymentContent />
     </Suspense>
   );
