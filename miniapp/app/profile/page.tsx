@@ -20,6 +20,10 @@ interface ProfileData {
   fatGoal: number | null;
   carbsGoal: number | null;
   waterGoalMl: number | null;
+  subscriptionStatus: string | null;
+  trialEndAt: string | null;
+  subscriptionEndAt: string | null;
+  robokassaParentInvoiceId: string | null;
 }
 
 function ProfilePageContent() {
@@ -36,6 +40,8 @@ function ProfilePageContent() {
   const [avatarUrl, setAvatarUrl] = useState<string | null>(null);
   const [uploadingAvatar, setUploadingAvatar] = useState(false);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
+  const [basicInfoExpanded, setBasicInfoExpanded] = useState(true);
+  const [cancellingSubscription, setCancellingSubscription] = useState(false);
 
   // Редактируемые поля
   const [editName, setEditName] = useState<string>("");
@@ -128,7 +134,11 @@ function ProfilePageContent() {
           proteinGoal: data.proteinGoal,
           fatGoal: data.fatGoal,
           carbsGoal: data.carbsGoal,
-          waterGoalMl: data.waterGoalMl
+          waterGoalMl: data.waterGoalMl,
+          subscriptionStatus: data.subscriptionStatus,
+          trialEndAt: data.trialEndAt,
+          subscriptionEndAt: data.subscriptionEndAt,
+          robokassaParentInvoiceId: data.robokassaParentInvoiceId
         });
 
         setAvatarUrl(data.avatarUrl || null);
@@ -366,6 +376,67 @@ function ProfilePageContent() {
     }
   };
 
+  const handleCancelSubscription = async () => {
+    if (!userId) return;
+    const confirmCancel = window.confirm("Вы действительно хотите отменить подписку? После отмены доступ к функциям бота будет закрыт.");
+    if (!confirmCancel) return;
+
+    try {
+      setCancellingSubscription(true);
+      const response = await fetch(`/api/subscription/cancel?userId=${userId}`, {
+        method: "POST"
+      });
+      const data = await response.json();
+      if (!response.ok || !data.ok) {
+        throw new Error(data.error || "Не удалось отменить подписку");
+      }
+      // Обновляем профиль
+      const profileResponse = await fetch(`/api/user?userId=${userId}`);
+      const profileData = await profileResponse.json();
+      if (profileResponse.ok && profileData.ok) {
+        setProfile({
+          ...profile,
+          subscriptionStatus: profileData.subscriptionStatus,
+          subscriptionEndAt: profileData.subscriptionEndAt,
+          trialEndAt: profileData.trialEndAt
+        });
+      }
+    } catch (err: any) {
+      console.error("[profile] Ошибка отмены подписки:", err);
+      setError(err.message || "Ошибка отмены подписки");
+    } finally {
+      setCancellingSubscription(false);
+    }
+  };
+
+  const formatSubscriptionStatus = (status: string | null): string => {
+    if (!status) return "Не активирована";
+    switch (status) {
+      case "trial":
+        return "Триал активен";
+      case "active":
+        return "Активна";
+      case "expired":
+        return "Истекла";
+      default:
+        return status;
+    }
+  };
+
+  const getNextBillingDate = (): string | null => {
+    // Если триал активен, следующее списание - после окончания триала (начало активной подписки)
+    if (profile.subscriptionStatus === "trial" && profile.trialEndAt) {
+      const trialEnd = new Date(profile.trialEndAt);
+      return trialEnd.toLocaleDateString("ru-RU");
+    }
+    // Если подписка активна, следующее списание - дата окончания текущего периода (когда будет следующее автосписание)
+    if (profile.subscriptionStatus === "active" && profile.subscriptionEndAt) {
+      const endDate = new Date(profile.subscriptionEndAt);
+      return endDate.toLocaleDateString("ru-RU");
+    }
+    return null;
+  };
+
   return (
     <AppLayout>
       <div className="min-h-screen bg-background p-4 py-8">
@@ -416,10 +487,20 @@ function ProfilePageContent() {
           </button>
         </div>
 
-        {/* Основная информация */}
+        {/* Основная информация (сворачиваемая секция) */}
         <div className="bg-white rounded-2xl shadow-soft p-6 mb-4">
-          <h2 className="text-lg font-semibold text-textPrimary mb-4">Основная информация</h2>
+          <button
+            onClick={() => setBasicInfoExpanded(!basicInfoExpanded)}
+            className="w-full flex justify-between items-center mb-4"
+          >
+            <h2 className="text-lg font-semibold text-textPrimary">Основная информация</h2>
+            <span className={`transform transition-transform duration-200 ${basicInfoExpanded ? 'rotate-180' : ''}`}>
+              ▼
+            </span>
+          </button>
           
+          {basicInfoExpanded && (
+            <>
           {isEditing ? (
             <div className="space-y-4">
               {/* Имя */}
@@ -619,6 +700,8 @@ function ProfilePageContent() {
               </div>
             </div>
           )}
+            </>
+          )}
         </div>
 
         {/* Нормы (сворачиваемая секция) */}
@@ -672,6 +755,42 @@ function ProfilePageContent() {
             </div>
           )}
         </div>
+
+        {/* Подписка */}
+        {(profile.subscriptionStatus === "trial" || profile.subscriptionStatus === "active") && (
+          <div className="bg-white rounded-2xl shadow-soft p-6 mb-4">
+            <h2 className="text-lg font-semibold text-textPrimary mb-4">Подписка</h2>
+            
+            <div className="space-y-3">
+              <div className="flex justify-between items-center py-2 border-b border-gray-100">
+                <span className="text-textSecondary">Статус</span>
+                <span className="font-medium text-textPrimary">{formatSubscriptionStatus(profile.subscriptionStatus)}</span>
+              </div>
+              
+              {getNextBillingDate() && (
+                <div className="flex justify-between items-center py-2 border-b border-gray-100">
+                  <span className="text-textSecondary">Следующее списание</span>
+                  <span className="font-medium text-textPrimary">{getNextBillingDate()}</span>
+                </div>
+              )}
+              
+              <div className="flex justify-between items-center py-2">
+                <span className="text-textSecondary">Цена</span>
+                <span className="font-medium text-textPrimary">199 ₽</span>
+              </div>
+              
+              <div className="pt-4 mt-4 border-t border-gray-100">
+                <button
+                  onClick={handleCancelSubscription}
+                  disabled={cancellingSubscription}
+                  className="w-full px-4 py-2 bg-red-50 border border-red-200 text-red-600 font-medium rounded-lg hover:bg-red-100 transition-colors disabled:opacity-50"
+                >
+                  {cancellingSubscription ? "Отмена..." : "Отменить подписку"}
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
 
         {/* Дисклеймер про здоровье */}
         <div className="mb-4 p-4 bg-yellow-50 border border-yellow-200 rounded-2xl">
