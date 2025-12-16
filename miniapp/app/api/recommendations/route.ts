@@ -20,6 +20,8 @@ interface Recommendation {
   message: string; // Основной текст
   suggestion: string; // Рекомендация
   severity: "low" | "medium" | "high";
+  current?: number; // Текущее среднее значение
+  goal?: number; // Целевое значение
 }
 
 /**
@@ -170,9 +172,11 @@ export async function GET(req: Request) {
         recommendations.push({
           type: "protein",
           title: "Главная причина, почему вес может стоять",
-          message: `Ты сильно недобираешь белок.\nИз-за этого нет нормального насыщения и чаще тянет на перекусы.`,
-          suggestion: `Не нужно сразу выходить на ${Math.round(goals.protein)} г.\nНачни с +${additionalProtein}–${additionalProtein + 10} г белка в первой половине дня.`,
-          severity: proteinPercent < 50 ? "high" : "medium"
+          message: `Ты сильно недобираешь белок. Из-за этого нет нормального насыщения и чаще тянет на перекусы.`,
+          suggestion: `Не нужно сразу выходить на ${Math.round(goals.protein)} г. Начни с +${additionalProtein}–${additionalProtein + 10} г белка в первой половине дня.`,
+          severity: proteinPercent < 50 ? "high" : "medium",
+          current: Math.round(averages.protein),
+          goal: Math.round(goals.protein)
         });
       }
     }
@@ -184,16 +188,20 @@ export async function GET(req: Request) {
         const deficit = goals.fat - averages.fat;
         recommendations.push({
           type: "fat",
-          message: `Не хватает полезных жиров — в среднем ${Math.round(averages.fat)}г вместо ${Math.round(goals.fat)}г`,
-          suggestion: `Добавь авокадо, орехи или оливковое масло в рацион. Нужно еще примерно ${Math.round(deficit)}г жиров.`,
-          severity: fatPercent < 50 ? "high" : "medium"
+          message: `Не хватает полезных жиров. Добавь авокадо, орехи или оливковое масло в рацион.`,
+          suggestion: `Нужно еще примерно ${Math.round(deficit)}г жиров.`,
+          severity: fatPercent < 50 ? "high" : "medium",
+          current: Math.round(averages.fat),
+          goal: Math.round(goals.fat)
         });
       } else if (fatPercent > 130) {
         recommendations.push({
           type: "fat",
-          message: `Слишком много жиров — в среднем ${Math.round(averages.fat)}г вместо ${Math.round(goals.fat)}г`,
-          suggestion: `Попробуй уменьшить количество жирных продуктов и добавь больше овощей.`,
-          severity: fatPercent > 150 ? "high" : "medium"
+          message: `Слишком много жиров. Попробуй уменьшить количество жирных продуктов и добавь больше овощей.`,
+          suggestion: `Оптимальная норма: ${Math.round(goals.fat)}г в день.`,
+          severity: fatPercent > 150 ? "high" : "medium",
+          current: Math.round(averages.fat),
+          goal: Math.round(goals.fat)
         });
       }
     }
@@ -205,16 +213,20 @@ export async function GET(req: Request) {
         const deficit = goals.carbs - averages.carbs;
         recommendations.push({
           type: "carbs",
-          message: `Мало углеводов — в среднем ${Math.round(averages.carbs)}г вместо ${Math.round(goals.carbs)}г`,
-          suggestion: `Добавь крупы, фрукты или цельнозерновой хлеб. Нужно еще примерно ${Math.round(deficit)}г углеводов.`,
-          severity: carbsPercent < 50 ? "high" : "medium"
+          message: `Мало углеводов. Добавь крупы, фрукты или цельнозерновой хлеб.`,
+          suggestion: `Нужно еще примерно ${Math.round(deficit)}г углеводов.`,
+          severity: carbsPercent < 50 ? "high" : "medium",
+          current: Math.round(averages.carbs),
+          goal: Math.round(goals.carbs)
         });
       } else if (carbsPercent > 130) {
         recommendations.push({
           type: "carbs",
-          message: `Слишком много углеводов — в среднем ${Math.round(averages.carbs)}г вместо ${Math.round(goals.carbs)}г`,
-          suggestion: `Попробуй заменить часть углеводов на белок и овощи.`,
-          severity: carbsPercent > 150 ? "high" : "medium"
+          message: `Слишком много углеводов. Попробуй заменить часть углеводов на белок и овощи.`,
+          suggestion: `Оптимальная норма: ${Math.round(goals.carbs)}г в день.`,
+          severity: carbsPercent > 150 ? "high" : "medium",
+          current: Math.round(averages.carbs),
+          goal: Math.round(goals.carbs)
         });
       }
     }
@@ -226,16 +238,20 @@ export async function GET(req: Request) {
         recommendations.push({
           type: "calories",
           title: "Питание слишком хаотичное",
-          message: `В среднем ты ешь мало и неравномерно.\nИз-за этого телу сложно снижать вес стабильно.`,
-          suggestion: `Добавь один нормальный приём пищи днём.\nНе вечером.`,
-          severity: caloriesPercent < 60 ? "high" : "medium"
+          message: `В среднем ты ешь мало и неравномерно. Из-за этого телу сложно снижать вес стабильно.`,
+          suggestion: `Добавь один нормальный приём пищи днём. Не вечером.`,
+          severity: caloriesPercent < 60 ? "high" : "medium",
+          current: Math.round(averages.calories),
+          goal: Math.round(goals.calories)
         });
       } else if (caloriesPercent > 120) {
         recommendations.push({
           type: "calories",
           message: `Превышение калорий — в среднем ${Math.round(averages.calories)} ккал вместо ${Math.round(goals.calories)} ккал`,
           suggestion: `Попробуй уменьшить порции или заменить калорийные продукты на более легкие.`,
-          severity: caloriesPercent > 140 ? "high" : "medium"
+          severity: caloriesPercent > 140 ? "high" : "medium",
+          current: Math.round(averages.calories),
+          goal: Math.round(goals.calories)
         });
       }
     }
@@ -247,9 +263,11 @@ export async function GET(req: Request) {
         recommendations.push({
           type: "water",
           title: "Вода влияет на аппетит",
-          message: `Когда воды мало, организм часто путает жажду с голодом.\nИз-за этого сложнее контролировать питание.`,
-          suggestion: `Начни с простого:\nстакан воды утром и по одному перед приёмами пищи.`,
-          severity: waterPercent < 50 ? "high" : "medium"
+          message: `Когда воды мало, организм часто путает жажду с голодом. Из-за этого сложнее контролировать питание.`,
+          suggestion: `Начни с простого: стакан воды утром и по одному перед приёмами пищи.`,
+          severity: waterPercent < 50 ? "high" : "medium",
+          current: Math.round(averages.water),
+          goal: Math.round(goals.water)
         });
       }
     }
