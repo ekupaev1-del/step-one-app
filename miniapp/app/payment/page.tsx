@@ -9,6 +9,7 @@ function PaymentContent() {
   const [userId, setUserId] = useState<number | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [formssScriptUrl, setFormssScriptUrl] = useState<string | null>(null);
 
   useEffect(() => {
     const id = searchParams.get("id");
@@ -21,10 +22,53 @@ function PaymentContent() {
     }
   }, [searchParams]);
 
+  // Удаляем старый скрипт при изменении URL
+  useEffect(() => {
+    return () => {
+      const oldScript = document.getElementById("robokassa-formss-script");
+      if (oldScript) {
+        oldScript.remove();
+      }
+    };
+  }, [formssScriptUrl]);
+
+  // Загружаем FormSS.js скрипт когда получен URL
+  useEffect(() => {
+    if (!formssScriptUrl) return;
+
+    // Удаляем предыдущий скрипт если есть
+    const oldScript = document.getElementById("robokassa-formss-script");
+    if (oldScript) {
+      oldScript.remove();
+    }
+
+    // Создаем новый скрипт
+    const script = document.createElement("script");
+    script.id = "robokassa-formss-script";
+    script.type = "text/javascript";
+    script.src = formssScriptUrl;
+    script.async = true;
+    
+    script.onerror = () => {
+      setError("Ошибка загрузки формы оплаты Robokassa");
+      setFormssScriptUrl(null);
+    };
+
+    document.body.appendChild(script);
+
+    return () => {
+      if (script.parentNode) {
+        script.parentNode.removeChild(script);
+      }
+    };
+  }, [formssScriptUrl]);
+
   const startPayment = async () => {
     if (!userId) return;
     setLoading(true);
     setError(null);
+    setFormssScriptUrl(null);
+    
     try {
       const res = await fetch("/api/robokassa/create", {
         method: "POST",
@@ -43,16 +87,16 @@ function PaymentContent() {
         throw new Error(errorMsg + details + missing);
       }
       
-      if (!data.paymentUrl) {
-        throw new Error("URL оплаты не получен от сервера");
+      if (!data.formssScriptUrl) {
+        throw new Error("URL формы оплаты не получен от сервера");
       }
       
-      console.log("[payment] Redirecting to:", data.paymentUrl);
-      window.location.href = data.paymentUrl;
+      console.log("[payment] Loading FormSS.js from:", data.formssScriptUrl);
+      setFormssScriptUrl(data.formssScriptUrl);
+      setLoading(false);
     } catch (e: any) {
       console.error("[payment] Error:", e);
       setError(e.message || "Ошибка создания платежа. Проверьте логи сервера.");
-    } finally {
       setLoading(false);
     }
   };
@@ -78,11 +122,18 @@ function PaymentContent() {
           )}
           <button
             onClick={startPayment}
-            disabled={!userId || loading}
+            disabled={!userId || loading || !!formssScriptUrl}
             className="w-full py-3 rounded-xl bg-accent text-white font-semibold hover:opacity-90 disabled:opacity-50"
           >
-            {loading ? "Создаём оплату..." : "Продолжить и оплатить"}
+            {loading ? "Создаём оплату..." : formssScriptUrl ? "Загрузка формы оплаты..." : "Продолжить и оплатить"}
           </button>
+          
+          {/* Контейнер для формы оплаты Robokassa */}
+          {formssScriptUrl && (
+            <div id="robokassa-payment-form" className="mt-4">
+              {/* FormSS.js создаст форму здесь автоматически */}
+            </div>
+          )}
           <p className="text-xs text-textSecondary text-center">
             Оплата проходит через Robokassa. Вы можете отменить автосписание в любой момент до даты списания.
           </p>

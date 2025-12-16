@@ -80,29 +80,27 @@ export async function POST(req: Request) {
     console.log("[robokassa/create] Signature base:", signatureBase);
     console.log("[robokassa/create] Signature value:", signatureValue);
 
-    // Формируем URL вручную для полного контроля
+    // Используем FormSS.js метод - более надежный способ
     // ВАЖНО: Description должен быть URL-encoded
     const descriptionEncoded = encodeURIComponent(DESCRIPTION);
     
-    // Собираем параметры в правильном порядке
-    // Сначала пробуем БЕЗ Recurring, чтобы проверить базовую оплату
-    const params: string[] = [];
-    params.push(`MerchantLogin=${encodeURIComponent(merchantLogin)}`);
-    params.push(`OutSum=${amountStr}`); // Используем формат с точкой
-    params.push(`InvId=${invoiceId}`);
-    params.push(`Description=${descriptionEncoded}`);
-    params.push(`SignatureValue=${signatureValue}`);
-    params.push(`Culture=ru`);
+    // Формируем URL для FormSS.js скрипта
+    // ВАЖНО: Используем InvId (не InvoiceID) - это стандартный параметр Robokassa
+    const formssParams: string[] = [];
+    formssParams.push(`MerchantLogin=${encodeURIComponent(merchantLogin)}`);
+    formssParams.push(`OutSum=${amountStr}`);
+    formssParams.push(`InvId=${invoiceId}`);
+    formssParams.push(`Description=${descriptionEncoded}`);
+    formssParams.push(`SignatureValue=${signatureValue}`);
+    formssParams.push(`Culture=ru`);
     
-    // Recurring добавляем только если явно указано
-    // Пока убираем, чтобы проверить базовую оплату
-    // params.push(`Recurring=true`);
+    // Добавляем Recurring для автопродления
+    formssParams.push(`Recurring=true`);
     
-    const paramsString = params.join("&");
-    const robokassaUrl = "https://auth.robokassa.ru/Merchant/Index.aspx";
-    const paymentUrl = `${robokassaUrl}?${paramsString}`;
+    const formssParamsString = formssParams.join("&");
+    const formssScriptUrl = `https://auth.robokassa.ru/Merchant/PaymentForm/FormSS.js?${formssParamsString}`;
     
-    console.log("[robokassa/create] Payment URL:", paymentUrl);
+    console.log("[robokassa/create] FormSS.js Script URL:", formssScriptUrl);
     console.log("[robokassa/create] ======================================");
 
     // Сохраняем pending платеж
@@ -117,12 +115,20 @@ export async function POST(req: Request) {
 
     return NextResponse.json({ 
       ok: true, 
-      paymentUrl, 
+      formssScriptUrl, 
       invoiceId,
+      paymentParams: {
+        merchantLogin,
+        outSum: amountStr,
+        invId: invoiceId,
+        description: DESCRIPTION,
+        signatureValue,
+        culture: "ru",
+        recurring: true
+      },
       debug: {
         merchantLogin: merchantLogin ? "SET" : "NOT SET",
         hasPassword1: !!password1,
-        useReceipt,
         signatureLength: signatureValue.length
       }
     });
