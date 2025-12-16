@@ -509,6 +509,9 @@ async function handleQuestionnaireSaved(
     });
   }
   
+  // Небольшая задержка между сообщениями
+  await new Promise(resolve => setTimeout(resolve, 500));
+  
   // ШАГ 2: Отправляем сообщение о подписке с кнопкой оформления подписки
   let subscriptionMessageSent = false;
   try {
