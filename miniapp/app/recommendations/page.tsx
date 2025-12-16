@@ -128,37 +128,55 @@ function RecommendationsPageContent(): ReactElement {
   }
 
   const getTypeColor = (type: string) => {
-    // Apple-style: мягкие акцентные цвета на белом фоне
+    // Цветные карточки в стиле Apple с мягкими оттенками
     switch (type) {
       case "protein":
         return {
-          accent: "text-amber-600",
-          badge: "bg-amber-50 text-amber-700 border-amber-100"
+          bg: "bg-amber-50",
+          border: "border-amber-100",
+          text: "text-amber-900",
+          accent: "text-amber-700",
+          badge: "bg-amber-100 text-amber-800 border-amber-200"
         };
       case "calories":
         return {
-          accent: "text-orange-600",
-          badge: "bg-orange-50 text-orange-700 border-orange-100"
+          bg: "bg-orange-50",
+          border: "border-orange-100",
+          text: "text-orange-900",
+          accent: "text-orange-700",
+          badge: "bg-orange-100 text-orange-800 border-orange-200"
         };
       case "water":
         return {
-          accent: "text-blue-600",
-          badge: "bg-blue-50 text-blue-700 border-blue-100"
+          bg: "bg-cyan-50",
+          border: "border-cyan-100",
+          text: "text-cyan-900",
+          accent: "text-cyan-700",
+          badge: "bg-cyan-100 text-cyan-800 border-cyan-200"
         };
       case "fat":
         return {
-          accent: "text-green-600",
-          badge: "bg-green-50 text-green-700 border-green-100"
+          bg: "bg-green-50",
+          border: "border-green-100",
+          text: "text-green-900",
+          accent: "text-green-700",
+          badge: "bg-green-100 text-green-800 border-green-200"
         };
       case "carbs":
         return {
-          accent: "text-purple-600",
-          badge: "bg-purple-50 text-purple-700 border-purple-100"
+          bg: "bg-purple-50",
+          border: "border-purple-100",
+          text: "text-purple-900",
+          accent: "text-purple-700",
+          badge: "bg-purple-100 text-purple-800 border-purple-200"
         };
       default:
         return {
-          accent: "text-gray-600",
-          badge: "bg-gray-50 text-gray-700 border-gray-100"
+          bg: "bg-gray-50",
+          border: "border-gray-100",
+          text: "text-gray-900",
+          accent: "text-gray-700",
+          badge: "bg-gray-100 text-gray-800 border-gray-200"
         };
     }
   };
@@ -182,17 +200,17 @@ function RecommendationsPageContent(): ReactElement {
 
   return (
     <AppLayout>
-      <div className="min-h-screen bg-gray-50 p-4 py-6 pb-24">
+      <div className="min-h-screen bg-background p-4 py-8 pb-24">
         <div className="max-w-md mx-auto">
           <div className="mb-6">
-            <h1 className="text-3xl font-semibold text-gray-900 mb-1">Рекомендации</h1>
-            <p className="text-sm text-gray-500 mb-4">
+            <h1 className="text-2xl font-bold text-textPrimary mb-1">Рекомендации</h1>
+            <p className="text-sm text-textSecondary mb-4">
               Средние за {days === 1 ? "1 день" : days === 7 ? "7 дней" : days === 30 ? "30 дней" : days === 365 ? "365 дней" : `${days} дней`}
             </p>
             <select
               value={days}
               onChange={(e) => setDays(Number(e.target.value))}
-              className="w-full px-4 py-2.5 bg-white rounded-xl border border-gray-200 text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all"
+              className="w-full px-4 py-2.5 bg-white rounded-xl border border-gray-200 text-sm text-textPrimary focus:outline-none focus:ring-2 focus:ring-accent focus:border-transparent shadow-soft"
             >
               <option value={1}>За 1 день</option>
               <option value={7}>За 7 дней</option>
@@ -202,18 +220,18 @@ function RecommendationsPageContent(): ReactElement {
           </div>
 
           {loading ? (
-            <div className="text-center text-gray-500 py-12">Загрузка рекомендаций...</div>
+            <div className="text-center text-textSecondary py-8">Загрузка рекомендаций...</div>
           ) : error ? (
-            <div className="p-4 bg-white rounded-2xl shadow-sm border border-red-100 text-red-600 text-sm">
+            <div className="p-4 bg-white rounded-2xl shadow-soft border border-red-200 text-red-700 text-sm">
               {error}
             </div>
           ) : recommendations.length === 0 ? (
-            <div className="text-center text-gray-500 py-12 bg-white rounded-2xl shadow-sm">
-              <p className="mb-2 text-gray-900">Пока недостаточно данных</p>
+            <div className="text-center text-textSecondary py-8 bg-white rounded-2xl shadow-soft p-6">
+              <p className="mb-2">Пока недостаточно данных для рекомендаций.</p>
               <p className="text-sm">Ведите дневник питания несколько дней, и мы дадим вам персональные советы!</p>
             </div>
           ) : (
-            <div className="space-y-3">
+            <div className="space-y-4">
               {recommendations.map((rec, index) => {
                 const getUnit = (type: string) => {
                   switch (type) {
@@ -242,14 +260,14 @@ function RecommendationsPageContent(): ReactElement {
                 return (
                   <div
                     key={index}
-                    className="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden"
+                    className={`${colors.bg} rounded-2xl shadow-soft border ${colors.border} overflow-hidden`}
                   >
                     <div className="p-5">
-                      <div className="flex items-start gap-4 mb-4">
-                        <span className="text-3xl flex-shrink-0">{getTypeIcon(rec.type)}</span>
+                      <div className="flex items-start gap-3 mb-3">
+                        <span className="text-2xl flex-shrink-0">{getTypeIcon(rec.type)}</span>
                         <div className="flex-1 min-w-0">
                           {rec.title && (
-                            <h3 className="font-semibold text-lg text-gray-900 mb-1 leading-tight">
+                            <h3 className={`font-bold text-base mb-2 leading-tight ${colors.text}`}>
                               {rec.title}
                             </h3>
                           )}
@@ -257,26 +275,26 @@ function RecommendationsPageContent(): ReactElement {
                       </div>
 
                       {rec.current !== undefined && rec.goal !== undefined && (
-                        <div className="mb-4 pt-4 border-t border-gray-100">
-                          <div className="space-y-3">
+                        <div className={`mb-3 px-3 py-2.5 bg-white/60 rounded-xl border ${colors.border}`}>
+                          <div className="space-y-1.5">
                             <div className="flex items-center justify-between">
-                              <span className="text-sm text-gray-600 font-medium">Сейчас</span>
-                              <span className="text-base font-semibold text-gray-900">
+                              <span className="text-xs text-gray-600 font-medium">Сейчас потребляешь:</span>
+                              <span className={`text-sm font-bold ${colors.text}`}>
                                 {formatNumber(rec.current, rec.type)} {getUnit(rec.type)}
                               </span>
                             </div>
                             <div className="flex items-center justify-between">
-                              <span className="text-sm text-gray-600 font-medium">Нужно</span>
-                              <span className="text-base font-semibold text-gray-900">
+                              <span className="text-xs text-gray-600 font-medium">Нужно:</span>
+                              <span className={`text-sm font-bold ${colors.text}`}>
                                 {formatNumber(rec.goal, rec.type)} {getUnit(rec.type)}
                               </span>
                             </div>
-                            <div className="pt-3 border-t border-gray-100">
+                            <div className="pt-1.5 border-t border-gray-200">
                               <div className="flex items-center justify-between">
-                                <span className="text-sm font-medium text-gray-700">
-                                  {deficit > 0 ? "Не хватает" : deficit < 0 ? "Превышение" : "В норме"}
+                                <span className="text-xs font-medium text-gray-700">
+                                  {deficit > 0 ? "Не хватает:" : deficit < 0 ? "Превышение:" : "В норме"}
                                 </span>
-                                <span className={`text-sm font-semibold px-3 py-1.5 rounded-full border ${colors.badge}`}>
+                                <span className={`text-sm font-bold px-2 py-1 rounded border ${colors.badge}`}>
                                   {deficit > 0 ? "−" : deficit < 0 ? "+" : ""}
                                   {formatNumber(Math.abs(deficit), rec.type)} {getUnit(rec.type)}
                                 </span>
@@ -287,8 +305,8 @@ function RecommendationsPageContent(): ReactElement {
                       )}
 
                       <div className="space-y-2">
-                        <p className="text-sm text-gray-700 leading-relaxed">{rec.message}</p>
-                        <p className="text-sm text-gray-600 leading-relaxed">{rec.suggestion}</p>
+                        <p className={`text-sm leading-relaxed ${colors.text}`}>{rec.message}</p>
+                        <p className={`text-sm opacity-90 leading-relaxed ${colors.text}`}>{rec.suggestion}</p>
                       </div>
                     </div>
                   </div>
