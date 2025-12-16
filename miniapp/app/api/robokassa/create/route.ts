@@ -47,48 +47,61 @@ export async function POST(req: Request) {
 
     const invoiceId = `inv_${userId}_${Date.now()}`;
 
-    // Формируем чек для фискализации
-    // Формируем чек для фискализации
-    const receipt = {
-      sno: "usn_income", // Упрощенная система налогообложения
-      items: [
-        {
-          name: DESCRIPTION,
-          quantity: 1,
-          sum: AMOUNT,
-          payment_method: "full_payment",
-          payment_object: "service",
-          tax: "none", // Без НДС
-        },
-      ],
-    };
-
-    const receiptJson = JSON.stringify(receipt);
-    const receiptEncoded = encodeURIComponent(receiptJson);
-
-    // Подпись для первого платежа: MerchantLogin:OutSum:InvId:Receipt:Password1
-    // ВАЖНО: Receipt должен быть в формате JSON строки (не encoded) для подписи
-    const signatureBase = `${merchantLogin}:${AMOUNT}:${invoiceId}:${receiptJson}:${password1}`;
+    // Пробуем вариант БЕЗ Receipt сначала (если фискализация не настроена)
+    // Если фискализация требуется, можно включить обратно
+    const useReceipt = process.env.ROBOKASSA_USE_RECEIPT === "true";
+    
+    let signatureBase: string;
+    let receiptEncoded: string | undefined;
+    
+    if (useReceipt) {
+      // Формируем чек для фискализации
+      const receipt = {
+        sno: "usn_income",
+        items: [
+          {
+            name: DESCRIPTION,
+            quantity: 1,
+            sum: AMOUNT,
+            payment_method: "full_payment",
+            payment_object: "service",
+            tax: "none",
+          },
+        ],
+      };
+      const receiptJson = JSON.stringify(receipt);
+      receiptEncoded = encodeURIComponent(receiptJson);
+      // Подпись с Receipt: MerchantLogin:OutSum:InvId:Receipt:Password1
+      signatureBase = `${merchantLogin}:${AMOUNT}:${invoiceId}:${receiptJson}:${password1}`;
+    } else {
+      // Подпись без Receipt: MerchantLogin:OutSum:InvId:Password1
+      signatureBase = `${merchantLogin}:${AMOUNT}:${invoiceId}:${password1}`;
+    }
+    
     const signatureValue = md5(signatureBase).toLowerCase();
 
+    console.log("[robokassa/create] MerchantLogin:", merchantLogin);
+    console.log("[robokassa/create] Amount:", AMOUNT);
+    console.log("[robokassa/create] InvoiceId:", invoiceId);
+    console.log("[robokassa/create] Use Receipt:", useReceipt);
     console.log("[robokassa/create] Signature base:", signatureBase);
-    console.log("[robokassa/create] Receipt JSON:", receiptJson);
-    console.log("[robokassa/create] Receipt encoded:", receiptEncoded);
     console.log("[robokassa/create] Signature value:", signatureValue);
 
-    const params = new URLSearchParams({
-      MerchantLogin: merchantLogin,
-      OutSum: AMOUNT.toString(),
-      InvId: invoiceId,
-      Description: DESCRIPTION,
-      Recurring: "true",
-      Receipt: receiptEncoded,
-      SignatureValue: signatureValue,
-      Culture: "ru",
-      Encoding: "utf-8",
-    });
+    // Формируем параметры запроса
+    const params = new URLSearchParams();
+    params.append("MerchantLogin", merchantLogin);
+    params.append("OutSum", AMOUNT.toString());
+    params.append("InvId", invoiceId);
+    params.append("Description", DESCRIPTION);
+    params.append("Recurring", "true");
+    if (receiptEncoded) {
+      params.append("Receipt", receiptEncoded);
+    }
+    params.append("SignatureValue", signatureValue);
+    params.append("Culture", "ru");
+    params.append("Encoding", "utf-8");
     
-    console.log("[robokassa/create] Params:", Object.fromEntries(params));
+    console.log("[robokassa/create] Final params:", params.toString());
 
     // Используем тестовый URL для разработки, если указан в env
     const robokassaUrl = process.env.ROBOKASSA_TEST_MODE === "true" 
