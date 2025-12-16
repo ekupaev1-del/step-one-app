@@ -621,42 +621,8 @@ function ProfilePageContent() {
           )}
         </div>
 
-        {/* Дисклеймер про здоровье */}
-        <div className="mb-4 p-4 bg-yellow-50 border border-yellow-200 rounded-2xl">
-          <p className="text-sm text-yellow-800 text-center leading-relaxed">
-            <strong>⚠️ Важно:</strong> Сервис не является медицинским. Рекомендации носят информационный характер и не заменяют консультацию специалиста.
-          </p>
-        </div>
-
-        {/* Политика конфиденциальности и Пользовательское соглашение */}
-        <div className="mb-4 space-y-3">
-          <Link
-            href={`/privacy${userId ? `?id=${userId}` : ''}` as any}
-            className="block w-full px-4 py-3 bg-white border border-gray-200 text-textPrimary font-medium rounded-2xl shadow-soft hover:bg-gray-50 transition-colors text-center"
-          >
-            Политика конфиденциальности
-          </Link>
-          <Link
-            href={`/terms${userId ? `?id=${userId}` : ''}` as any}
-            className="block w-full px-4 py-3 bg-white border border-gray-200 text-textPrimary font-medium rounded-2xl shadow-soft hover:bg-gray-50 transition-colors text-center"
-          >
-            Пользовательское соглашение
-          </Link>
-        </div>
-
-        {/* Удаление профиля */}
-        <div className="mb-4">
-          <button
-            onClick={handleDeleteProfile}
-            disabled={deleting}
-            className="w-full px-4 py-3 bg-white border border-red-200 text-red-600 font-medium rounded-2xl shadow-soft hover:bg-red-50 transition-colors disabled:opacity-50"
-          >
-            {deleting ? "Удаление..." : "Удалить профиль"}
-          </button>
-        </div>
-
         {/* Нормы (сворачиваемая секция) */}
-        <div className="bg-white rounded-2xl shadow-soft p-6">
+        <div className="bg-white rounded-2xl shadow-soft p-6 mb-4">
           <button
             onClick={() => setNormsExpanded(!normsExpanded)}
             className="w-full flex justify-between items-center"
@@ -705,6 +671,40 @@ function ProfilePageContent() {
               )}
             </div>
           )}
+        </div>
+
+        {/* Дисклеймер про здоровье */}
+        <div className="mb-4 p-4 bg-yellow-50 border border-yellow-200 rounded-2xl">
+          <p className="text-sm text-yellow-800 text-center leading-relaxed">
+            <strong>⚠️ Важно:</strong> Сервис не является медицинским. Рекомендации носят информационный характер и не заменяют консультацию специалиста.
+          </p>
+        </div>
+
+        {/* Политика конфиденциальности и Пользовательское соглашение */}
+        <div className="mb-4 space-y-3">
+          <Link
+            href={`/privacy${userId ? `?id=${userId}` : ''}` as any}
+            className="block w-full px-4 py-3 bg-white border border-gray-200 text-textPrimary font-medium rounded-2xl shadow-soft hover:bg-gray-50 transition-colors text-center"
+          >
+            Политика конфиденциальности
+          </Link>
+          <Link
+            href={`/terms${userId ? `?id=${userId}` : ''}` as any}
+            className="block w-full px-4 py-3 bg-white border border-gray-200 text-textPrimary font-medium rounded-2xl shadow-soft hover:bg-gray-50 transition-colors text-center"
+          >
+            Пользовательское соглашение
+          </Link>
+        </div>
+
+        {/* Удаление профиля */}
+        <div className="mb-4">
+          <button
+            onClick={handleDeleteProfile}
+            disabled={deleting}
+            className="w-full px-4 py-3 bg-white border border-red-200 text-red-600 font-medium rounded-2xl shadow-soft hover:bg-red-50 transition-colors disabled:opacity-50"
+          >
+            {deleting ? "Удаление..." : "Удалить профиль"}
+          </button>
         </div>
 
         {/* Место для будущих секций (подписки, документы и т.д.) */}
