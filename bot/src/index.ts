@@ -73,7 +73,6 @@ async function checkSubscription(userId: number): Promise<{
       
       // Триал активирован, проверяем дату окончания
       const trialEnd = new Date(user.trial_end_at);
-      const trialEnd = new Date(user.trial_end_at);
       if (trialEnd > now) {
         return { hasAccess: true, status: 'trial', trialEndAt: trialEnd, subscriptionEndAt: user.subscription_end_at ? new Date(user.subscription_end_at) : null };
       } else {
