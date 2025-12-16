@@ -13,6 +13,8 @@ interface EnvConfig {
   supabaseUrl: string;
   supabaseServiceRoleKey: string;
   openaiApiKey: string;
+  robokassaMerchantLogin: string;
+  robokassaPassword1: string;
 }
 
 function validateEnv(): EnvConfig {
@@ -20,6 +22,8 @@ function validateEnv(): EnvConfig {
   const supabaseUrl = process.env.SUPABASE_URL;
   const supabaseServiceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
   const openaiApiKey = process.env.OPENAI_API_KEY;
+  const robokassaMerchantLogin = process.env.ROBOKASSA_MERCHANT_LOGIN;
+  const robokassaPassword1 = process.env.ROBOKASSA_PASSWORD1;
 
   const missing: string[] = [];
 
@@ -27,6 +31,8 @@ function validateEnv(): EnvConfig {
   if (!supabaseUrl) missing.push("SUPABASE_URL");
   if (!supabaseServiceRoleKey) missing.push("SUPABASE_SERVICE_ROLE_KEY");
   if (!openaiApiKey) missing.push("OPENAI_API_KEY");
+  if (!robokassaMerchantLogin) missing.push("ROBOKASSA_MERCHANT_LOGIN");
+  if (!robokassaPassword1) missing.push("ROBOKASSA_PASSWORD1");
 
   if (missing.length > 0) {
     console.error("❌ Ошибка: отсутствуют переменные окружения:");
@@ -51,6 +57,8 @@ function validateEnv(): EnvConfig {
     supabaseUrl,
     supabaseServiceRoleKey,
     openaiApiKey,
+    robokassaMerchantLogin,
+    robokassaPassword1,
   };
 }
 

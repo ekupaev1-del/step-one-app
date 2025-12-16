@@ -8,6 +8,7 @@ import { isWaterRequest, logWaterIntake, getDailyWaterSummary } from "./services
 import { createReminder, getUserReminders, deleteReminder, validateTime, type ReminderType } from "./services/reminders.js";
 import { startReminderScheduler } from "./services/reminderScheduler.js";
 import { startInactivityNotificationScheduler } from "./services/inactivityNotifications.js";
+import { startRecurringBillingScheduler } from "./services/recurringBilling.js";
 
 // Инициализация бота
 const bot = new Telegraf(env.telegramBotToken);
@@ -2104,3 +2105,7 @@ console.log("⏰ Scheduler напоминаний запущен");
 // Запускаем scheduler для уведомлений о неактивности
 startInactivityNotificationScheduler(bot);
 console.log("📢 Scheduler уведомлений о неактивности запущен");
+
+// Запускаем scheduler автосписаний
+startRecurringBillingScheduler();
+console.log("💳 Scheduler автосписаний запущен");
