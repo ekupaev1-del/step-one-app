@@ -16,6 +16,8 @@ export function QuestionnaireFormContent({ initialUserId }: { initialUserId?: st
   const [saved, setSaved] = useState(false);
   const [consentLoading, setConsentLoading] = useState(false);
   const [consentChecked, setConsentChecked] = useState(false);
+  const [privacyAccepted, setPrivacyAccepted] = useState(false);
+  const [termsAccepted, setTermsAccepted] = useState(false);
 
   // Форма данные
   const [name, setName] = useState<string>("");
@@ -265,6 +267,11 @@ export function QuestionnaireFormContent({ initialUserId }: { initialUserId?: st
   const handleConsentAccept = async () => {
     if (!userId) {
       setError("ID пользователя не найден");
+      return;
+    }
+
+    if (!privacyAccepted || !termsAccepted) {
+      setError("Необходимо принять Политику конфиденциальности и Пользовательское соглашение");
       return;
     }
 
@@ -632,7 +639,7 @@ export function QuestionnaireFormContent({ initialUserId }: { initialUserId?: st
             калорий нужно в<br />
             день
           </h1>
-          <p className="text-base text-gray-600 mb-10 text-center" style={{ fontSize: '16px' }}>
+          <p className="text-base text-gray-600 mb-6 text-center" style={{ fontSize: '16px' }}>
             Просто ответьте на пару вопросов.
           </p>
 
@@ -642,32 +649,55 @@ export function QuestionnaireFormContent({ initialUserId }: { initialUserId?: st
             </div>
           )}
 
+          {/* Чекбоксы для согласия */}
+          <div className="mb-4 space-y-3">
+            <label className="flex items-start gap-3 cursor-pointer">
+              <input
+                type="checkbox"
+                checked={privacyAccepted}
+                onChange={(e) => setPrivacyAccepted(e.target.checked)}
+                className="mt-1 w-5 h-5 rounded border-gray-300 text-accent focus:ring-accent cursor-pointer"
+              />
+              <span className="text-sm text-gray-700 flex-1">
+                Я согласен с{" "}
+                <Link 
+                  href={`/privacy${userId ? `?id=${userId}` : ''}` as any}
+                  className="text-accent hover:underline font-medium"
+                  target="_blank"
+                >
+                  Политикой конфиденциальности
+                </Link>
+              </span>
+            </label>
+            
+            <label className="flex items-start gap-3 cursor-pointer">
+              <input
+                type="checkbox"
+                checked={termsAccepted}
+                onChange={(e) => setTermsAccepted(e.target.checked)}
+                className="mt-1 w-5 h-5 rounded border-gray-300 text-accent focus:ring-accent cursor-pointer"
+              />
+              <span className="text-sm text-gray-700 flex-1">
+                Я согласен с{" "}
+                <Link 
+                  href={`/terms${userId ? `?id=${userId}` : ''}` as any}
+                  className="text-accent hover:underline font-medium"
+                  target="_blank"
+                >
+                  Пользовательским соглашением
+                </Link>
+              </span>
+            </label>
+          </div>
+
           <button
             onClick={handleConsentAccept}
-            disabled={consentLoading || !userId}
-            className="w-full py-4 px-6 text-white font-medium rounded-[50px] shadow-md hover:opacity-90 transition-opacity text-lg disabled:opacity-50 disabled:cursor-not-allowed mb-4"
+            disabled={consentLoading || !userId || !privacyAccepted || !termsAccepted}
+            className="w-full py-4 px-6 text-white font-medium rounded-[50px] shadow-md hover:opacity-90 transition-opacity text-lg disabled:opacity-50 disabled:cursor-not-allowed"
             style={{ backgroundColor: '#A4C49A' }}
           >
-            {consentLoading ? "Сохранение..." : "Согласен и начать"}
+            {consentLoading ? "Сохранение..." : "Начать"}
           </button>
-
-          <p className="text-xs text-gray-500 text-center">
-            Нажимая кнопку "Согласен и начать", вы даете согласие на обработку персональных данных и принимаете{" "}
-            <Link 
-              href={`/privacy${userId ? `?id=${userId}` : ''}` as any}
-              className="text-accent hover:underline"
-            >
-              Политику конфиденциальности
-            </Link>
-            {" "}и{" "}
-            <Link 
-              href={`/terms${userId ? `?id=${userId}` : ''}` as any}
-              className="text-accent hover:underline"
-            >
-              Пользовательское соглашение
-            </Link>
-            .
-          </p>
         </div>
       </div>
     );
