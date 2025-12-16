@@ -71,7 +71,10 @@ async function handle(req: Request) {
     }
 
     const now = new Date();
-    const subscriptionEnd = new Date(now.getTime() + 30 * 24 * 60 * 60 * 1000);
+    // Активируем триал на 3 дня после первой оплаты
+    const trialEndAt = new Date(now.getTime() + 3 * 24 * 60 * 60 * 1000);
+    // После окончания триала подписка будет активна еще 30 дней
+    const subscriptionEnd = new Date(trialEndAt.getTime() + 30 * 24 * 60 * 60 * 1000);
 
     // Обновляем платёж
     await supabase
@@ -79,11 +82,12 @@ async function handle(req: Request) {
       .update({ status: "success" })
       .eq("id", payment.id);
 
-    // Обновляем пользователя
+    // Обновляем пользователя: активируем триал на 3 дня
     await supabase
       .from("users")
       .update({
-        subscription_status: "active",
+        subscription_status: "trial",
+        trial_end_at: trialEndAt.toISOString(),
         subscription_end_at: subscriptionEnd.toISOString(),
         robokassa_parent_invoice_id: payment.previous_invoice_id || invId,
         last_payment_status: "success",

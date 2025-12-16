@@ -64,17 +64,37 @@ async function checkSubscription(userId: number): Promise<{
     }
 
     // Если триал, проверяем дату окончания
-    if (status === 'trial' && user.trial_end_at) {
+    // ВАЖНО: если trial_end_at = null, значит триал не активирован (пользователь не оплатил)
+    if (status === 'trial') {
+      if (!user.trial_end_at) {
+        // Триал не активирован - нет доступа до оплаты
+        return { hasAccess: false, status: 'none', trialEndAt: null, subscriptionEndAt: null };
+      }
+      
+      // Триал активирован, проверяем дату окончания
+      const trialEnd = new Date(user.trial_end_at);
       const trialEnd = new Date(user.trial_end_at);
       if (trialEnd > now) {
-        return { hasAccess: true, status: 'trial', trialEndAt: trialEnd, subscriptionEndAt: null };
+        return { hasAccess: true, status: 'trial', trialEndAt: trialEnd, subscriptionEndAt: user.subscription_end_at ? new Date(user.subscription_end_at) : null };
       } else {
-        // Триал истек
+        // Триал истек - переводим в active, если есть subscription_end_at в будущем
+        if (user.subscription_end_at) {
+          const subscriptionEnd = new Date(user.subscription_end_at);
+          if (subscriptionEnd > now) {
+            // Подписка еще активна после триала
+            await supabase
+              .from("users")
+              .update({ subscription_status: 'active' })
+              .eq("id", userId);
+            return { hasAccess: true, status: 'active', trialEndAt: trialEnd, subscriptionEndAt: subscriptionEnd };
+          }
+        }
+        // Подписка истекла
         await supabase
           .from("users")
           .update({ subscription_status: 'expired' })
           .eq("id", userId);
-        return { hasAccess: false, status: 'expired', trialEndAt: trialEnd, subscriptionEndAt: null };
+        return { hasAccess: false, status: 'expired', trialEndAt: trialEnd, subscriptionEndAt: user.subscription_end_at ? new Date(user.subscription_end_at) : null };
       }
     }
 
@@ -86,34 +106,6 @@ async function checkSubscription(userId: number): Promise<{
   }
 }
 
-/**
- * Активирует триал на 3 дня для пользователя
- */
-async function activateTrial(userId: number): Promise<boolean> {
-  try {
-    const now = new Date();
-    const trialEndAt = new Date(now.getTime() + 3 * 24 * 60 * 60 * 1000); // +3 дня
-
-    const { error } = await supabase
-      .from("users")
-      .update({
-        subscription_status: 'trial',
-        trial_end_at: trialEndAt.toISOString()
-      })
-      .eq("id", userId);
-
-    if (error) {
-      console.error("[activateTrial] Ошибка активации триала:", error);
-      return false;
-    }
-
-    console.log(`[activateTrial] ✅ Триал активирован для userId=${userId}, до ${trialEndAt.toISOString()}`);
-    return true;
-  } catch (error) {
-    console.error("[activateTrial] Исключение:", error);
-    return false;
-  }
-}
 
 // ░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░
 //      ЕДИНАЯ ФУНКЦИЯ ГЛАВНОГО МЕНЮ
@@ -518,16 +510,20 @@ async function handleQuestionnaireSaved(
     });
   }
   
-  // ШАГ 2: Отправляем сообщение о подписке с кнопкой активации триала
+  // ШАГ 2: Отправляем сообщение о подписке с кнопкой оформления подписки
   let subscriptionMessageSent = false;
   try {
+    const paymentUrl = userIdToUse 
+      ? `${MINIAPP_BASE_URL}/payment?id=${userIdToUse}` 
+      : undefined;
+
     const subscriptionMessage = `💳 <b>Подписка Step One</b>
 
 1 месяц стоит 199 ₽
 
 🎁 <b>Триал бесплатный на 3 дня</b>
 
-Когда вы активируете триал, у вас откроется доступ ко всем функциям бота:
+После оформления подписки и привязки карты у вас откроется доступ ко всем функциям бота:
 • Анализ еды по фото, тексту и голосу
 • Отслеживание калорий и Б/Ж/У
 • Отчёты и статистика
@@ -535,16 +531,18 @@ async function handleQuestionnaireSaved(
 
 После окончания триала подписка продлится автоматически.`;
 
-    const subscriptionKeyboard = {
-      inline_keyboard: [
-        [
-          {
-            text: "🎁 Активировать триал на 3 дня",
-            callback_data: `activate_trial_${userIdToUse || 'unknown'}`
-          }
-        ]
-      ]
+    const subscriptionKeyboard: any = {
+      inline_keyboard: []
     };
+
+    if (paymentUrl) {
+      subscriptionKeyboard.inline_keyboard.push([
+        {
+          text: "💳 Оформить подписку",
+          web_app: { url: paymentUrl }
+        }
+      ]);
+    }
 
     await ctx.telegram.sendMessage(targetChatId, subscriptionMessage, {
       parse_mode: "HTML",
@@ -1539,99 +1537,6 @@ bot.on("callback_query", async (ctx) => {
       return ctx.answerCbQuery();
     }
 
-    // Обработка активации триала
-    if (data.startsWith("activate_trial_")) {
-      await ctx.answerCbQuery();
-      
-      const userIdStr = data.replace("activate_trial_", "");
-      const userId = userIdStr === 'unknown' ? null : parseInt(userIdStr, 10);
-      
-      // Если userId не передан, пытаемся получить из БД по telegram_id
-      let finalUserId = userId;
-      if (!finalUserId || isNaN(finalUserId)) {
-        const { data: user, error: userError } = await supabase
-          .from("users")
-          .select("id")
-          .eq("telegram_id", telegram_id)
-          .maybeSingle();
-        
-        if (userError || !user) {
-          return ctx.editMessageText("❌ Ошибка: пользователь не найден. Используйте /start для регистрации.");
-        }
-        finalUserId = user.id;
-      }
-
-      // Проверяем, не активирован ли уже триал
-      const subscription = await checkSubscription(finalUserId);
-      if (subscription.hasAccess && subscription.status === 'trial') {
-        const trialEndDate = subscription.trialEndAt 
-          ? new Date(subscription.trialEndAt).toLocaleDateString('ru-RU')
-          : 'неизвестно';
-        return ctx.editMessageText(
-          `✅ Триал уже активирован!\n\nТриал действует до ${trialEndDate}.\n\nТеперь вы можете использовать все функции бота!`,
-          {
-            reply_markup: {
-              inline_keyboard: [
-                [
-                  { text: "🚀 Начать использовать", callback_data: "start_using" }
-                ]
-              ]
-            }
-          }
-        );
-      }
-
-      // Активируем триал
-      const activated = await activateTrial(finalUserId);
-      if (!activated) {
-        return ctx.editMessageText("❌ Ошибка активации триала. Попробуйте позже или обратитесь в поддержку.");
-      }
-
-      // Получаем userId для меню
-      const { data: user } = await supabase
-        .from("users")
-        .select("id")
-        .eq("telegram_id", telegram_id)
-        .maybeSingle();
-
-      // Показываем успешное сообщение и отправляем меню
-      await ctx.editMessageText(
-        "✅ Триал активирован!\n\n🎁 У вас есть 3 дня бесплатного доступа ко всем функциям бота.\n\nПосле окончания триала подписка продлится автоматически за 199 ₽/месяц.",
-        {
-          reply_markup: {
-            inline_keyboard: [
-              [
-                { text: "🚀 Начать использовать", callback_data: "start_using" }
-              ]
-            ]
-          }
-        }
-      );
-
-      // Отправляем главное меню
-      try {
-        await sendMainMenu(ctx, user?.id || finalUserId, "Выберите действие:", ctx.chat?.id || telegram_id);
-      } catch (menuError) {
-        console.error("[bot] Ошибка отправки меню после активации триала:", menuError);
-      }
-
-      return;
-    }
-
-    // Обработка кнопки "Начать использовать"
-    if (data === "start_using") {
-      await ctx.answerCbQuery();
-      
-      const { data: user } = await supabase
-        .from("users")
-        .select("id")
-        .eq("telegram_id", telegram_id)
-        .maybeSingle();
-
-      await ctx.deleteMessage();
-      await sendMainMenu(ctx, user?.id || null, "Выберите действие:", ctx.chat?.id || telegram_id);
-      return;
-    }
 
     // Обработка кнопок уведомлений
     if (data === "notifications") {
