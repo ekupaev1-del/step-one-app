@@ -203,19 +203,16 @@ function RecommendationsPageContent(): ReactElement {
       <div className="min-h-screen bg-background p-4 py-8 pb-24">
         <div className="max-w-md mx-auto">
           <div className="mb-6">
-            <h1 className="text-2xl font-bold text-textPrimary mb-1">Рекомендации</h1>
-            <p className="text-sm text-textSecondary mb-4">
-              Средние за {days === 1 ? "1 день" : days === 7 ? "7 дней" : days === 30 ? "30 дней" : days === 365 ? "365 дней" : `${days} дней`}
-            </p>
+            <h1 className="text-2xl font-bold text-textPrimary mb-4">Рекомендации</h1>
             <select
               value={days}
               onChange={(e) => setDays(Number(e.target.value))}
               className="w-full px-4 py-2.5 bg-white rounded-xl border border-gray-200 text-sm text-textPrimary focus:outline-none focus:ring-2 focus:ring-accent focus:border-transparent shadow-soft"
             >
-              <option value={1}>За 1 день</option>
-              <option value={7}>За 7 дней</option>
-              <option value={30}>За 30 дней</option>
-              <option value={365}>За 365 дней</option>
+              <option value={1}>Средние за 1 день</option>
+              <option value={7}>Средние за 7 дней</option>
+              <option value={30}>Средние за 30 дней</option>
+              <option value={365}>Средние за 365 дней</option>
             </select>
           </div>
 
