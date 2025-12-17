@@ -12,11 +12,12 @@ export async function GET(req: Request) {
     const password2 = process.env.ROBOKASSA_PASSWORD2;
 
     const testAmount = 199;
-    const testInvoiceId = "test_inv_123";
+    // Используем числовой формат InvId как в основном коде
+    const testInvoiceId = `1${Date.now()}`;
     const testDescription = "Подписка на сервис питания Step One";
     
-    // Тестовая подпись - используем просто число без .00
-    const amountStr = testAmount.toString();
+    // Тестовая подпись - используем формат с точкой "199.00" как в основном коде
+    const amountStr = testAmount.toFixed(2);
     const signatureBase = `${merchantLogin}:${amountStr}:${testInvoiceId}:${password1}`;
     const signatureValue = md5(signatureBase).toLowerCase();
     

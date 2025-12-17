@@ -73,6 +73,10 @@ export async function POST(req: Request) {
     const signatureBase = `${merchantLogin}:${amountStr}:${invoiceId}:${password1}`;
     const signatureValue = md5(signatureBase).toLowerCase();
 
+    // Формируем прямой URL для оплаты (редирект)
+    // ВАЖНО: Description должен быть URL-encoded вручную для кириллицы
+    const descriptionEncoded = encodeURIComponent(DESCRIPTION);
+
     console.log("[robokassa/create] ========== PAYMENT CREATION ==========");
     console.log("[robokassa/create] MerchantLogin:", merchantLogin);
     console.log("[robokassa/create] Amount (string):", amountStr);
@@ -83,10 +87,6 @@ export async function POST(req: Request) {
     console.log("[robokassa/create] Password1 first 3 chars:", password1.substring(0, 3) + "...");
     console.log("[robokassa/create] Description (original):", DESCRIPTION);
     console.log("[robokassa/create] Description (encoded):", descriptionEncoded);
-
-    // Формируем прямой URL для оплаты (редирект)
-    // ВАЖНО: Description должен быть URL-encoded вручную для кириллицы
-    const descriptionEncoded = encodeURIComponent(DESCRIPTION);
     
     // Собираем параметры вручную для полного контроля
     // URLSearchParams может неправильно кодировать кириллицу
