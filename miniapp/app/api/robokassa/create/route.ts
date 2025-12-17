@@ -62,18 +62,14 @@ export async function POST(req: Request) {
       );
     }
 
-    const invoiceId = `inv_${userId}_${Date.now()}`;
+    // InvId должен быть уникальным числом (Robokassa рекомендует числовой формат)
+    const invoiceId = `${userId}${Date.now()}`;
 
-    // Пробуем разные форматы суммы
-    // Вариант 1: просто число без .00
-    const amountStr = AMOUNT.toString();
-    
-    // Вариант 2: с .00 (закомментирован, попробуем сначала без)
-    // const amountStr = AMOUNT.toFixed(2);
+    // Формат суммы: используем с точкой "199.00" (как в документации)
+    const amountStr = AMOUNT.toFixed(2);
 
-    // МАКСИМАЛЬНО ПРОСТОЙ ВАРИАНТ - только обязательные параметры
     // Подпись: MerchantLogin:OutSum:InvId:Password1
-    // ВАЖНО: В подписи используется строка суммы как есть
+    // ВАЖНО: Все значения должны быть строками, как они передаются в URL
     const signatureBase = `${merchantLogin}:${amountStr}:${invoiceId}:${password1}`;
     const signatureValue = md5(signatureBase).toLowerCase();
 
@@ -85,24 +81,28 @@ export async function POST(req: Request) {
     console.log("[robokassa/create] Signature value:", signatureValue);
     console.log("[robokassa/create] Password1 length:", password1.length);
     console.log("[robokassa/create] Password1 first 3 chars:", password1.substring(0, 3) + "...");
+    console.log("[robokassa/create] Description (original):", DESCRIPTION);
+    console.log("[robokassa/create] Description (encoded):", descriptionEncoded);
 
     // Формируем прямой URL для оплаты (редирект)
-    // ВАЖНО: Description должен быть URL-encoded
+    // ВАЖНО: Description должен быть URL-encoded вручную для кириллицы
     const descriptionEncoded = encodeURIComponent(DESCRIPTION);
     
-    // Собираем параметры для прямого URL - БЕЗ Recurring сначала
-    // Recurring требует специальной настройки в личном кабинете
-    const params: string[] = [];
-    params.push(`MerchantLogin=${encodeURIComponent(merchantLogin)}`);
-    params.push(`OutSum=${amountStr}`);
-    params.push(`InvId=${invoiceId}`);
-    params.push(`Description=${descriptionEncoded}`);
-    params.push(`SignatureValue=${signatureValue}`);
-    params.push(`Culture=ru`);
-    // Временно убираем Recurring - проверим базовую оплату
-    // params.push(`Recurring=true`);
+    // Собираем параметры вручную для полного контроля
+    // URLSearchParams может неправильно кодировать кириллицу
+    const paramPairs: string[] = [];
+    paramPairs.push(`MerchantLogin=${encodeURIComponent(merchantLogin)}`);
+    paramPairs.push(`OutSum=${amountStr}`);
+    paramPairs.push(`InvId=${invoiceId}`);
+    paramPairs.push(`Description=${descriptionEncoded}`);
+    paramPairs.push(`SignatureValue=${signatureValue}`);
+    paramPairs.push(`Culture=ru`);
     
-    const paramsString = params.join("&");
+    // Recurring добавляем только если явно нужно (требует настройки в ЛК)
+    // Пока оставляем без него для базовой проверки
+    // paramPairs.push(`Recurring=true`);
+    
+    const paramsString = paramPairs.join("&");
     const robokassaUrl = "https://auth.robokassa.ru/Merchant/Index.aspx";
     const paymentUrl = `${robokassaUrl}?${paramsString}`;
     
