@@ -1,13 +1,10 @@
 import { NextResponse } from "next/server";
 import { createServerSupabaseClient } from "../../../../lib/supabaseAdmin";
-import crypto from "crypto";
 
 const AMOUNT = 199;
-const DESCRIPTION = "Подписка на сервис питания Step One";
-
-function md5(input: string) {
-  return crypto.createHash("md5").update(input).digest("hex");
-}
+// ID подписки из личного кабинета Robokassa
+const SUBSCRIPTION_ID = "b718af89-10c1-4018-856d-558d592c0f40";
+const SUBSCRIPTION_BASE_URL = "https://auth.robokassa.ru/RecurringSubscriptionPage/Subscription/Subscribe";
 
 export async function POST(req: Request) {
   try {
@@ -21,32 +18,9 @@ export async function POST(req: Request) {
       );
     }
 
-    const merchantLogin = process.env.ROBOKASSA_MERCHANT_LOGIN;
-    const password1 = process.env.ROBOKASSA_PASSWORD1;
-
-    console.log("[robokassa/create] ========== ENV CHECK ==========");
-    console.log("[robokassa/create] ROBOKASSA_MERCHANT_LOGIN:", merchantLogin ? "SET" : "NOT SET");
-    console.log("[robokassa/create] ROBOKASSA_PASSWORD1:", password1 ? "SET (length: " + password1.length + ")" : "NOT SET");
-    console.log("[robokassa/create] NODE_ENV:", process.env.NODE_ENV);
-    console.log("[robokassa/create] VERCEL_ENV:", process.env.VERCEL_ENV);
-    console.log("[robokassa/create] ================================");
-
-    if (!merchantLogin || !password1) {
-      const missing = [];
-      if (!merchantLogin) missing.push("ROBOKASSA_MERCHANT_LOGIN");
-      if (!password1) missing.push("ROBOKASSA_PASSWORD1");
-      
-      console.error("[robokassa/create] ❌ Missing env variables:", missing);
-      
-      return NextResponse.json(
-        { 
-          ok: false, 
-          error: `Отсутствуют переменные окружения: ${missing.join(", ")}. Проверьте настройки в Vercel.`,
-          missing
-        },
-        { status: 500 }
-      );
-    }
+    console.log("[robokassa/create] ========== SUBSCRIPTION CREATION ==========");
+    console.log("[robokassa/create] UserId:", userId);
+    console.log("[robokassa/create] SubscriptionId:", SUBSCRIPTION_ID);
 
     // Проверяем пользователя
     const { data: user, error: userError } = await supabase
@@ -62,84 +36,32 @@ export async function POST(req: Request) {
       );
     }
 
-    // InvId должен быть уникальным числом (Robokassa рекомендует числовой формат)
-    const invoiceId = `${userId}${Date.now()}`;
-
-    // Формат суммы: используем с точкой "199.00" (как в документации)
-    const amountStr = AMOUNT.toFixed(2);
-
-    // Подпись: MerchantLogin:OutSum:InvId:Password1
-    // ВАЖНО: Все значения должны быть строками, как они передаются в URL
-    const signatureBase = `${merchantLogin}:${amountStr}:${invoiceId}:${password1}`;
-    const signatureValue = md5(signatureBase).toLowerCase();
-
-    // Формируем прямой URL для оплаты (редирект)
-    // ВАЖНО: Description должен быть URL-encoded вручную для кириллицы
-    const descriptionEncoded = encodeURIComponent(DESCRIPTION);
-
-    console.log("[robokassa/create] ========== PAYMENT CREATION ==========");
-    console.log("[robokassa/create] MerchantLogin:", merchantLogin);
-    console.log("[robokassa/create] Amount (string):", amountStr);
-    console.log("[robokassa/create] InvoiceId:", invoiceId);
-    console.log("[robokassa/create] Signature base:", signatureBase);
-    console.log("[robokassa/create] Signature value:", signatureValue);
-    console.log("[robokassa/create] Password1 length:", password1.length);
-    console.log("[robokassa/create] Password1 first 3 chars:", password1.substring(0, 3) + "...");
-    console.log("[robokassa/create] Description (original):", DESCRIPTION);
-    console.log("[robokassa/create] Description (encoded):", descriptionEncoded);
+    // Формируем URL подписки с userId для идентификации пользователя после подписки
+    // Robokassa передаст userId обратно в Result URL
+    const subscriptionUrl = `${SUBSCRIPTION_BASE_URL}?SubscriptionId=${SUBSCRIPTION_ID}&Shp_userId=${userId}`;
     
-    // Собираем параметры вручную для полного контроля
-    // URLSearchParams может неправильно кодировать кириллицу
-    const paramPairs: string[] = [];
-    paramPairs.push(`MerchantLogin=${encodeURIComponent(merchantLogin)}`);
-    paramPairs.push(`OutSum=${amountStr}`);
-    paramPairs.push(`InvId=${invoiceId}`);
-    paramPairs.push(`Description=${descriptionEncoded}`);
-    paramPairs.push(`SignatureValue=${signatureValue}`);
-    paramPairs.push(`Culture=ru`);
-    
-    // Тестовый режим (если нужно для проверки)
-    // В тестовом режиме можно использовать тестовые карты
-    const isTestMode = process.env.ROBOKASSA_TEST_MODE === "true";
-    if (isTestMode) {
-      paramPairs.push(`IsTest=1`);
-      console.log("[robokassa/create] ⚠️ TEST MODE ENABLED");
-    }
-    
-    // Recurring добавляем только если явно нужно (требует настройки в ЛК)
-    // Пока оставляем без него для базовой проверки
-    // paramPairs.push(`Recurring=true`);
-    
-    const paramsString = paramPairs.join("&");
-    const robokassaUrl = "https://auth.robokassa.ru/Merchant/Index.aspx";
-    const paymentUrl = `${robokassaUrl}?${paramsString}`;
-    
-    console.log("[robokassa/create] Payment URL:", paymentUrl);
-    console.log("[robokassa/create] ======================================");
+    console.log("[robokassa/create] Subscription URL:", subscriptionUrl);
+    console.log("[robokassa/create] ==========================================");
 
-    // Сохраняем pending платеж
+    // Сохраняем информацию о начале подписки
+    // Robokassa отправит уведомление на /api/robokassa/result после успешной подписки
     await supabase.from("payments").insert({
       user_id: userId,
-      invoice_id: invoiceId,
+      invoice_id: `sub_${userId}_${Date.now()}`,
       previous_invoice_id: null,
       amount: AMOUNT,
       status: "pending",
-      is_recurring: false,
+      is_recurring: true,
     });
 
     return NextResponse.json({ 
       ok: true, 
-      paymentUrl,
-      invoiceId,
-      // Возвращаем также параметры для отладки (без пароля!)
+      paymentUrl: subscriptionUrl,
+      subscriptionId: SUBSCRIPTION_ID,
       debug: {
-        merchantLogin: merchantLogin ? "SET" : "NOT SET",
-        hasPassword1: !!password1,
-        signatureLength: signatureValue.length,
-        amount: amountStr,
-        invoiceId: invoiceId,
-        // Показываем первые 50 символов URL для проверки
-        paymentUrlPreview: paymentUrl.substring(0, 100) + "..."
+        subscriptionId: SUBSCRIPTION_ID,
+        userId: userId,
+        urlPreview: subscriptionUrl.substring(0, 100) + "..."
       }
     });
   } catch (error: any) {
