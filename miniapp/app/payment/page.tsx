@@ -45,12 +45,19 @@ function PaymentContent() {
       }
       
       if (!data.paymentUrl) {
-        throw new Error("URL оплаты не получен от сервера");
+        console.error("[payment] ❌ paymentUrl отсутствует в ответе:", data);
+        throw new Error("URL оплаты не получен от сервера. Проверьте логи.");
       }
       
+      console.log("[payment] ✅ Payment URL получен");
+      console.log("[payment] Debug info:", data.debug);
       console.log("[payment] Redirecting to:", data.paymentUrl);
-      // Редирект на страницу оплаты Robokassa
-      window.location.href = data.paymentUrl;
+      
+      // Небольшая задержка перед редиректом для логирования
+      setTimeout(() => {
+        // Редирект на страницу оплаты Robokassa
+        window.location.href = data.paymentUrl;
+      }, 100);
     } catch (e: any) {
       console.error("[payment] Error:", e);
       setError(e.message || "Ошибка создания платежа. Проверьте логи сервера.");

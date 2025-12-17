@@ -123,10 +123,15 @@ export async function POST(req: Request) {
       ok: true, 
       paymentUrl,
       invoiceId,
+      // Возвращаем также параметры для отладки (без пароля!)
       debug: {
         merchantLogin: merchantLogin ? "SET" : "NOT SET",
         hasPassword1: !!password1,
-        signatureLength: signatureValue.length
+        signatureLength: signatureValue.length,
+        amount: amountStr,
+        invoiceId: invoiceId,
+        // Показываем первые 50 символов URL для проверки
+        paymentUrlPreview: paymentUrl.substring(0, 100) + "..."
       }
     });
   } catch (error: any) {
