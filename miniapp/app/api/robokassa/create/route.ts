@@ -98,6 +98,14 @@ export async function POST(req: Request) {
     paramPairs.push(`SignatureValue=${signatureValue}`);
     paramPairs.push(`Culture=ru`);
     
+    // Тестовый режим (если нужно для проверки)
+    // В тестовом режиме можно использовать тестовые карты
+    const isTestMode = process.env.ROBOKASSA_TEST_MODE === "true";
+    if (isTestMode) {
+      paramPairs.push(`IsTest=1`);
+      console.log("[robokassa/create] ⚠️ TEST MODE ENABLED");
+    }
+    
     // Recurring добавляем только если явно нужно (требует настройки в ЛК)
     // Пока оставляем без него для базовой проверки
     // paramPairs.push(`Recurring=true`);
