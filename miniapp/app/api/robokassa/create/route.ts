@@ -3,7 +3,8 @@ import { createServerSupabaseClient } from "../../../../lib/supabaseAdmin";
 
 const AMOUNT = 199;
 // ID подписки из личного кабинета Robokassa
-const SUBSCRIPTION_ID = "b718af89-10c1-4018-856d-558d592c0f40";
+// Можно переопределить через переменную окружения ROBOKASSA_SUBSCRIPTION_ID
+const SUBSCRIPTION_ID = process.env.ROBOKASSA_SUBSCRIPTION_ID || "b718af89-10c1-4018-856d-558d592c0f40";
 const SUBSCRIPTION_BASE_URL = "https://auth.robokassa.ru/RecurringSubscriptionPage/Subscription/Subscribe";
 
 export async function POST(req: Request) {
