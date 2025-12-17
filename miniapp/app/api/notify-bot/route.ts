@@ -94,14 +94,19 @@ export async function POST(req: Request) {
     return NextResponse.json({ ok: false, error: "telegram_id is missing for user" }, { status: 400 });
   }
 
-  const confirmationText = "Спасибо! Мы сохранили твои данные. Теперь вы можете отправлять фото, текст или аудио своих блюд — я всё проанализирую.";
-  const menuKeyboard = getMainMenuKeyboard(user.id);
+  // Если передан message, отправляем его, иначе отправляем стандартное сообщение
+  const messageText = body?.message || "Спасибо! Мы сохранили твои данные. Теперь вы можете отправлять фото, текст или аудио своих блюд — я всё проанализирую.";
+  const menuKeyboard = body?.message ? undefined : getMainMenuKeyboard(user.id);
 
   try {
-    await sendTelegramMessage(user.telegram_id, confirmationText);
-    await sendTelegramMessage(user.telegram_id, "Выберите действие:", {
-      ...menuKeyboard
-    });
+    await sendTelegramMessage(user.telegram_id, messageText, menuKeyboard);
+    
+    // Если это не кастомное сообщение, отправляем меню отдельно
+    if (!body?.message) {
+      await sendTelegramMessage(user.telegram_id, "Выберите действие:", {
+        ...getMainMenuKeyboard(user.id)
+      });
+    }
   } catch (sendError: any) {
     console.error("[/api/notify-bot] Ошибка отправки сообщений:", sendError);
     return NextResponse.json({ ok: false, error: "Failed to send telegram messages" }, { status: 502 });

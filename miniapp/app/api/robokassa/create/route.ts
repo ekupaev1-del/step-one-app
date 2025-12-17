@@ -1,11 +1,33 @@
 import { NextResponse } from "next/server";
 import { createServerSupabaseClient } from "../../../../lib/supabaseAdmin";
+import crypto from "crypto";
 
-const AMOUNT = 199;
-// ID подписки из личного кабинета Robokassa
-// Можно переопределить через переменную окружения ROBOKASSA_SUBSCRIPTION_ID
-const SUBSCRIPTION_ID = process.env.ROBOKASSA_SUBSCRIPTION_ID || "b718af89-10c1-4018-856d-558d592c0f40";
-const SUBSCRIPTION_BASE_URL = "https://auth.robokassa.ru/RecurringSubscriptionPage/Subscription/Subscribe";
+// Первый платеж для привязки карты = 1 RUB
+const TRIAL_PAYMENT_AMOUNT = 1;
+// Цена подписки после триала
+const SUBSCRIPTION_AMOUNT = 199;
+const DESCRIPTION = "Step One subscription (1 month)";
+
+function md5(input: string) {
+  return crypto.createHash("md5").update(input).digest("hex");
+}
+
+function buildReceipt(amount: number) {
+  const receipt = {
+    sno: "usn_income", // УСН доходы (self-employed)
+    items: [
+      {
+        name: DESCRIPTION,
+        quantity: 1,
+        sum: amount,
+        payment_method: "full_payment",
+        payment_object: "service",
+        tax: "none",
+      },
+    ],
+  };
+  return JSON.stringify(receipt);
+}
 
 export async function POST(req: Request) {
   try {
@@ -19,14 +41,27 @@ export async function POST(req: Request) {
       );
     }
 
-    console.log("[robokassa/create] ========== SUBSCRIPTION CREATION ==========");
+    const merchantLogin = process.env.ROBOKASSA_MERCHANT_LOGIN;
+    const password1 = process.env.ROBOKASSA_PASSWORD1;
+
+    if (!merchantLogin || !password1) {
+      return NextResponse.json(
+        { 
+          ok: false, 
+          error: "ROBOKASSA_MERCHANT_LOGIN или ROBOKASSA_PASSWORD1 не заданы" 
+        },
+        { status: 500 }
+      );
+    }
+
+    console.log("[robokassa/create] ========== TRIAL PAYMENT CREATION ==========");
     console.log("[robokassa/create] UserId:", userId);
-    console.log("[robokassa/create] SubscriptionId:", SUBSCRIPTION_ID);
+    console.log("[robokassa/create] Amount:", TRIAL_PAYMENT_AMOUNT, "RUB");
 
     // Проверяем пользователя
     const { data: user, error: userError } = await supabase
       .from("users")
-      .select("id")
+      .select("id, subscription_status, robokassa_parent_invoice_id")
       .eq("id", userId)
       .maybeSingle();
 
@@ -37,59 +72,82 @@ export async function POST(req: Request) {
       );
     }
 
-    // Формируем URL подписки с userId и email для идентификации пользователя после подписки
-    // Robokassa передаст userId обратно в Result URL
-    let subscriptionUrl = `${SUBSCRIPTION_BASE_URL}?SubscriptionId=${SUBSCRIPTION_ID}&Shp_userId=${userId}`;
-    
-    // Если email передан, добавляем его в URL (Robokassa может использовать его для предзаполнения)
-    if (email && typeof email === "string" && email.trim()) {
-      subscriptionUrl += `&Email=${encodeURIComponent(email.trim())}`;
+    // Проверяем, не имеет ли пользователь уже активную подписку или триал
+    if (user.subscription_status === "trial" || user.subscription_status === "active") {
+      return NextResponse.json(
+        { ok: false, error: "У вас уже есть активная подписка или триал" },
+        { status: 400 }
+      );
     }
+
+    // Генерируем уникальный InvoiceID
+    const invoiceId = `trial_${userId}_${Date.now()}`;
+    const amountStr = TRIAL_PAYMENT_AMOUNT.toFixed(2);
+
+    // Формируем Receipt для фискализации
+    const receiptJson = buildReceipt(TRIAL_PAYMENT_AMOUNT);
+    const receiptEncoded = encodeURIComponent(receiptJson);
+
+    // Подпись: MerchantLogin:OutSum:InvId:Receipt:Password1
+    const signatureBase = `${merchantLogin}:${amountStr}:${invoiceId}:${receiptJson}:${password1}`;
+    const signatureValue = md5(signatureBase).toLowerCase();
+
+    console.log("[robokassa/create] InvoiceId:", invoiceId);
+    console.log("[robokassa/create] Signature base:", signatureBase);
+    console.log("[robokassa/create] Signature value:", signatureValue);
+
+    // Формируем URL для оплаты с Recurring=true
+    const descriptionEncoded = encodeURIComponent(DESCRIPTION);
+    const params: string[] = [];
+    params.push(`MerchantLogin=${encodeURIComponent(merchantLogin)}`);
+    params.push(`OutSum=${amountStr}`);
+    params.push(`InvId=${invoiceId}`);
+    params.push(`Description=${descriptionEncoded}`);
+    params.push(`Receipt=${receiptEncoded}`);
+    params.push(`Recurring=true`); // ВАЖНО: включаем рекуррентные платежи
+    params.push(`SignatureValue=${signatureValue}`);
+    params.push(`Culture=ru`);
     
-    console.log("[robokassa/create] Subscription URL:", subscriptionUrl);
-    console.log("[robokassa/create] Email:", email || "not provided");
+    // Передаем userId для идентификации после оплаты
+    params.push(`Shp_userId=${userId}`);
+
+    const paramsString = params.join("&");
+    const robokassaUrl = "https://auth.robokassa.ru/Merchant/Index.aspx";
+    const paymentUrl = `${robokassaUrl}?${paramsString}`;
+
+    console.log("[robokassa/create] Payment URL:", paymentUrl);
     console.log("[robokassa/create] ==========================================");
 
-    // Сохраняем информацию о начале подписки
-    // Robokassa отправит уведомление на /api/robokassa/result после успешной подписки
+    // Сохраняем pending платеж
     await supabase.from("payments").insert({
       user_id: userId,
-      invoice_id: `sub_${userId}_${Date.now()}`,
+      invoice_id: invoiceId,
       previous_invoice_id: null,
-      amount: AMOUNT,
+      amount: TRIAL_PAYMENT_AMOUNT,
       status: "pending",
-      is_recurring: true,
+      is_recurring: true, // Это родительский платеж для рекуррентных списаний
     });
 
     return NextResponse.json({ 
       ok: true, 
-      paymentUrl: subscriptionUrl,
-      subscriptionId: SUBSCRIPTION_ID,
+      paymentUrl,
+      invoiceId,
+      amount: TRIAL_PAYMENT_AMOUNT,
       debug: {
-        subscriptionId: SUBSCRIPTION_ID,
-        userId: userId,
-        urlPreview: subscriptionUrl.substring(0, 100) + "..."
+        merchantLogin: merchantLogin ? "SET" : "NOT SET",
+        hasPassword1: !!password1,
+        invoiceId: invoiceId,
+        amount: amountStr,
       }
     });
   } catch (error: any) {
     console.error("[robokassa/create] error", error);
     console.error("[robokassa/create] error stack", error.stack);
     
-    // Более детальная информация об ошибке
-    const errorDetails = {
-      message: error.message,
-      name: error.name,
-      hasMerchantLogin: !!process.env.ROBOKASSA_MERCHANT_LOGIN,
-      hasPassword1: !!process.env.ROBOKASSA_PASSWORD1,
-    };
-    
-    console.error("[robokassa/create] error details", errorDetails);
-    
     return NextResponse.json(
       { 
         ok: false, 
         error: error.message || "Internal error",
-        details: process.env.NODE_ENV === "development" ? errorDetails : undefined
       },
       { status: 500 }
     );

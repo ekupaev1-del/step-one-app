@@ -23,6 +23,7 @@ interface ProfileData {
   subscriptionStatus: string | null;
   trialEndAt: string | null;
   subscriptionEndAt: string | null;
+  paidUntil: string | null;
   robokassaParentInvoiceId: string | null;
 }
 
@@ -138,6 +139,7 @@ function ProfilePageContent() {
           subscriptionStatus: data.subscriptionStatus,
           trialEndAt: data.trialEndAt,
           subscriptionEndAt: data.subscriptionEndAt,
+          paidUntil: data.paidUntil,
           robokassaParentInvoiceId: data.robokassaParentInvoiceId
         });
 
@@ -398,7 +400,8 @@ function ProfilePageContent() {
           ...profile,
           subscriptionStatus: profileData.subscriptionStatus,
           subscriptionEndAt: profileData.subscriptionEndAt,
-          trialEndAt: profileData.trialEndAt
+          trialEndAt: profileData.trialEndAt,
+          paidUntil: profileData.paidUntil
         });
       }
     } catch (err: any) {
@@ -418,21 +421,43 @@ function ProfilePageContent() {
         return "Активна";
       case "expired":
         return "Истекла";
+      case "payment_failed":
+        return "Ошибка оплаты";
+      case "none":
+        return "Не активирована";
       default:
         return status;
     }
   };
 
   const getNextBillingDate = (): string | null => {
-    // Если триал активен, следующее списание - после окончания триала (начало активной подписки)
+    // Если триал активен, следующее списание - после окончания триала
     if (profile.subscriptionStatus === "trial" && profile.trialEndAt) {
       const trialEnd = new Date(profile.trialEndAt);
-      return trialEnd.toLocaleDateString("ru-RU");
+      return trialEnd.toLocaleDateString("ru-RU", {
+        day: "numeric",
+        month: "long",
+        year: "numeric",
+      });
     }
-    // Если подписка активна, следующее списание - дата окончания текущего периода (когда будет следующее автосписание)
-    if (profile.subscriptionStatus === "active" && profile.subscriptionEndAt) {
-      const endDate = new Date(profile.subscriptionEndAt);
-      return endDate.toLocaleDateString("ru-RU");
+    // Если подписка активна, используем paid_until (если есть) или subscription_end_at
+    if (profile.subscriptionStatus === "active") {
+      if (profile.paidUntil) {
+        const paidUntil = new Date(profile.paidUntil);
+        return paidUntil.toLocaleDateString("ru-RU", {
+          day: "numeric",
+          month: "long",
+          year: "numeric",
+        });
+      }
+      if (profile.subscriptionEndAt) {
+        const endDate = new Date(profile.subscriptionEndAt);
+        return endDate.toLocaleDateString("ru-RU", {
+          day: "numeric",
+          month: "long",
+          year: "numeric",
+        });
+      }
     }
     return null;
   };

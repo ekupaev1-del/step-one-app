@@ -28,6 +28,7 @@ async function handle(req: Request) {
   try {
     const password2 = process.env.ROBOKASSA_PASSWORD2;
     if (!password2) {
+      console.error("[robokassa/result] ROBOKASSA_PASSWORD2 не задан");
       return NextResponse.json(
         { ok: false, error: "ROBOKASSA_PASSWORD2 не задан" },
         { status: 500 }
@@ -38,14 +39,12 @@ async function handle(req: Request) {
     const outSum = params.get("OutSum");
     const invId = params.get("InvId");
     const signature = params.get("SignatureValue");
-    const shpUserId = params.get("Shp_userId"); // Параметр для подписки
-    const subscriptionId = params.get("SubscriptionId"); // ID подписки от Robokassa
+    const shpUserId = params.get("Shp_userId");
 
     console.log("[robokassa/result] ========== PAYMENT RESULT ==========");
     console.log("[robokassa/result] OutSum:", outSum);
     console.log("[robokassa/result] InvId:", invId);
     console.log("[robokassa/result] Shp_userId:", shpUserId);
-    console.log("[robokassa/result] SubscriptionId:", subscriptionId);
     console.log("[robokassa/result] All params:", Object.fromEntries(params.entries()));
 
     if (!outSum || !invId || !signature) {
@@ -56,10 +55,8 @@ async function handle(req: Request) {
     }
 
     // Проверка подписи: OutSum:InvId:Password2[:Shp_параметры]
-    // Shp_параметры должны быть отсортированы по алфавиту
     let signatureBase = `${outSum}:${invId}:${password2}`;
     if (shpUserId) {
-      // Добавляем Shp_параметры в алфавитном порядке
       signatureBase += `:Shp_userId=${shpUserId}`;
     }
     
@@ -77,24 +74,22 @@ async function handle(req: Request) {
     }
 
     const supabase = createServerSupabaseClient();
+    const amount = Number(outSum);
 
-    // Определяем userId: либо из Shp_userId (для подписки), либо из платежа
+    // Определяем userId
     let userId: number | null = null;
     
     if (shpUserId) {
-      // Для подписки используем Shp_userId
       userId = Number(shpUserId);
       console.log("[robokassa/result] Using Shp_userId:", userId);
     } else {
-      // Для обычного платежа ищем по invoice_id
-      const { data: payment, error: paymentError } = await supabase
+      const { data: payment } = await supabase
         .from("payments")
-        .select("id, user_id, is_recurring, previous_invoice_id")
+        .select("user_id")
         .eq("invoice_id", invId)
         .maybeSingle();
 
-      if (paymentError || !payment) {
-        console.error("[robokassa/result] Payment not found for InvId:", invId);
+      if (!payment) {
         return NextResponse.json(
           { ok: false, error: "Платёж не найден" },
           { status: 404 }
@@ -102,7 +97,6 @@ async function handle(req: Request) {
       }
       
       userId = payment.user_id;
-      console.log("[robokassa/result] Found payment, userId:", userId);
     }
 
     if (!userId || !Number.isFinite(userId)) {
@@ -112,12 +106,6 @@ async function handle(req: Request) {
       );
     }
 
-    const now = new Date();
-    // Активируем триал на 3 дня после первой оплаты
-    const trialEndAt = new Date(now.getTime() + 3 * 24 * 60 * 60 * 1000);
-    // После окончания триала подписка будет активна еще 30 дней
-    const subscriptionEnd = new Date(trialEndAt.getTime() + 30 * 24 * 60 * 60 * 1000);
-
     // Сохраняем или обновляем платёж
     const { data: existingPayment } = await supabase
       .from("payments")
@@ -126,51 +114,108 @@ async function handle(req: Request) {
       .maybeSingle();
 
     if (existingPayment) {
-      // Обновляем существующий платёж
       await supabase
         .from("payments")
         .update({ status: "success" })
         .eq("id", existingPayment.id);
-      console.log("[robokassa/result] Updated payment:", existingPayment.id);
     } else {
-      // Создаем новый платёж (для подписки)
       await supabase.from("payments").insert({
         user_id: userId,
         invoice_id: invId,
-        previous_invoice_id: subscriptionId || null,
-        amount: Number(outSum),
+        previous_invoice_id: null,
+        amount: amount,
         status: "success",
-        is_recurring: !!subscriptionId,
+        is_recurring: amount === 1, // Первый платеж 1 RUB - это родительский для рекуррентных
       });
-      console.log("[robokassa/result] Created new payment for subscription");
     }
 
-    // Обновляем пользователя: активируем триал на 3 дня
-    const updateData: any = {
-      subscription_status: "trial",
-      trial_end_at: trialEndAt.toISOString(),
-      subscription_end_at: subscriptionEnd.toISOString(),
-      last_payment_status: "success",
-    };
+    // Логика обработки платежа
+    const now = new Date();
+    
+    if (amount === 1) {
+      // Это первый платеж 1 RUB - активируем триал
+      const trialEndAt = new Date(now.getTime() + 3 * 24 * 60 * 60 * 1000); // +3 дня
+      
+      await supabase
+        .from("users")
+        .update({
+          subscription_status: "trial",
+          trial_end_at: trialEndAt.toISOString(),
+          robokassa_parent_invoice_id: invId, // Сохраняем parent invoice ID для рекуррентных платежей
+          last_payment_status: "success",
+        })
+        .eq("id", userId);
 
-    // Сохраняем SubscriptionId для рекуррентных платежей
-    // Используем robokassa_parent_invoice_id для хранения SubscriptionId
-    if (subscriptionId) {
-      // Для подписки сохраняем SubscriptionId в robokassa_parent_invoice_id
-      updateData.robokassa_parent_invoice_id = subscriptionId;
-    } else {
-      // Для обычного платежа используем invId
-      updateData.robokassa_parent_invoice_id = invId;
+      console.log("[robokassa/result] ✅ Trial activated for user:", userId);
+      console.log("[robokassa/result] Trial ends at:", trialEndAt.toISOString());
+      console.log("[robokassa/result] Parent invoice ID:", invId);
+
+      // Отправляем уведомление боту о активации триала
+      try {
+        const { data: user } = await supabase
+          .from("users")
+          .select("telegram_id")
+          .eq("id", userId)
+          .maybeSingle();
+        
+        if (user?.telegram_id) {
+          const notifyUrl = `${process.env.MINIAPP_BASE_URL || "https://step-one-app-git-dev-emins-projects-4717eabc.vercel.app"}/api/notify-bot`;
+          await fetch(notifyUrl, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              userId,
+              message: "🎉 Триал активирован! У вас есть 3 дня полного доступа ко всем функциям бота.",
+            }),
+          });
+        }
+      } catch (notifyError) {
+        console.error("[robokassa/result] Error notifying bot:", notifyError);
+      }
+    } else if (amount === 199) {
+      // Это рекуррентный платеж 199 RUB - активируем подписку на 30 дней
+      const paidUntil = new Date(now.getTime() + 30 * 24 * 60 * 60 * 1000); // +30 дней
+      
+      await supabase
+        .from("users")
+        .update({
+          subscription_status: "active",
+          paid_until: paidUntil.toISOString(),
+          last_payment_status: "success",
+        })
+        .eq("id", userId);
+
+      console.log("[robokassa/result] ✅ Subscription activated for user:", userId);
+      console.log("[robokassa/result] Paid until:", paidUntil.toISOString());
+
+      // Отправляем уведомление боту об успешном платеже
+      try {
+        const { data: user } = await supabase
+          .from("users")
+          .select("telegram_id")
+          .eq("id", userId)
+          .maybeSingle();
+        
+        if (user?.telegram_id) {
+          const notifyUrl = `${process.env.MINIAPP_BASE_URL || "https://step-one-app-git-dev-emins-projects-4717eabc.vercel.app"}/api/notify-bot`;
+          await fetch(notifyUrl, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              userId,
+              message: "✅ Подписка продлена! Доступ активен до " + paidUntil.toLocaleDateString("ru-RU", {
+                day: "numeric",
+                month: "long",
+                year: "numeric",
+              }) + ".",
+            }),
+          });
+        }
+      } catch (notifyError) {
+        console.error("[robokassa/result] Error notifying bot:", notifyError);
+      }
     }
 
-    await supabase
-      .from("users")
-      .update(updateData)
-      .eq("id", userId);
-
-    console.log("[robokassa/result] ✅ Subscription activated for user:", userId);
-    console.log("[robokassa/result] Trial ends at:", trialEndAt.toISOString());
-    console.log("[robokassa/result] Subscription ends at:", subscriptionEnd.toISOString());
     console.log("[robokassa/result] =========================================");
 
     return new NextResponse("OK", { status: 200 });

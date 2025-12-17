@@ -74,27 +74,58 @@ async function checkSubscription(userId: number): Promise<{
       // Триал активирован, проверяем дату окончания
       const trialEnd = new Date(user.trial_end_at);
       if (trialEnd > now) {
-        return { hasAccess: true, status: 'trial', trialEndAt: trialEnd, subscriptionEndAt: user.subscription_end_at ? new Date(user.subscription_end_at) : null };
+        return { hasAccess: true, status: 'trial', trialEndAt: trialEnd, subscriptionEndAt: null };
       } else {
-        // Триал истек - переводим в active, если есть subscription_end_at в будущем
-        if (user.subscription_end_at) {
-          const subscriptionEnd = new Date(user.subscription_end_at);
-          if (subscriptionEnd > now) {
-            // Подписка еще активна после триала
-            await supabase
-              .from("users")
-              .update({ subscription_status: 'active' })
-              .eq("id", userId);
-            return { hasAccess: true, status: 'active', trialEndAt: trialEnd, subscriptionEndAt: subscriptionEnd };
-          }
-        }
-        // Подписка истекла
-        await supabase
-          .from("users")
-          .update({ subscription_status: 'expired' })
-          .eq("id", userId);
-        return { hasAccess: false, status: 'expired', trialEndAt: trialEnd, subscriptionEndAt: user.subscription_end_at ? new Date(user.subscription_end_at) : null };
+        // Триал истек - проверяем, был ли успешный рекуррентный платеж
+        // Если нет paid_until, значит рекуррентный платеж еще не прошел или не был инициирован
+        // В этом случае recurringBilling должен обработать это
+        return { hasAccess: false, status: 'expired', trialEndAt: trialEnd, subscriptionEndAt: null };
       }
+    }
+
+    // Если подписка активна, проверяем paid_until
+    if (status === 'active') {
+      // Для активной подписки проверяем paid_until (если есть) или subscription_end_at
+      // paid_until - это дата до которой оплачена подписка
+      const { data: userWithPaidUntil } = await supabase
+        .from("users")
+        .select("paid_until")
+        .eq("id", userId)
+        .maybeSingle();
+      
+      if (userWithPaidUntil?.paid_until) {
+        const paidUntil = new Date(userWithPaidUntil.paid_until);
+        if (paidUntil > now) {
+          return { hasAccess: true, status: 'active', trialEndAt: null, subscriptionEndAt: paidUntil };
+        } else {
+          // Подписка истекла
+          await supabase
+            .from("users")
+            .update({ subscription_status: 'expired' })
+            .eq("id", userId);
+          return { hasAccess: false, status: 'expired', trialEndAt: null, subscriptionEndAt: paidUntil };
+        }
+      }
+      
+      // Если paid_until нет, используем старую логику с subscription_end_at
+      if (user.subscription_end_at) {
+        const subscriptionEnd = new Date(user.subscription_end_at);
+        if (subscriptionEnd > now) {
+          return { hasAccess: true, status: 'active', trialEndAt: null, subscriptionEndAt: subscriptionEnd };
+        }
+      }
+      
+      // Подписка истекла
+      await supabase
+        .from("users")
+        .update({ subscription_status: 'expired' })
+        .eq("id", userId);
+      return { hasAccess: false, status: 'expired', trialEndAt: null, subscriptionEndAt: user.subscription_end_at ? new Date(user.subscription_end_at) : null };
+    }
+
+    // Если payment_failed - нет доступа
+    if (status === 'payment_failed') {
+      return { hasAccess: false, status: 'payment_failed', trialEndAt: null, subscriptionEndAt: null };
     }
 
     // Нет подписки или триала
@@ -1386,14 +1417,19 @@ bot.on("text", async (ctx) => {
           : undefined;
         
         let message = "❌ <b>Нет доступа</b>\n\n";
-        if (subscription.status === 'expired') {
-          message += "Ваш триал или подписка истекли.\n\n";
+        if (subscription.status === 'expired' || subscription.status === 'payment_failed') {
+          if (subscription.status === 'payment_failed') {
+            message += "Ошибка оплаты. Триал закончился, но автоматическое списание не прошло.\n\n";
+          } else {
+            message += "Ваш триал или подписка истекли.\n\n";
+          }
         } else {
-          message += "Для использования функций бота необходимо активировать триал или оформить подписку.\n\n";
+          message += "Для использования функций бота необходимо активировать триал.\n\n";
         }
         message += "💳 <b>Подписка Step One</b>\n";
-        message += "1 месяц стоит 199 ₽\n\n";
-        message += "🎁 <b>Триал бесплатный на 3 дня</b>";
+        message += "После триала: 199 ₽ в месяц\n\n";
+        message += "🎁 <b>Триал бесплатный на 3 дня</b>\n";
+        message += "Для активации нужно привязать карту (списание 1 ₽)";
 
         const keyboard: any[] = [];
         if (paymentUrl) {
@@ -2015,14 +2051,19 @@ bot.on("photo", async (ctx) => {
           : undefined;
         
         let message = "❌ <b>Нет доступа</b>\n\n";
-        if (subscription.status === 'expired') {
-          message += "Ваш триал или подписка истекли.\n\n";
+        if (subscription.status === 'expired' || subscription.status === 'payment_failed') {
+          if (subscription.status === 'payment_failed') {
+            message += "Ошибка оплаты. Триал закончился, но автоматическое списание не прошло.\n\n";
+          } else {
+            message += "Ваш триал или подписка истекли.\n\n";
+          }
         } else {
-          message += "Для использования функций бота необходимо активировать триал или оформить подписку.\n\n";
+          message += "Для использования функций бота необходимо активировать триал.\n\n";
         }
         message += "💳 <b>Подписка Step One</b>\n";
-        message += "1 месяц стоит 199 ₽\n\n";
-        message += "🎁 <b>Триал бесплатный на 3 дня</b>";
+        message += "После триала: 199 ₽ в месяц\n\n";
+        message += "🎁 <b>Триал бесплатный на 3 дня</b>\n";
+        message += "Для активации нужно привязать карту (списание 1 ₽)";
 
         const keyboard: any[] = [];
         if (paymentUrl) {
@@ -2208,14 +2249,19 @@ bot.on("voice", async (ctx) => {
           : undefined;
         
         let message = "❌ <b>Нет доступа</b>\n\n";
-        if (subscription.status === 'expired') {
-          message += "Ваш триал или подписка истекли.\n\n";
+        if (subscription.status === 'expired' || subscription.status === 'payment_failed') {
+          if (subscription.status === 'payment_failed') {
+            message += "Ошибка оплаты. Триал закончился, но автоматическое списание не прошло.\n\n";
+          } else {
+            message += "Ваш триал или подписка истекли.\n\n";
+          }
         } else {
-          message += "Для использования функций бота необходимо активировать триал или оформить подписку.\n\n";
+          message += "Для использования функций бота необходимо активировать триал.\n\n";
         }
         message += "💳 <b>Подписка Step One</b>\n";
-        message += "1 месяц стоит 199 ₽\n\n";
-        message += "🎁 <b>Триал бесплатный на 3 дня</b>";
+        message += "После триала: 199 ₽ в месяц\n\n";
+        message += "🎁 <b>Триал бесплатный на 3 дня</b>\n";
+        message += "Для активации нужно привязать карту (списание 1 ₽)";
 
         const keyboard: any[] = [];
         if (paymentUrl) {
