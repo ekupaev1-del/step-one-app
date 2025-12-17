@@ -10,7 +10,7 @@ const SUBSCRIPTION_BASE_URL = "https://auth.robokassa.ru/RecurringSubscriptionPa
 export async function POST(req: Request) {
   try {
     const supabase = createServerSupabaseClient();
-    const { userId } = await req.json();
+    const { userId, email } = await req.json();
 
     if (!userId || typeof userId !== "number") {
       return NextResponse.json(
@@ -37,11 +37,17 @@ export async function POST(req: Request) {
       );
     }
 
-    // Формируем URL подписки с userId для идентификации пользователя после подписки
+    // Формируем URL подписки с userId и email для идентификации пользователя после подписки
     // Robokassa передаст userId обратно в Result URL
-    const subscriptionUrl = `${SUBSCRIPTION_BASE_URL}?SubscriptionId=${SUBSCRIPTION_ID}&Shp_userId=${userId}`;
+    let subscriptionUrl = `${SUBSCRIPTION_BASE_URL}?SubscriptionId=${SUBSCRIPTION_ID}&Shp_userId=${userId}`;
+    
+    // Если email передан, добавляем его в URL (Robokassa может использовать его для предзаполнения)
+    if (email && typeof email === "string" && email.trim()) {
+      subscriptionUrl += `&Email=${encodeURIComponent(email.trim())}`;
+    }
     
     console.log("[robokassa/create] Subscription URL:", subscriptionUrl);
+    console.log("[robokassa/create] Email:", email || "not provided");
     console.log("[robokassa/create] ==========================================");
 
     // Сохраняем информацию о начале подписки

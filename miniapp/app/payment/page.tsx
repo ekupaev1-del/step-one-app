@@ -9,6 +9,9 @@ function PaymentContent() {
   const [userId, setUserId] = useState<number | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [showEmailForm, setShowEmailForm] = useState(false);
+  const [email, setEmail] = useState("");
+  const [emailError, setEmailError] = useState<string | null>(null);
 
   useEffect(() => {
     const id = searchParams.get("id");
@@ -21,6 +24,26 @@ function PaymentContent() {
     }
   }, [searchParams]);
 
+  const validateEmail = (email: string): boolean => {
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    return emailRegex.test(email);
+  };
+
+  const handleContinueClick = () => {
+    if (!email.trim()) {
+      setEmailError("Введите email");
+      return;
+    }
+    
+    if (!validateEmail(email)) {
+      setEmailError("Введите корректный email");
+      return;
+    }
+
+    setEmailError(null);
+    startPayment();
+  };
+
   const startPayment = async () => {
     if (!userId) return;
     setLoading(true);
@@ -30,7 +53,7 @@ function PaymentContent() {
       const res = await fetch("/api/robokassa/create", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ userId }),
+        body: JSON.stringify({ userId, email: email.trim() }),
       });
       const data = await res.json();
       
@@ -65,6 +88,62 @@ function PaymentContent() {
     }
   };
 
+  if (showEmailForm) {
+    return (
+      <AppLayout>
+        <div className="min-h-screen bg-background p-4 py-8 pb-24 flex items-center">
+          <div className="max-w-md mx-auto w-full bg-white rounded-2xl shadow-soft p-6 space-y-6">
+            <div className="text-center space-y-2">
+              <h1 className="text-2xl font-bold text-textPrimary">Вы оформляете подписку</h1>
+              <p className="text-sm text-textSecondary">
+                Это значит, что раз в месяц будут списываться средства с вашей карты для продления подписки. Вы можете отменить подписку, пройдя по ссылке из письма.
+              </p>
+            </div>
+            
+            <div className="space-y-2">
+              <label htmlFor="email" className="block text-sm font-semibold text-textPrimary">
+                Email для подписки
+              </label>
+              <input
+                id="email"
+                type="email"
+                value={email}
+                onChange={(e) => {
+                  setEmail(e.target.value);
+                  setEmailError(null);
+                }}
+                placeholder="example@mail.com"
+                className={`w-full px-4 py-3 rounded-xl border ${
+                  emailError 
+                    ? "border-red-300 bg-red-50" 
+                    : "border-gray-200 bg-white focus:border-accent focus:ring-2 focus:ring-accent/20"
+                } text-textPrimary placeholder-textSecondary focus:outline-none transition-colors`}
+                disabled={loading}
+              />
+              {emailError && (
+                <p className="text-sm text-red-600">{emailError}</p>
+              )}
+            </div>
+
+            {error && (
+              <div className="p-3 rounded-lg bg-red-50 border border-red-200 text-red-700 text-sm">
+                {error}
+              </div>
+            )}
+
+            <button
+              onClick={handleContinueClick}
+              disabled={!userId || loading || !email.trim()}
+              className="w-full py-3 rounded-xl bg-accent text-white font-semibold hover:opacity-90 disabled:opacity-50 transition-opacity"
+            >
+              {loading ? "Подписываемся..." : "Подписаться"}
+            </button>
+          </div>
+        </div>
+      </AppLayout>
+    );
+  }
+
   return (
     <AppLayout>
       <div className="min-h-screen bg-background p-4 py-8 pb-24">
@@ -85,7 +164,7 @@ function PaymentContent() {
             </div>
           )}
           <button
-            onClick={startPayment}
+            onClick={() => setShowEmailForm(true)}
             disabled={!userId || loading}
             className="w-full py-3 rounded-xl bg-accent text-white font-semibold hover:opacity-90 disabled:opacity-50"
           >
