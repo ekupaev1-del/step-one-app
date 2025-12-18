@@ -121,7 +121,7 @@ export async function POST(req: Request) {
     console.log("[robokassa/create] ==========================================");
 
     // Сохраняем pending платеж
-    await supabase.from("payments").insert({
+    const { error: paymentInsertError } = await supabase.from("payments").insert({
       user_id: userId,
       invoice_id: invoiceId,
       previous_invoice_id: null,
@@ -129,6 +129,11 @@ export async function POST(req: Request) {
       status: "pending",
       is_recurring: true, // Это родительский платеж для рекуррентных списаний
     });
+    
+    if (paymentInsertError) {
+      console.error("[robokassa/create] Error inserting payment:", paymentInsertError);
+      throw new Error(`Failed to save payment: ${paymentInsertError.message}`);
+    }
 
     return NextResponse.json({ 
       ok: true, 
