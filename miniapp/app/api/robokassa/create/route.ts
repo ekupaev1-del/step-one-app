@@ -12,6 +12,7 @@ function md5(input: string) {
 }
 
 function buildTrialReceipt() {
+  // Robokassa требует строгий формат Receipt для 54-ФЗ
   const receipt = {
     sno: "usn_income", // УСН доходы (self-employed)
     items: [
@@ -25,6 +26,7 @@ function buildTrialReceipt() {
       },
     ],
   };
+  // Важно: JSON должен быть компактным, без пробелов
   return JSON.stringify(receipt);
 }
 
@@ -94,43 +96,64 @@ export async function POST(req: Request) {
     }
 
     // Генерируем уникальный InvoiceID (числовой формат для Robokassa)
+    // Robokassa требует числовой InvoiceID для рекуррентных платежей
     const invoiceId = `${numericUserId}${Date.now()}`;
     const amountStr = TRIAL_PAYMENT_AMOUNT.toFixed(2);
 
     // Формируем Receipt для фискализации (54-ФЗ)
     const receiptJson = buildTrialReceipt();
+    // Важно: Receipt должен быть URL-encoded для передачи в URL
     const receiptEncoded = encodeURIComponent(receiptJson);
 
-    // Подпись: MerchantLogin:OutSum:InvId:Receipt:Password1
-    // ВАЖНО: Receipt включается в подпись как JSON строка (не encoded)
+    // Подпись для платежа с Receipt:
+    // MerchantLogin:OutSum:InvId:Receipt:Password1
+    // ВАЖНО: Receipt включается в подпись как JSON строка (НЕ encoded, компактный JSON)
     const signatureBase = `${merchantLogin}:${amountStr}:${invoiceId}:${receiptJson}:${password1}`;
     const signatureValue = md5(signatureBase).toLowerCase();
 
     console.log("[robokassa/create] InvoiceId:", invoiceId);
-    console.log("[robokassa/create] Receipt JSON:", receiptJson);
+    console.log("[robokassa/create] Amount (string):", amountStr);
+    console.log("[robokassa/create] Receipt JSON (raw):", receiptJson);
+    console.log("[robokassa/create] Receipt JSON (length):", receiptJson.length);
     console.log("[robokassa/create] Signature base:", signatureBase);
     console.log("[robokassa/create] Signature value:", signatureValue);
 
     // Формируем URL для оплаты с Recurring=true
     const description = "Подписка Step One — пробный период 3 дня";
     const descriptionEncoded = encodeURIComponent(description);
+    
+    // ВАЖНО: Порядок параметров может влиять на подпись
+    // Сначала базовые параметры
     const params: string[] = [];
     params.push(`MerchantLogin=${encodeURIComponent(merchantLogin)}`);
     params.push(`OutSum=${amountStr}`);
     params.push(`InvId=${invoiceId}`);
     params.push(`Description=${descriptionEncoded}`);
+    
+    // Receipt добавляем только если он правильно сформирован
+    // Robokassa может требовать определенный формат
     params.push(`Receipt=${receiptEncoded}`);
+    
+    // Recurring должен быть перед SignatureValue
     params.push(`Recurring=true`); // ВАЖНО: включаем рекуррентные платежи
+    
+    // SignatureValue должен быть последним перед дополнительными параметрами
     params.push(`SignatureValue=${signatureValue}`);
+    
+    // Дополнительные параметры
     params.push(`Culture=ru`);
     
-    // Передаем userId для идентификации после оплаты
+    // Передаем userId для идентификации после оплаты (Shp_ параметры)
     params.push(`Shp_userId=${numericUserId}`);
     
     // Передаем email для Robokassa (если предоставлен)
     if (email && typeof email === "string" && email.trim()) {
       params.push(`Email=${encodeURIComponent(email.trim())}`);
     }
+    
+    // Логируем финальный URL для отладки (без паролей)
+    console.log("[robokassa/create] URL parameters count:", params.length);
+    console.log("[robokassa/create] Receipt encoded length:", receiptEncoded.length);
 
     const paramsString = params.join("&");
     const robokassaUrl = "https://auth.robokassa.ru/Merchant/Index.aspx";
