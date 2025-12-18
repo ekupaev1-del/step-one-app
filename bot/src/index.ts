@@ -36,7 +36,7 @@ async function checkSubscription(userId: number): Promise<{
   try {
     const { data: user, error } = await supabase
       .from("users")
-      .select("subscription_status, trial_end_at, subscription_end_at")
+      .select("subscription_status, trial_started_at, trial_end_at, next_charge_at, paid_until")
       .eq("id", userId)
       .maybeSingle();
 
@@ -48,23 +48,17 @@ async function checkSubscription(userId: number): Promise<{
     const now = new Date();
     const status = user.subscription_status || 'none';
     
-    // Если подписка активна, проверяем дату окончания
-    if (status === 'active' && user.subscription_end_at) {
-      const endAt = new Date(user.subscription_end_at);
-      if (endAt > now) {
-        return { hasAccess: true, status: 'active', trialEndAt: null, subscriptionEndAt: endAt };
-      } else {
-        // Подписка истекла
-        await supabase
-          .from("users")
-          .update({ subscription_status: 'expired' })
-          .eq("id", userId);
-        return { hasAccess: false, status: 'expired', trialEndAt: null, subscriptionEndAt: endAt };
-      }
+    // Если canceled или expired - нет доступа
+    if (status === 'canceled' || status === 'expired') {
+      return { hasAccess: false, status: status as any, trialEndAt: null, subscriptionEndAt: null };
+    }
+
+    // Если payment_failed - нет доступа
+    if (status === 'payment_failed') {
+      return { hasAccess: false, status: 'payment_failed', trialEndAt: null, subscriptionEndAt: null };
     }
 
     // Если триал, проверяем дату окончания
-    // ВАЖНО: если trial_end_at = null, значит триал не активирован (пользователь не оплатил)
     if (status === 'trial') {
       if (!user.trial_end_at) {
         // Триал не активирован - нет доступа до оплаты
@@ -76,25 +70,15 @@ async function checkSubscription(userId: number): Promise<{
       if (trialEnd > now) {
         return { hasAccess: true, status: 'trial', trialEndAt: trialEnd, subscriptionEndAt: null };
       } else {
-        // Триал истек - проверяем, был ли успешный рекуррентный платеж
-        // Если нет paid_until, значит рекуррентный платеж еще не прошел или не был инициирован
-        // В этом случае recurringBilling должен обработать это
+        // Триал истек - recurringBilling должен обработать это
         return { hasAccess: false, status: 'expired', trialEndAt: trialEnd, subscriptionEndAt: null };
       }
     }
 
     // Если подписка активна, проверяем paid_until
     if (status === 'active') {
-      // Для активной подписки проверяем paid_until (если есть) или subscription_end_at
-      // paid_until - это дата до которой оплачена подписка
-      const { data: userWithPaidUntil } = await supabase
-        .from("users")
-        .select("paid_until")
-        .eq("id", userId)
-        .maybeSingle();
-      
-      if (userWithPaidUntil?.paid_until) {
-        const paidUntil = new Date(userWithPaidUntil.paid_until);
+      if (user.paid_until) {
+        const paidUntil = new Date(user.paid_until);
         if (paidUntil > now) {
           return { hasAccess: true, status: 'active', trialEndAt: null, subscriptionEndAt: paidUntil };
         } else {
@@ -107,11 +91,11 @@ async function checkSubscription(userId: number): Promise<{
         }
       }
       
-      // Если paid_until нет, используем старую логику с subscription_end_at
-      if (user.subscription_end_at) {
-        const subscriptionEnd = new Date(user.subscription_end_at);
-        if (subscriptionEnd > now) {
-          return { hasAccess: true, status: 'active', trialEndAt: null, subscriptionEndAt: subscriptionEnd };
+      // Если paid_until нет, но есть next_charge_at в будущем - подписка активна
+      if (user.next_charge_at) {
+        const nextCharge = new Date(user.next_charge_at);
+        if (nextCharge > now) {
+          return { hasAccess: true, status: 'active', trialEndAt: null, subscriptionEndAt: nextCharge };
         }
       }
       
@@ -120,12 +104,7 @@ async function checkSubscription(userId: number): Promise<{
         .from("users")
         .update({ subscription_status: 'expired' })
         .eq("id", userId);
-      return { hasAccess: false, status: 'expired', trialEndAt: null, subscriptionEndAt: user.subscription_end_at ? new Date(user.subscription_end_at) : null };
-    }
-
-    // Если payment_failed - нет доступа
-    if (status === 'payment_failed') {
-      return { hasAccess: false, status: 'payment_failed', trialEndAt: null, subscriptionEndAt: null };
+      return { hasAccess: false, status: 'expired', trialEndAt: null, subscriptionEndAt: null };
     }
 
     // Нет подписки или триала

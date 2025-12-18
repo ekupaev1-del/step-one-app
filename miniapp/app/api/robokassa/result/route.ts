@@ -107,19 +107,28 @@ async function handle(req: Request) {
     }
 
     // Сохраняем или обновляем платёж
-    const { data: existingPayment } = await supabase
+    const { data: existingPayment, error: paymentError } = await supabase
       .from("payments")
       .select("id")
       .eq("invoice_id", invId)
       .maybeSingle();
 
+    if (paymentError) {
+      console.error("[robokassa/result] Error fetching payment:", paymentError);
+    }
+
     if (existingPayment) {
-      await supabase
+      const { error: updateError } = await supabase
         .from("payments")
         .update({ status: "success" })
         .eq("id", existingPayment.id);
+      
+      if (updateError) {
+        console.error("[robokassa/result] Error updating payment:", updateError);
+        throw new Error(`Failed to update payment: ${updateError.message}`);
+      }
     } else {
-      await supabase.from("payments").insert({
+      const { error: insertError } = await supabase.from("payments").insert({
         user_id: userId,
         invoice_id: invId,
         previous_invoice_id: null,
@@ -127,6 +136,11 @@ async function handle(req: Request) {
         status: "success",
         is_recurring: amount === 1, // Первый платеж 1 RUB - это родительский для рекуррентных
       });
+      
+      if (insertError) {
+        console.error("[robokassa/result] Error inserting payment:", insertError);
+        throw new Error(`Failed to insert payment: ${insertError.message}`);
+      }
     }
 
     // Логика обработки платежа
@@ -138,7 +152,7 @@ async function handle(req: Request) {
       const trialEndsAt = new Date(now.getTime() + 3 * 24 * 60 * 60 * 1000); // +3 дня
       const nextChargeAt = trialEndsAt; // Следующее списание после окончания триала
       
-      await supabase
+      const { error: updateError } = await supabase
         .from("users")
         .update({
           subscription_status: "trial",
@@ -149,6 +163,11 @@ async function handle(req: Request) {
           last_payment_status: "success",
         })
         .eq("id", userId);
+      
+      if (updateError) {
+        console.error("[robokassa/result] Error updating user for trial:", updateError);
+        throw new Error(`Failed to activate trial: ${updateError.message}`);
+      }
 
       console.log("[robokassa/result] ✅ Trial activated for user:", userId);
       console.log("[robokassa/result] Trial started at:", trialStartedAt.toISOString());
@@ -182,7 +201,7 @@ async function handle(req: Request) {
       // Это рекуррентный платеж 199 RUB - активируем подписку на 30 дней
       const nextChargeAt = new Date(now.getTime() + 30 * 24 * 60 * 60 * 1000); // +30 дней
       
-      await supabase
+      const { error: updateError } = await supabase
         .from("users")
         .update({
           subscription_status: "active",
@@ -191,6 +210,11 @@ async function handle(req: Request) {
           last_payment_status: "success",
         })
         .eq("id", userId);
+      
+      if (updateError) {
+        console.error("[robokassa/result] Error updating user for subscription:", updateError);
+        throw new Error(`Failed to activate subscription: ${updateError.message}`);
+      }
 
       console.log("[robokassa/result] ✅ Subscription activated for user:", userId);
       console.log("[robokassa/result] Next charge at:", nextChargeAt.toISOString());
@@ -228,8 +252,25 @@ async function handle(req: Request) {
     return new NextResponse("OK", { status: 200 });
   } catch (error: any) {
     console.error("[robokassa/result] error", error);
+    console.error("[robokassa/result] error stack", error.stack);
+    console.error("[robokassa/result] error details:", {
+      message: error?.message,
+      code: error?.code,
+      details: error?.details,
+      hint: error?.hint,
+    });
+    
     return NextResponse.json(
-      { ok: false, error: error.message || "Internal error" },
+      { 
+        ok: false, 
+        error: error.message || "Internal error",
+        details: process.env.NODE_ENV === "development" ? {
+          message: error?.message,
+          code: error?.code,
+          details: error?.details,
+          hint: error?.hint,
+        } : undefined,
+      },
       { status: 500 }
     );
   }

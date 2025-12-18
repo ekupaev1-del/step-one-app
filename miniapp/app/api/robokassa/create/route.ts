@@ -145,11 +145,23 @@ export async function POST(req: Request) {
   } catch (error: any) {
     console.error("[robokassa/create] error", error);
     console.error("[robokassa/create] error stack", error.stack);
+    console.error("[robokassa/create] error details:", {
+      message: error?.message,
+      code: error?.code,
+      details: error?.details,
+      hint: error?.hint,
+    });
     
     return NextResponse.json(
       { 
         ok: false, 
         error: error.message || "Internal error",
+        details: process.env.NODE_ENV === "development" ? {
+          message: error?.message,
+          code: error?.code,
+          details: error?.details,
+          hint: error?.hint,
+        } : undefined,
       },
       { status: 500 }
     );
