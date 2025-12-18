@@ -31,11 +31,23 @@ function buildTrialReceipt() {
 export async function POST(req: Request) {
   try {
     const supabase = createServerSupabaseClient();
-    const { userId, email } = await req.json();
+    const body = await req.json();
+    const { userId, email } = body;
 
-    if (!userId || typeof userId !== "number") {
+    console.log("[robokassa/create] Request body:", { userId, email: email ? "provided" : "not provided" });
+
+    if (!userId) {
       return NextResponse.json(
-        { ok: false, error: "userId обязателен и должен быть числом" },
+        { ok: false, error: "userId обязателен" },
+        { status: 400 }
+      );
+    }
+
+    const numericUserId = typeof userId === "string" ? Number(userId) : userId;
+    
+    if (!Number.isFinite(numericUserId) || numericUserId <= 0) {
+      return NextResponse.json(
+        { ok: false, error: "userId должен быть положительным числом" },
         { status: 400 }
       );
     }
@@ -54,14 +66,14 @@ export async function POST(req: Request) {
     }
 
     console.log("[robokassa/create] ========== TRIAL PAYMENT CREATION ==========");
-    console.log("[robokassa/create] UserId:", userId);
+    console.log("[robokassa/create] UserId:", numericUserId);
     console.log("[robokassa/create] Amount:", TRIAL_PAYMENT_AMOUNT, "RUB");
 
     // Проверяем пользователя
     const { data: user, error: userError } = await supabase
       .from("users")
       .select("id, subscription_status, robokassa_initial_invoice_id")
-      .eq("id", userId)
+      .eq("id", numericUserId)
       .maybeSingle();
 
     if (userError || !user) {
@@ -80,7 +92,7 @@ export async function POST(req: Request) {
     }
 
     // Генерируем уникальный InvoiceID (числовой формат для Robokassa)
-    const invoiceId = `${userId}${Date.now()}`;
+    const invoiceId = `${numericUserId}${Date.now()}`;
     const amountStr = TRIAL_PAYMENT_AMOUNT.toFixed(2);
 
     // Формируем Receipt для фискализации (54-ФЗ)
@@ -111,7 +123,12 @@ export async function POST(req: Request) {
     params.push(`Culture=ru`);
     
     // Передаем userId для идентификации после оплаты
-    params.push(`Shp_userId=${userId}`);
+    params.push(`Shp_userId=${numericUserId}`);
+    
+    // Передаем email для Robokassa (если предоставлен)
+    if (email && typeof email === "string" && email.trim()) {
+      params.push(`Email=${encodeURIComponent(email.trim())}`);
+    }
 
     const paramsString = params.join("&");
     const robokassaUrl = "https://auth.robokassa.ru/Merchant/Index.aspx";
@@ -120,19 +137,38 @@ export async function POST(req: Request) {
     console.log("[robokassa/create] Payment URL:", paymentUrl);
     console.log("[robokassa/create] ==========================================");
 
-    // Сохраняем pending платеж
-    const { error: paymentInsertError } = await supabase.from("payments").insert({
-      user_id: userId,
-      invoice_id: invoiceId,
-      previous_invoice_id: null,
-      amount: TRIAL_PAYMENT_AMOUNT,
-      status: "pending",
-      is_recurring: true, // Это родительский платеж для рекуррентных списаний
-    });
-    
-    if (paymentInsertError) {
-      console.error("[robokassa/create] Error inserting payment:", paymentInsertError);
-      throw new Error(`Failed to save payment: ${paymentInsertError.message}`);
+    // Сохраняем pending платеж (проверяем, что таблица существует)
+    try {
+      const { error: paymentInsertError, data: paymentData } = await supabase
+        .from("payments")
+        .insert({
+          user_id: numericUserId,
+          invoice_id: invoiceId,
+          previous_invoice_id: null,
+          amount: TRIAL_PAYMENT_AMOUNT,
+          status: "pending",
+          is_recurring: true, // Это родительский платеж для рекуррентных списаний
+        })
+        .select();
+      
+      if (paymentInsertError) {
+        console.error("[robokassa/create] Error inserting payment:", paymentInsertError);
+        console.error("[robokassa/create] Payment error details:", {
+          message: paymentInsertError.message,
+          code: paymentInsertError.code,
+          details: paymentInsertError.details,
+          hint: paymentInsertError.hint,
+        });
+        throw new Error(`Failed to save payment: ${paymentInsertError.message}. Hint: ${paymentInsertError.hint || "Check if payments table exists"}`);
+      }
+      
+      console.log("[robokassa/create] Payment saved:", paymentData);
+    } catch (paymentErr: any) {
+      // Если ошибка связана с отсутствием таблицы, даем понятное сообщение
+      if (paymentErr.message?.includes("relation") || paymentErr.message?.includes("does not exist")) {
+        throw new Error("Payments table does not exist. Please run migrations/add_subscriptions.sql");
+      }
+      throw paymentErr;
     }
 
     return NextResponse.json({ 
