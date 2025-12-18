@@ -100,21 +100,16 @@ export async function POST(req: Request) {
     const invoiceId = `${numericUserId}${Date.now()}`;
     const amountStr = TRIAL_PAYMENT_AMOUNT.toFixed(2);
 
-    // ВАЖНО: Можно отключить Receipt для теста через переменную окружения
-    // Установите ROBOKASSA_SKIP_RECEIPT=true для тестирования без Receipt
-    const skipReceipt = process.env.ROBOKASSA_SKIP_RECEIPT === "true";
+    // ВРЕМЕННО: Отключаем Receipt по умолчанию для теста
+    // Включите через ROBOKASSA_USE_RECEIPT=true когда Receipt будет настроен в Robokassa
+    const useReceipt = process.env.ROBOKASSA_USE_RECEIPT === "true";
     
     let receiptJson: string | null = null;
     let receiptEncoded: string | null = null;
     let signatureBase: string;
     let signatureValue: string;
 
-    if (skipReceipt) {
-      // Подпись БЕЗ Receipt: MerchantLogin:OutSum:InvId:Password1
-      signatureBase = `${merchantLogin}:${amountStr}:${invoiceId}:${password1}`;
-      signatureValue = md5(signatureBase).toLowerCase();
-      console.log("[robokassa/create] ⚠️ Receipt отключен для теста (ROBOKASSA_SKIP_RECEIPT=true)");
-    } else {
+    if (useReceipt) {
       // Формируем Receipt для фискализации (54-ФЗ)
       receiptJson = buildTrialReceipt();
       // Важно: Receipt должен быть URL-encoded для передачи в URL
@@ -125,11 +120,17 @@ export async function POST(req: Request) {
       // ВАЖНО: Receipt включается в подпись как JSON строка (НЕ encoded, компактный JSON)
       signatureBase = `${merchantLogin}:${amountStr}:${invoiceId}:${receiptJson}:${password1}`;
       signatureValue = md5(signatureBase).toLowerCase();
+      console.log("[robokassa/create] ✅ Receipt включен");
+    } else {
+      // Подпись БЕЗ Receipt: MerchantLogin:OutSum:InvId:Password1
+      signatureBase = `${merchantLogin}:${amountStr}:${invoiceId}:${password1}`;
+      signatureValue = md5(signatureBase).toLowerCase();
+      console.log("[robokassa/create] ⚠️ Receipt отключен (по умолчанию). Установите ROBOKASSA_USE_RECEIPT=true для включения");
     }
 
     console.log("[robokassa/create] InvoiceId:", invoiceId);
     console.log("[robokassa/create] Amount (string):", amountStr);
-    console.log("[robokassa/create] Receipt enabled:", !skipReceipt);
+    console.log("[robokassa/create] Receipt enabled:", useReceipt);
     if (receiptJson) {
       console.log("[robokassa/create] Receipt JSON (raw):", receiptJson);
       console.log("[robokassa/create] Receipt JSON (length):", receiptJson.length);
@@ -150,7 +151,7 @@ export async function POST(req: Request) {
     params.push(`Description=${descriptionEncoded}`);
     
     // Receipt добавляем только если он включен
-    if (!skipReceipt && receiptEncoded) {
+    if (useReceipt && receiptEncoded) {
       params.push(`Receipt=${receiptEncoded}`);
     }
     
