@@ -32,9 +32,12 @@ function PaymentContent() {
     try {
       const res = await fetch(`/api/user?id=${id}`);
       const data = await res.json();
-      if (data.ok && data.user) {
-        setSubscriptionStatus(data.user.subscriptionStatus);
-        setTrialEndAt(data.user.trialEndAt);
+      if (data.ok) {
+        // API возвращает данные напрямую, не в объекте user
+        setSubscriptionStatus(data.subscriptionStatus);
+        setTrialEndAt(data.trialEndAt);
+      } else {
+        console.error("[payment] Error loading subscription status:", data.error);
       }
     } catch (e) {
       console.error("[payment] Error loading subscription status:", e);
