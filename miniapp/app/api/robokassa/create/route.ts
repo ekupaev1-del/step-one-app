@@ -37,8 +37,9 @@ export async function POST(req: Request) {
     console.log("[robokassa/create] Request body:", { userId, email: email ? "provided" : "not provided" });
 
     if (!userId) {
+      console.error("[robokassa/create] userId отсутствует в body");
       return NextResponse.json(
-        { ok: false, error: "userId обязателен" },
+        { ok: false, error: "userId обязателен в теле запроса" },
         { status: 400 }
       );
     }
@@ -46,8 +47,9 @@ export async function POST(req: Request) {
     const numericUserId = typeof userId === "string" ? Number(userId) : userId;
     
     if (!Number.isFinite(numericUserId) || numericUserId <= 0) {
+      console.error("[robokassa/create] Некорректный userId:", userId, "тип:", typeof userId);
       return NextResponse.json(
-        { ok: false, error: "userId должен быть положительным числом" },
+        { ok: false, error: `userId должен быть положительным числом, получено: ${userId} (тип: ${typeof userId})` },
         { status: 400 }
       );
     }

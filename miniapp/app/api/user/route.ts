@@ -10,18 +10,24 @@ export async function GET(req: Request) {
   );
 
   const url = new URL(req.url);
-  const userId = url.searchParams.get("userId");
+  // Поддерживаем оба параметра: userId и id (для совместимости)
+  const userId = url.searchParams.get("userId") || url.searchParams.get("id");
 
   if (!userId) {
+    console.error("[/api/user] userId не передан в query params");
     return NextResponse.json(
-      { ok: false, error: "userId обязателен" },
+      { ok: false, error: "userId обязателен (используйте ?userId=123 или ?id=123)" },
       { status: 400 }
     );
   }
 
   const numericId = Number(userId);
-  if (!Number.isFinite(numericId)) {
-    return NextResponse.json({ ok: false, error: "userId должен быть числом" }, { status: 400 });
+  if (!Number.isFinite(numericId) || numericId <= 0) {
+    console.error("[/api/user] Некорректный userId:", userId);
+    return NextResponse.json({ 
+      ok: false, 
+      error: `userId должен быть положительным числом, получено: ${userId}` 
+    }, { status: 400 });
   }
 
   // Получаем данные пользователя (полный профиль)
