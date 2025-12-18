@@ -6,20 +6,19 @@ import crypto from "crypto";
 const TRIAL_PAYMENT_AMOUNT = 1;
 // Цена подписки после триала
 const SUBSCRIPTION_AMOUNT = 199;
-const DESCRIPTION = "Step One subscription (1 month)";
 
 function md5(input: string) {
   return crypto.createHash("md5").update(input).digest("hex");
 }
 
-function buildReceipt(amount: number) {
+function buildTrialReceipt() {
   const receipt = {
     sno: "usn_income", // УСН доходы (self-employed)
     items: [
       {
-        name: DESCRIPTION,
+        name: "Подписка Step One — пробный период 3 дня",
         quantity: 1,
-        sum: amount,
+        sum: TRIAL_PAYMENT_AMOUNT,
         payment_method: "full_payment",
         payment_object: "service",
         tax: "none",
@@ -61,7 +60,7 @@ export async function POST(req: Request) {
     // Проверяем пользователя
     const { data: user, error: userError } = await supabase
       .from("users")
-      .select("id, subscription_status, robokassa_parent_invoice_id")
+      .select("id, subscription_status, robokassa_initial_invoice_id")
       .eq("id", userId)
       .maybeSingle();
 
@@ -80,24 +79,27 @@ export async function POST(req: Request) {
       );
     }
 
-    // Генерируем уникальный InvoiceID
-    const invoiceId = `trial_${userId}_${Date.now()}`;
+    // Генерируем уникальный InvoiceID (числовой формат для Robokassa)
+    const invoiceId = `${userId}${Date.now()}`;
     const amountStr = TRIAL_PAYMENT_AMOUNT.toFixed(2);
 
-    // Формируем Receipt для фискализации
-    const receiptJson = buildReceipt(TRIAL_PAYMENT_AMOUNT);
+    // Формируем Receipt для фискализации (54-ФЗ)
+    const receiptJson = buildTrialReceipt();
     const receiptEncoded = encodeURIComponent(receiptJson);
 
     // Подпись: MerchantLogin:OutSum:InvId:Receipt:Password1
+    // ВАЖНО: Receipt включается в подпись как JSON строка (не encoded)
     const signatureBase = `${merchantLogin}:${amountStr}:${invoiceId}:${receiptJson}:${password1}`;
     const signatureValue = md5(signatureBase).toLowerCase();
 
     console.log("[robokassa/create] InvoiceId:", invoiceId);
+    console.log("[robokassa/create] Receipt JSON:", receiptJson);
     console.log("[robokassa/create] Signature base:", signatureBase);
     console.log("[robokassa/create] Signature value:", signatureValue);
 
     // Формируем URL для оплаты с Recurring=true
-    const descriptionEncoded = encodeURIComponent(DESCRIPTION);
+    const description = "Подписка Step One — пробный период 3 дня";
+    const descriptionEncoded = encodeURIComponent(description);
     const params: string[] = [];
     params.push(`MerchantLogin=${encodeURIComponent(merchantLogin)}`);
     params.push(`OutSum=${amountStr}`);

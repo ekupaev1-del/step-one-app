@@ -27,7 +27,7 @@ export async function GET(req: Request) {
   // Получаем данные пользователя (полный профиль)
   const { data: user, error } = await supabase
     .from("users")
-    .select("weight, height, goal, activity, gender, age, calories, protein, fat, carbs, water_goal_ml, avatar_url, name, subscription_status, trial_end_at, subscription_end_at, paid_until, robokassa_parent_invoice_id")
+    .select("weight, height, goal, activity, gender, age, calories, protein, fat, carbs, water_goal_ml, avatar_url, name, subscription_status, trial_started_at, trial_end_at, next_charge_at, paid_until, robokassa_initial_invoice_id")
     .eq("id", numericId)
     .maybeSingle();
 
@@ -57,10 +57,12 @@ export async function GET(req: Request) {
     waterGoalMl: user.water_goal_ml ? Number(user.water_goal_ml) : null,
     avatarUrl: user.avatar_url || null,
     subscriptionStatus: user.subscription_status || null,
+    trialStartedAt: user.trial_started_at || null,
     trialEndAt: user.trial_end_at || null,
+    nextChargeAt: user.next_charge_at || null,
     subscriptionEndAt: user.subscription_end_at || null,
     paidUntil: user.paid_until || null,
-    robokassaParentInvoiceId: user.robokassa_parent_invoice_id || null
+    robokassaInitialInvoiceId: user.robokassa_initial_invoice_id || null
   });
 }
 

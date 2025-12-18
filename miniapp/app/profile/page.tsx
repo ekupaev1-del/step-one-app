@@ -21,10 +21,12 @@ interface ProfileData {
   carbsGoal: number | null;
   waterGoalMl: number | null;
   subscriptionStatus: string | null;
+  trialStartedAt: string | null;
   trialEndAt: string | null;
+  nextChargeAt: string | null;
   subscriptionEndAt: string | null;
   paidUntil: string | null;
-  robokassaParentInvoiceId: string | null;
+  robokassaInitialInvoiceId: string | null;
 }
 
 function ProfilePageContent() {
@@ -137,10 +139,12 @@ function ProfilePageContent() {
           carbsGoal: data.carbsGoal,
           waterGoalMl: data.waterGoalMl,
           subscriptionStatus: data.subscriptionStatus,
+          trialStartedAt: data.trialStartedAt,
           trialEndAt: data.trialEndAt,
+          nextChargeAt: data.nextChargeAt,
           subscriptionEndAt: data.subscriptionEndAt,
           paidUntil: data.paidUntil,
-          robokassaParentInvoiceId: data.robokassaParentInvoiceId
+          robokassaInitialInvoiceId: data.robokassaInitialInvoiceId
         });
 
         setAvatarUrl(data.avatarUrl || null);
@@ -399,9 +403,12 @@ function ProfilePageContent() {
         setProfile({
           ...profile,
           subscriptionStatus: profileData.subscriptionStatus,
-          subscriptionEndAt: profileData.subscriptionEndAt,
+          trialStartedAt: profileData.trialStartedAt,
           trialEndAt: profileData.trialEndAt,
-          paidUntil: profileData.paidUntil
+          nextChargeAt: profileData.nextChargeAt,
+          subscriptionEndAt: profileData.subscriptionEndAt,
+          paidUntil: profileData.paidUntil,
+          robokassaInitialInvoiceId: profileData.robokassaInitialInvoiceId
         });
       }
     } catch (err: any) {
@@ -431,7 +438,17 @@ function ProfilePageContent() {
   };
 
   const getNextBillingDate = (): string | null => {
-    // Если триал активен, следующее списание - после окончания триала
+    // Используем next_charge_at для определения следующего списания
+    if (profile.nextChargeAt) {
+      const nextCharge = new Date(profile.nextChargeAt);
+      return nextCharge.toLocaleDateString("ru-RU", {
+        day: "numeric",
+        month: "long",
+        year: "numeric",
+      });
+    }
+    
+    // Fallback для обратной совместимости
     if (profile.subscriptionStatus === "trial" && profile.trialEndAt) {
       const trialEnd = new Date(profile.trialEndAt);
       return trialEnd.toLocaleDateString("ru-RU", {
@@ -440,25 +457,16 @@ function ProfilePageContent() {
         year: "numeric",
       });
     }
-    // Если подписка активна, используем paid_until (если есть) или subscription_end_at
-    if (profile.subscriptionStatus === "active") {
-      if (profile.paidUntil) {
-        const paidUntil = new Date(profile.paidUntil);
-        return paidUntil.toLocaleDateString("ru-RU", {
-          day: "numeric",
-          month: "long",
-          year: "numeric",
-        });
-      }
-      if (profile.subscriptionEndAt) {
-        const endDate = new Date(profile.subscriptionEndAt);
-        return endDate.toLocaleDateString("ru-RU", {
-          day: "numeric",
-          month: "long",
-          year: "numeric",
-        });
-      }
+    
+    if (profile.subscriptionStatus === "active" && profile.paidUntil) {
+      const paidUntil = new Date(profile.paidUntil);
+      return paidUntil.toLocaleDateString("ru-RU", {
+        day: "numeric",
+        month: "long",
+        year: "numeric",
+      });
     }
+    
     return null;
   };
 

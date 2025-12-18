@@ -4,21 +4,20 @@ import { supabase } from "./supabase.js";
 import { env } from "../config/env.js";
 
 const SUBSCRIPTION_AMOUNT = 199;
-const DESCRIPTION = "Step One subscription (1 month)";
 const RECURRING_URL = "https://auth.robokassa.ru/Merchant/Recurring";
 
 function md5(input: string) {
   return crypto.createHash("md5").update(input).digest("hex");
 }
 
-function buildReceipt(amount: number) {
+function buildSubscriptionReceipt() {
   const receipt = {
     sno: "usn_income", // УСН доходы (self-employed)
     items: [
       {
-        name: DESCRIPTION,
+        name: "Подписка Step One — 30 дней",
         quantity: 1,
-        sum: amount,
+        sum: SUBSCRIPTION_AMOUNT,
         payment_method: "full_payment",
         payment_object: "service",
         tax: "none",
@@ -29,38 +28,39 @@ function buildReceipt(amount: number) {
 }
 
 /**
- * Списывает 199 RUB с пользователя после окончания триала
+ * Списывает 199 RUB с пользователя после окончания триала или для продления подписки
  */
 async function chargeUserAfterTrial(user: any) {
-  if (!user.robokassa_parent_invoice_id) {
-    console.error(`[recurring] User ${user.id} has no parent_invoice_id`);
+  if (!user.robokassa_initial_invoice_id) {
+    console.error(`[recurring] User ${user.id} has no robokassa_initial_invoice_id`);
     return;
   }
 
-  const invoiceId = `rec_${user.id}_${Date.now()}`;
-  const { json: receiptJson, encoded: receiptEncoded } = {
-    json: buildReceipt(SUBSCRIPTION_AMOUNT),
-    encoded: encodeURIComponent(buildReceipt(SUBSCRIPTION_AMOUNT)),
-  };
+  // Генерируем новый InvoiceID (числовой формат)
+  const invoiceId = `${user.id}${Date.now()}`;
+  const receiptJson = buildSubscriptionReceipt();
+  const receiptEncoded = encodeURIComponent(receiptJson);
 
   // SignatureValue: MerchantLogin:OutSum:InvoiceID:Receipt:Password1
   // PreviousInvoiceID НЕ включается в подпись для рекуррентных платежей
   const signatureBase = `${env.robokassaMerchantLogin}:${SUBSCRIPTION_AMOUNT}:${invoiceId}:${receiptJson}:${env.robokassaPassword1}`;
   const signatureValue = md5(signatureBase).toLowerCase();
 
+  const description = "Подписка Step One — 30 дней";
   const body = new URLSearchParams({
     MerchantLogin: env.robokassaMerchantLogin,
     InvoiceID: invoiceId,
-    PreviousInvoiceID: user.robokassa_parent_invoice_id,
+    PreviousInvoiceID: user.robokassa_initial_invoice_id,
     OutSum: SUBSCRIPTION_AMOUNT.toString(),
-    Description: DESCRIPTION,
+    Description: description,
     SignatureValue: signatureValue,
     Receipt: receiptEncoded,
   });
 
-  console.log(`[recurring] Charging user ${user.id} after trial`);
-  console.log(`[recurring] Parent invoice: ${user.robokassa_parent_invoice_id}`);
+  console.log(`[recurring] Charging user ${user.id}`);
+  console.log(`[recurring] Initial invoice: ${user.robokassa_initial_invoice_id}`);
   console.log(`[recurring] New invoice: ${invoiceId}`);
+  console.log(`[recurring] Receipt JSON: ${receiptJson}`);
 
   // Записываем платеж как pending перед запросом
   const { data: paymentRow } = await supabase
@@ -68,7 +68,7 @@ async function chargeUserAfterTrial(user: any) {
     .insert({
       user_id: user.id,
       invoice_id: invoiceId,
-      previous_invoice_id: user.robokassa_parent_invoice_id,
+      previous_invoice_id: user.robokassa_initial_invoice_id,
       amount: SUBSCRIPTION_AMOUNT,
       status: "pending",
       is_recurring: true,
@@ -176,14 +176,14 @@ export async function runRecurringBilling() {
   console.log("[recurring] ========== CHECKING EXPIRED TRIALS ==========");
   console.log("[recurring] Current time:", nowISO);
 
-  // Находим пользователей с истекшими триалами
+  // Находим пользователей с истекшими триалами (проверяем next_charge_at)
   const { data: users, error } = await supabase
     .from("users")
-    .select("id, trial_end_at, robokassa_parent_invoice_id")
+    .select("id, next_charge_at, robokassa_initial_invoice_id")
     .eq("subscription_status", "trial")
-    .not("trial_end_at", "is", null)
-    .not("robokassa_parent_invoice_id", "is", null)
-    .lte("trial_end_at", nowISO);
+    .not("next_charge_at", "is", null)
+    .not("robokassa_initial_invoice_id", "is", null)
+    .lte("next_charge_at", nowISO);
 
   if (error) {
     console.error("[recurring] Fetch users error:", error);
@@ -209,19 +209,18 @@ export async function runRecurringBilling() {
  */
 export async function renewActiveSubscriptions() {
   const now = new Date();
-  const tomorrow = new Date(now.getTime() + 24 * 60 * 60 * 1000);
-  const tomorrowISO = tomorrow.toISOString();
+  const nowISO = now.toISOString();
 
   console.log("[recurring] ========== CHECKING EXPIRING SUBSCRIPTIONS ==========");
 
-  // Находим пользователей с активными подписками, которые заканчиваются завтра
+  // Находим пользователей с активными подписками, которые нужно продлить (next_charge_at <= now)
   const { data: users, error } = await supabase
     .from("users")
-    .select("id, paid_until, robokassa_parent_invoice_id")
+    .select("id, next_charge_at, robokassa_initial_invoice_id")
     .eq("subscription_status", "active")
-    .not("robokassa_parent_invoice_id", "is", null)
-    .not("paid_until", "is", null)
-    .lte("paid_until", tomorrowISO);
+    .not("robokassa_initial_invoice_id", "is", null)
+    .not("next_charge_at", "is", null)
+    .lte("next_charge_at", nowISO);
 
   if (error) {
     console.error("[recurring] Fetch users error:", error);

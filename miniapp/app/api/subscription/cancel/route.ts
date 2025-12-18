@@ -25,7 +25,7 @@ export async function POST(req: Request) {
     // Проверяем пользователя
     const { data: user, error: userError } = await supabase
       .from("users")
-      .select("id, subscription_status, robokassa_parent_invoice_id")
+      .select("id, subscription_status, robokassa_initial_invoice_id")
       .eq("id", numericId)
       .maybeSingle();
 
@@ -36,13 +36,13 @@ export async function POST(req: Request) {
       );
     }
 
-    // Отменяем подписку - устанавливаем статус expired
-    // Также очищаем robokassa_parent_invoice_id чтобы отключить автопродление
+    // Отменяем подписку - устанавливаем статус canceled
+    // Также очищаем robokassa_initial_invoice_id чтобы отключить автопродление
     const { error: updateError } = await supabase
       .from("users")
       .update({
-        subscription_status: "expired",
-        robokassa_parent_invoice_id: null
+        subscription_status: "canceled",
+        robokassa_initial_invoice_id: null
       })
       .eq("id", numericId);
 

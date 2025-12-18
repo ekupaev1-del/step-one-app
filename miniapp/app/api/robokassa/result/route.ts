@@ -134,21 +134,27 @@ async function handle(req: Request) {
     
     if (amount === 1) {
       // Это первый платеж 1 RUB - активируем триал
-      const trialEndAt = new Date(now.getTime() + 3 * 24 * 60 * 60 * 1000); // +3 дня
+      const trialStartedAt = now;
+      const trialEndsAt = new Date(now.getTime() + 3 * 24 * 60 * 60 * 1000); // +3 дня
+      const nextChargeAt = trialEndsAt; // Следующее списание после окончания триала
       
       await supabase
         .from("users")
         .update({
           subscription_status: "trial",
-          trial_end_at: trialEndAt.toISOString(),
-          robokassa_parent_invoice_id: invId, // Сохраняем parent invoice ID для рекуррентных платежей
+          trial_started_at: trialStartedAt.toISOString(),
+          trial_end_at: trialEndsAt.toISOString(),
+          next_charge_at: nextChargeAt.toISOString(),
+          robokassa_initial_invoice_id: invId, // Сохраняем initial invoice ID для рекуррентных платежей
           last_payment_status: "success",
         })
         .eq("id", userId);
 
       console.log("[robokassa/result] ✅ Trial activated for user:", userId);
-      console.log("[robokassa/result] Trial ends at:", trialEndAt.toISOString());
-      console.log("[robokassa/result] Parent invoice ID:", invId);
+      console.log("[robokassa/result] Trial started at:", trialStartedAt.toISOString());
+      console.log("[robokassa/result] Trial ends at:", trialEndsAt.toISOString());
+      console.log("[robokassa/result] Next charge at:", nextChargeAt.toISOString());
+      console.log("[robokassa/result] Initial invoice ID:", invId);
 
       // Отправляем уведомление боту о активации триала
       try {
@@ -165,7 +171,7 @@ async function handle(req: Request) {
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({
               userId,
-              message: "🎉 Триал активирован! У вас есть 3 дня полного доступа ко всем функциям бота.",
+              message: "Спасибо! Пробный период активирован на 3 дня.\nСледующее списание — 199 ₽ через 3 дня.",
             }),
           });
         }
@@ -174,19 +180,20 @@ async function handle(req: Request) {
       }
     } else if (amount === 199) {
       // Это рекуррентный платеж 199 RUB - активируем подписку на 30 дней
-      const paidUntil = new Date(now.getTime() + 30 * 24 * 60 * 60 * 1000); // +30 дней
+      const nextChargeAt = new Date(now.getTime() + 30 * 24 * 60 * 60 * 1000); // +30 дней
       
       await supabase
         .from("users")
         .update({
           subscription_status: "active",
-          paid_until: paidUntil.toISOString(),
+          next_charge_at: nextChargeAt.toISOString(),
+          paid_until: nextChargeAt.toISOString(),
           last_payment_status: "success",
         })
         .eq("id", userId);
 
       console.log("[robokassa/result] ✅ Subscription activated for user:", userId);
-      console.log("[robokassa/result] Paid until:", paidUntil.toISOString());
+      console.log("[robokassa/result] Next charge at:", nextChargeAt.toISOString());
 
       // Отправляем уведомление боту об успешном платеже
       try {
@@ -203,7 +210,7 @@ async function handle(req: Request) {
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({
               userId,
-              message: "✅ Подписка продлена! Доступ активен до " + paidUntil.toLocaleDateString("ru-RU", {
+              message: "✅ Подписка продлена! Доступ активен до " + nextChargeAt.toLocaleDateString("ru-RU", {
                 day: "numeric",
                 month: "long",
                 year: "numeric",

@@ -2,6 +2,7 @@
 
 import { useSearchParams } from "next/navigation";
 import { useState, useEffect, Suspense } from "react";
+import Link from "next/link";
 import AppLayout from "../components/AppLayout";
 
 function PaymentContent() {
@@ -144,9 +145,18 @@ function PaymentContent() {
                 disabled={!userId || loading}
                 className="w-full py-3 rounded-xl bg-accent text-white font-semibold hover:opacity-90 disabled:opacity-50"
               >
-                {loading ? "Создаём оплату..." : "Начать триал (1 ₽)"}
+                {loading ? "Создаём оплату..." : "Начать пробный период"}
               </button>
             </>
+          )}
+
+          {(isTrialActive || isActive) && (
+            <Link
+              href={`/profile?id=${userId}`}
+              className="block w-full py-3 rounded-xl border border-gray-200 text-textPrimary font-semibold hover:bg-gray-50 text-center"
+            >
+              Отменить подписку
+            </Link>
           )}
 
           <p className="text-xs text-textSecondary text-center">
