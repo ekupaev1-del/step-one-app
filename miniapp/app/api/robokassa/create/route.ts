@@ -100,21 +100,40 @@ export async function POST(req: Request) {
     const invoiceId = `${numericUserId}${Date.now()}`;
     const amountStr = TRIAL_PAYMENT_AMOUNT.toFixed(2);
 
-    // Формируем Receipt для фискализации (54-ФЗ)
-    const receiptJson = buildTrialReceipt();
-    // Важно: Receipt должен быть URL-encoded для передачи в URL
-    const receiptEncoded = encodeURIComponent(receiptJson);
+    // ВАЖНО: Можно отключить Receipt для теста через переменную окружения
+    // Установите ROBOKASSA_SKIP_RECEIPT=true для тестирования без Receipt
+    const skipReceipt = process.env.ROBOKASSA_SKIP_RECEIPT === "true";
+    
+    let receiptJson: string | null = null;
+    let receiptEncoded: string | null = null;
+    let signatureBase: string;
+    let signatureValue: string;
 
-    // Подпись для платежа с Receipt:
-    // MerchantLogin:OutSum:InvId:Receipt:Password1
-    // ВАЖНО: Receipt включается в подпись как JSON строка (НЕ encoded, компактный JSON)
-    const signatureBase = `${merchantLogin}:${amountStr}:${invoiceId}:${receiptJson}:${password1}`;
-    const signatureValue = md5(signatureBase).toLowerCase();
+    if (skipReceipt) {
+      // Подпись БЕЗ Receipt: MerchantLogin:OutSum:InvId:Password1
+      signatureBase = `${merchantLogin}:${amountStr}:${invoiceId}:${password1}`;
+      signatureValue = md5(signatureBase).toLowerCase();
+      console.log("[robokassa/create] ⚠️ Receipt отключен для теста (ROBOKASSA_SKIP_RECEIPT=true)");
+    } else {
+      // Формируем Receipt для фискализации (54-ФЗ)
+      receiptJson = buildTrialReceipt();
+      // Важно: Receipt должен быть URL-encoded для передачи в URL
+      receiptEncoded = encodeURIComponent(receiptJson);
+
+      // Подпись для платежа с Receipt:
+      // MerchantLogin:OutSum:InvId:Receipt:Password1
+      // ВАЖНО: Receipt включается в подпись как JSON строка (НЕ encoded, компактный JSON)
+      signatureBase = `${merchantLogin}:${amountStr}:${invoiceId}:${receiptJson}:${password1}`;
+      signatureValue = md5(signatureBase).toLowerCase();
+    }
 
     console.log("[robokassa/create] InvoiceId:", invoiceId);
     console.log("[robokassa/create] Amount (string):", amountStr);
-    console.log("[robokassa/create] Receipt JSON (raw):", receiptJson);
-    console.log("[robokassa/create] Receipt JSON (length):", receiptJson.length);
+    console.log("[robokassa/create] Receipt enabled:", !skipReceipt);
+    if (receiptJson) {
+      console.log("[robokassa/create] Receipt JSON (raw):", receiptJson);
+      console.log("[robokassa/create] Receipt JSON (length):", receiptJson.length);
+    }
     console.log("[robokassa/create] Signature base:", signatureBase);
     console.log("[robokassa/create] Signature value:", signatureValue);
 
@@ -130,9 +149,10 @@ export async function POST(req: Request) {
     params.push(`InvId=${invoiceId}`);
     params.push(`Description=${descriptionEncoded}`);
     
-    // Receipt добавляем только если он правильно сформирован
-    // Robokassa может требовать определенный формат
-    params.push(`Receipt=${receiptEncoded}`);
+    // Receipt добавляем только если он включен
+    if (!skipReceipt && receiptEncoded) {
+      params.push(`Receipt=${receiptEncoded}`);
+    }
     
     // Recurring должен быть перед SignatureValue
     params.push(`Recurring=true`); // ВАЖНО: включаем рекуррентные платежи
@@ -153,7 +173,9 @@ export async function POST(req: Request) {
     
     // Логируем финальный URL для отладки (без паролей)
     console.log("[robokassa/create] URL parameters count:", params.length);
-    console.log("[robokassa/create] Receipt encoded length:", receiptEncoded.length);
+    if (receiptEncoded) {
+      console.log("[robokassa/create] Receipt encoded length:", receiptEncoded.length);
+    }
 
     const paramsString = params.join("&");
     const robokassaUrl = "https://auth.robokassa.ru/Merchant/Index.aspx";
