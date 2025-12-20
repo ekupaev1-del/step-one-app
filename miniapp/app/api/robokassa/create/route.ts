@@ -158,6 +158,7 @@ export async function POST(req: Request) {
 
     // ВАЖНО: Robokassa требует POST форму, а не GET URL!
     // Формируем данные для POST формы
+    const description = "Подписка Step One — пробный период 3 дня";
     const robokassaDomain = process.env.ROBOKASSA_DOMAIN || "auth.robokassa.ru";
     const robokassaActionUrl = `https://${robokassaDomain}/Merchant/Index.aspx`;
     
