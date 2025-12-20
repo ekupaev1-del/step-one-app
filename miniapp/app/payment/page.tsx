@@ -60,13 +60,30 @@ function PaymentContent() {
       console.log("[payment] Response status:", res.status);
       console.log("[payment] Response data:", data);
       
-      if (!res.ok || !data.ok) {
-        const errorMsg = data.error || "Ошибка создания платежа";
+      // Проверяем статус ответа
+      if (!res.ok) {
+        const errorMsg = data?.error || `HTTP ${res.status}: Ошибка сервера`;
+        console.error("[payment] HTTP error:", res.status, errorMsg);
         throw new Error(errorMsg);
       }
       
+      // Проверяем, что API вернул успешный ответ
+      if (!data.ok) {
+        const errorMsg = data?.error || "Ошибка создания платежа";
+        console.error("[payment] API error:", errorMsg, data);
+        throw new Error(errorMsg);
+      }
+      
+      // Проверяем наличие данных для POST формы
       if (!data.actionUrl || !data.formData) {
-        throw new Error("Данные для оплаты не получены от сервера");
+        console.error("[payment] Missing required data:", {
+          hasActionUrl: !!data.actionUrl,
+          hasFormData: !!data.formData,
+          actionUrl: data.actionUrl,
+          formDataKeys: data.formData ? Object.keys(data.formData) : null,
+          fullResponse: data,
+        });
+        throw new Error("Данные для оплаты не получены от сервера. Проверьте логи консоли.");
       }
       
       console.log("[payment] ✅ Payment data получены");
