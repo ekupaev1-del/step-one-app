@@ -196,29 +196,31 @@ function PaymentContent() {
           )}
 
           <div className="space-y-3">
-            <label className="flex items-start gap-3 cursor-pointer">
-              <input
-                type="checkbox"
-                checked={agreedToTerms}
-                onChange={(e) => setAgreedToTerms(e.target.checked)}
-                className="mt-1 w-5 h-5 rounded border-gray-300 text-accent focus:ring-accent cursor-pointer"
-              />
-              <span className="text-sm text-textPrimary flex-1">
-                Я согласен на автоматические списания согласно{" "}
-                <Link
-                  href={`/oferta?id=${userId}`}
-                  className="text-accent underline hover:text-accent/80"
-                  target="_blank"
-                >
-                  условиям оферты
-                </Link>
-              </span>
-            </label>
+            <div className="bg-gray-50 border border-gray-200 rounded-xl p-4">
+              <label className="flex items-start gap-3 cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={agreedToTerms}
+                  onChange={(e) => setAgreedToTerms(e.target.checked)}
+                  className="mt-0.5 w-5 h-5 rounded border-gray-300 text-accent focus:ring-2 focus:ring-accent cursor-pointer flex-shrink-0"
+                />
+                <span className="text-sm text-textPrimary flex-1 leading-relaxed">
+                  Я согласен на автоматические списания согласно{" "}
+                  <Link
+                    href={userId ? `/oferta?id=${userId}` : "/oferta"}
+                    className="text-accent underline hover:text-accent/80 font-medium"
+                    target="_blank"
+                  >
+                    условиям оферты
+                  </Link>
+                </span>
+              </label>
+            </div>
 
             <button
               onClick={startTrial}
               disabled={!userId || loading || !agreedToTerms}
-              className="w-full py-3 rounded-xl bg-accent text-white font-semibold hover:opacity-90 disabled:opacity-50 disabled:cursor-not-allowed"
+              className="w-full py-3 rounded-xl bg-accent text-white font-semibold hover:opacity-90 disabled:opacity-50 disabled:cursor-not-allowed transition-opacity"
             >
               {loading ? "Создаём оплату..." : "Начать пробный период"}
             </button>
