@@ -151,9 +151,17 @@ export async function POST(req: Request) {
     const robokassaUrl = "https://auth.robokassa.ru/Merchant/Index.aspx";
     const paymentUrl = `${robokassaUrl}?${paramsString}`;
 
-    // DEBUG: Логируем итоговый URL (без паролей)
+    // DEBUG: Логируем итоговый URL и параметры
     console.log("[robokassa/create] Payment URL:", paymentUrl);
     console.log("[robokassa/create] URL length:", paymentUrl.length);
+    console.log("[robokassa/create] Parameters:", {
+      MerchantLogin: merchantLogin,
+      OutSum: amountStr,
+      InvId: invoiceId,
+      Recurring: "1",
+      Receipt: receiptEncoded.substring(0, 50) + "...",
+      SignatureValue: signatureValue.substring(0, 10) + "...",
+    });
     console.log("[robokassa/create] ==========================================");
 
     // Сохраняем платеж в БД (опционально, для отслеживания)
