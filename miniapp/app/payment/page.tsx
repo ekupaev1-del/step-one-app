@@ -58,7 +58,7 @@ function PaymentContent() {
       const data = await res.json();
       
       console.log("[payment] Response status:", res.status);
-      console.log("[payment] Response data:", data);
+      console.log("[payment] Response data:", JSON.stringify(data, null, 2));
       
       // Проверяем статус ответа
       if (!res.ok) {
@@ -68,13 +68,23 @@ function PaymentContent() {
       }
       
       // Проверяем, что API вернул успешный ответ
-      if (!data.ok) {
+      if (!data || !data.ok) {
         const errorMsg = data?.error || "Ошибка создания платежа";
         console.error("[payment] API error:", errorMsg, data);
         throw new Error(errorMsg);
       }
       
       // Проверяем наличие данных для POST формы
+      console.log("[payment] Checking response data:", {
+        hasOk: !!data.ok,
+        hasActionUrl: !!data.actionUrl,
+        hasFormData: !!data.formData,
+        actionUrl: data.actionUrl,
+        formDataType: typeof data.formData,
+        formDataKeys: data.formData ? Object.keys(data.formData) : null,
+        fullResponseKeys: Object.keys(data),
+      });
+      
       if (!data.actionUrl || !data.formData) {
         console.error("[payment] Missing required data:", {
           hasActionUrl: !!data.actionUrl,
