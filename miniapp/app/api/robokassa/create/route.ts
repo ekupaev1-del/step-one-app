@@ -167,8 +167,15 @@ export async function POST(req: Request) {
     });
 
     const paramsString = params.join("&");
-    const robokassaUrl = "https://auth.robokassa.ru/Merchant/Index.aspx";
+    
+    // ВАЖНО: Проверяем, какой домен использовать
+    // Если аккаунт в .kz, используем .kz, иначе .ru
+    // По умолчанию используем .ru, но можно переопределить через переменную окружения
+    const robokassaDomain = process.env.ROBOKASSA_DOMAIN || "auth.robokassa.ru";
+    const robokassaUrl = `https://${robokassaDomain}/Merchant/Index.aspx`;
     const paymentUrl = `${robokassaUrl}?${paramsString}`;
+    
+    console.log("[robokassa/create] Using Robokassa domain:", robokassaDomain);
 
     // DEBUG: Логируем итоговый URL и параметры
     console.log("[robokassa/create] Payment URL:", paymentUrl);
