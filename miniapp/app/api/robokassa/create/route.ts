@@ -156,55 +156,6 @@ export async function POST(req: Request) {
     console.log("[robokassa/create] Signature base (без пароля):", signatureBaseForLog);
     console.log("[robokassa/create] Signature value:", signatureValue);
 
-    // Формируем URL для оплаты
-    // ВАЖНО: Порядок параметров критичен для Robokassa
-    // Согласно документации, порядок должен быть:
-    // 1. MerchantLogin
-    // 2. OutSum
-    // 3. InvId
-    // 4. Description
-    // 5. Receipt (если используется)
-    // 6. Recurring (если используется)
-    // 7. SignatureValue
-    // 8. Дополнительные параметры (Culture, Shp_*)
-    
-    const description = "Подписка Step One — пробный период 3 дня";
-    const params: string[] = [];
-    
-    // 1. Базовые обязательные параметры (строгий порядок)
-    params.push(`MerchantLogin=${encodeURIComponent(merchantLogin)}`);
-    params.push(`OutSum=${amountStr}`);
-    params.push(`InvId=${invoiceId}`); // ВАЖНО: InvoiceID как строка, но только цифры
-    params.push(`Description=${encodeURIComponent(description)}`);
-    
-    // 2. Receipt (для фискализации 54-ФЗ) - только если не отключен
-    if (!skipReceipt && receiptEncoded) {
-      params.push(`Receipt=${receiptEncoded}`);
-    }
-    
-    // 3. Recurring - ВАЖНО: значение "true" для включения рекуррентных платежей (по документации Robokassa)
-    params.push(`Recurring=true`);
-    
-    // 4. SignatureValue - должен быть после всех параметров, влияющих на подпись
-    params.push(`SignatureValue=${signatureValue}`);
-    
-    // 5. Дополнительные параметры
-    params.push(`Culture=ru`);
-    
-    // 6. Shp_ параметры (для идентификации после оплаты)
-    // ВАЖНО: Shp_ параметры НЕ включаются в подпись для первого платежа
-    params.push(`Shp_userId=${numericUserId}`);
-    
-    // Логируем все параметры для отладки
-    console.log("[robokassa/create] URL Parameters (in order):");
-    params.forEach((param, index) => {
-      const [key, value] = param.split('=');
-      const displayValue = key === 'Receipt' || key === 'SignatureValue' 
-        ? value.substring(0, 30) + '...' 
-        : value;
-      console.log(`  ${index + 1}. ${key}=${displayValue}`);
-    });
-
     // ВАЖНО: Robokassa требует POST форму, а не GET URL!
     // Формируем данные для POST формы
     const robokassaDomain = process.env.ROBOKASSA_DOMAIN || "auth.robokassa.ru";
