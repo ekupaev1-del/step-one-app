@@ -1304,31 +1304,37 @@ bot.on("text", async (ctx) => {
     // Telegram автоматически откроет Mini App при нажатии на кнопку
 
     if (text === "💬 Служба заботы") {
-      const supportKeyboard = {
-        inline_keyboard: [
-          [
-            {
-              text: "📧 Написать на почту",
-              url: "mailto:steponehub@yandex.com"
-            }
-          ],
-          [
-            {
-              text: "💬 Написать в телеграм",
-              url: "https://t.me/step0ne11"
-            }
+      try {
+        const supportKeyboard = {
+          inline_keyboard: [
+            [
+              {
+                text: "📧 Написать на почту",
+                url: "mailto:steponehub@yandex.com"
+              }
+            ],
+            [
+              {
+                text: "💬 Написать в телеграм",
+                url: "https://t.me/step0ne11"
+              }
+            ]
           ]
-        ]
-      };
+        };
 
-      await ctx.reply(
-        "💬 <b>Служба заботы</b>\n\nВыберите способ связи:",
-        {
-          parse_mode: "HTML",
-          reply_markup: supportKeyboard
-        }
-      );
-      return;
+        await ctx.reply(
+          "💬 <b>Служба заботы</b>\n\nВыберите способ связи:",
+          {
+            parse_mode: "HTML",
+            reply_markup: supportKeyboard
+          }
+        );
+        return;
+      } catch (error: any) {
+        console.error("[bot] Ошибка обработки Служба заботы:", error);
+        await ctx.reply("❌ Ошибка при открытии службы заботы. Попробуйте позже.");
+        return;
+      }
     }
 
     if (text === "⏰ Напомнить о приёме пищи") {
