@@ -1310,12 +1310,6 @@ bot.on("text", async (ctx) => {
           inline_keyboard: [
             [
               {
-                text: "📧 Написать на почту",
-                url: "mailto:steponehub@yandex.com"
-              }
-            ],
-            [
-              {
                 text: "💬 Написать в телеграм",
                 url: "https://t.me/step0ne11"
               }
@@ -1325,7 +1319,7 @@ bot.on("text", async (ctx) => {
 
         console.log("[bot] Отправка сообщения Служба заботы...");
         await ctx.reply(
-          "💬 <b>Служба заботы</b>\n\nВыберите способ связи:",
+          "💬 <b>Служба заботы</b>\n\nВыберите способ связи:\n\n📧 Email: steponehub@yandex.com\n💬 Telegram: @step0ne11",
           {
             parse_mode: "HTML",
             reply_markup: supportKeyboard
