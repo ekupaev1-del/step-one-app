@@ -12,23 +12,37 @@ function md5(input: string): string {
 /**
  * Строит Receipt для первого платежа (54-ФЗ)
  * Формат строго по документации Robokassa
+ * ВАЖНО: Все поля обязательны и должны быть в правильном формате
  */
 function buildFirstPaymentReceipt(amount: number): string {
+  // ВАЖНО: Сумма должна быть числом, не строкой
+  // Robokassa требует точное совпадение суммы в Receipt с OutSum
   const receipt = {
-    sno: "usn_income", // УСН доходы (self-employed)
+    sno: "usn_income", // УСН доходы (self-employed, самозанятый)
     items: [
       {
         name: "Подписка Step One — пробный период 3 дня",
-        quantity: 1,
-        sum: amount, // Сумма должна совпадать с OutSum
-        payment_method: "full_payment",
-        payment_object: "service",
-        tax: "none",
+        quantity: 1.0, // Количество как число
+        sum: amount, // Сумма должна совпадать с OutSum (1.00)
+        payment_method: "full_payment", // Полная предоплата
+        payment_object: "service", // Услуга
+        tax: "none", // Без НДС (самозанятый)
       },
     ],
   };
+  
   // JSON.stringify без пробелов (компактный формат)
-  return JSON.stringify(receipt);
+  // ВАЖНО: Не использовать JSON.stringify с отступами
+  const receiptJson = JSON.stringify(receipt);
+  
+  // Проверяем, что Receipt валидный JSON
+  try {
+    JSON.parse(receiptJson);
+  } catch (e) {
+    throw new Error(`Invalid Receipt JSON: ${e}`);
+  }
+  
+  return receiptJson;
 }
 
 export async function POST(req: Request) {
