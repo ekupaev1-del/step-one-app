@@ -36,13 +36,28 @@ export default function PaymentDebugPage() {
         timestamp: new Date().toISOString(),
       });
 
-      // Если есть paymentUrl, пробуем открыть
-      if (createData.ok && createData.paymentUrl) {
+      // Если есть actionUrl и formData, пробуем открыть форму
+      if (createData.ok && createData.actionUrl && createData.formData) {
         const shouldOpen = confirm(
-          `Платеж создан успешно!\n\nURL: ${createData.paymentUrl.substring(0, 100)}...\n\nОткрыть в новой вкладке?`
+          `Платеж создан успешно!\n\nAction URL: ${createData.actionUrl}\n\nОткрыть форму оплаты?`
         );
         if (shouldOpen) {
-          window.open(createData.paymentUrl, "_blank");
+          // Создаем POST форму
+          const form = document.createElement("form");
+          form.method = "POST";
+          form.action = createData.actionUrl;
+          form.style.display = "none";
+          
+          Object.entries(createData.formData).forEach(([key, value]) => {
+            const input = document.createElement("input");
+            input.type = "hidden";
+            input.name = key;
+            input.value = String(value);
+            form.appendChild(input);
+          });
+          
+          document.body.appendChild(form);
+          form.submit();
         }
       }
     } catch (e: any) {
