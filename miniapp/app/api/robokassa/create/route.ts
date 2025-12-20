@@ -121,31 +121,50 @@ export async function POST(req: Request) {
 
     // Формируем URL для оплаты
     // ВАЖНО: Порядок параметров критичен для Robokassa
+    // Согласно документации, порядок должен быть:
+    // 1. MerchantLogin
+    // 2. OutSum
+    // 3. InvId
+    // 4. Description
+    // 5. Receipt (если используется)
+    // 6. Recurring (если используется)
+    // 7. SignatureValue
+    // 8. Дополнительные параметры (Culture, Shp_*)
+    
     const description = "Подписка Step One — пробный период 3 дня";
     const params: string[] = [];
     
-    // Базовые обязательные параметры (в строгом порядке)
+    // 1. Базовые обязательные параметры (строгий порядок)
     params.push(`MerchantLogin=${encodeURIComponent(merchantLogin)}`);
     params.push(`OutSum=${amountStr}`);
-    params.push(`InvId=${invoiceId}`);
+    params.push(`InvId=${invoiceId}`); // ВАЖНО: InvoiceID как строка, но только цифры
     params.push(`Description=${encodeURIComponent(description)}`);
     
-    // Receipt (для фискализации)
+    // 2. Receipt (для фискализации 54-ФЗ)
     params.push(`Receipt=${receiptEncoded}`);
     
-    // Recurring - ВАЖНО: должен быть перед SignatureValue
-    // Robokassa может требовать значение "1" вместо "true"
-    params.push(`Recurring=1`); // Используем "1" вместо "true" для совместимости
+    // 3. Recurring - ВАЖНО: значение "1" для включения рекуррентных платежей
+    params.push(`Recurring=1`);
     
-    // SignatureValue - должен быть после всех параметров, влияющих на подпись
+    // 4. SignatureValue - должен быть после всех параметров, влияющих на подпись
     params.push(`SignatureValue=${signatureValue}`);
     
-    // Дополнительные параметры
+    // 5. Дополнительные параметры
     params.push(`Culture=ru`);
     
-    // Shp_ параметры (для идентификации после оплаты)
+    // 6. Shp_ параметры (для идентификации после оплаты)
     // ВАЖНО: Shp_ параметры НЕ включаются в подпись для первого платежа
     params.push(`Shp_userId=${numericUserId}`);
+    
+    // Логируем все параметры для отладки
+    console.log("[robokassa/create] URL Parameters (in order):");
+    params.forEach((param, index) => {
+      const [key, value] = param.split('=');
+      const displayValue = key === 'Receipt' || key === 'SignatureValue' 
+        ? value.substring(0, 30) + '...' 
+        : value;
+      console.log(`  ${index + 1}. ${key}=${displayValue}`);
+    });
 
     const paramsString = params.join("&");
     const robokassaUrl = "https://auth.robokassa.ru/Merchant/Index.aspx";
