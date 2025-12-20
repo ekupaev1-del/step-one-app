@@ -88,9 +88,17 @@ export async function POST(req: Request) {
       );
     }
 
-    // Генерируем уникальный InvoiceID (числовой формат)
-    // Формат: userId + timestamp для гарантии уникальности
-    const invoiceId = `${numericUserId}${Date.now()}`;
+    // Генерируем уникальный InvoiceID
+    // ВАЖНО: Robokassa требует числовой InvoiceID для рекуррентных платежей
+    // Используем только цифры, без букв
+    const timestamp = Date.now();
+    const invoiceId = `${numericUserId}${timestamp}`;
+    
+    // Проверяем, что InvoiceID состоит только из цифр
+    if (!/^\d+$/.test(invoiceId)) {
+      throw new Error(`Invalid InvoiceID format: ${invoiceId}. Must contain only digits.`);
+    }
+    
     const amountStr = FIRST_PAYMENT_AMOUNT.toFixed(2); // "1.00"
 
     // Формируем Receipt для первого платежа
@@ -112,21 +120,31 @@ export async function POST(req: Request) {
     console.log("[robokassa/create] Signature value:", signatureValue);
 
     // Формируем URL для оплаты
-    // Порядок параметров важен для Robokassa
+    // ВАЖНО: Порядок параметров критичен для Robokassa
     const description = "Подписка Step One — пробный период 3 дня";
     const params: string[] = [];
     
-    // Обязательные параметры
+    // Базовые обязательные параметры (в строгом порядке)
     params.push(`MerchantLogin=${encodeURIComponent(merchantLogin)}`);
     params.push(`OutSum=${amountStr}`);
     params.push(`InvId=${invoiceId}`);
     params.push(`Description=${encodeURIComponent(description)}`);
-    params.push(`Receipt=${receiptEncoded}`); // Receipt всегда для первого платежа
-    params.push(`Recurring=true`); // Включаем рекуррентные платежи
+    
+    // Receipt (для фискализации)
+    params.push(`Receipt=${receiptEncoded}`);
+    
+    // Recurring - ВАЖНО: должен быть перед SignatureValue
+    // Robokassa может требовать значение "1" вместо "true"
+    params.push(`Recurring=1`); // Используем "1" вместо "true" для совместимости
+    
+    // SignatureValue - должен быть после всех параметров, влияющих на подпись
     params.push(`SignatureValue=${signatureValue}`);
+    
+    // Дополнительные параметры
     params.push(`Culture=ru`);
     
-    // Дополнительные параметры (Shp_ параметры для идентификации)
+    // Shp_ параметры (для идентификации после оплаты)
+    // ВАЖНО: Shp_ параметры НЕ включаются в подпись для первого платежа
     params.push(`Shp_userId=${numericUserId}`);
 
     const paramsString = params.join("&");
