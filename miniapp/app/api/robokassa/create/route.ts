@@ -47,11 +47,13 @@ function buildFirstPaymentReceipt(amount: number): string {
 
 export async function POST(req: Request) {
   try {
+    console.log("[robokassa/create] ========== FIRST RECURRING PAYMENT ==========");
+    console.log("[robokassa/create] Request received at:", new Date().toISOString());
+    
     const supabase = createServerSupabaseClient();
     const body = await req.json();
     const { userId } = body;
 
-    console.log("[robokassa/create] ========== FIRST RECURRING PAYMENT ==========");
     console.log("[robokassa/create] Request body:", { userId });
 
     // Валидация userId
@@ -217,14 +219,24 @@ export async function POST(req: Request) {
     }
 
     // ВАЖНО: Возвращаем данные для POST формы, а не URL
-    return NextResponse.json({ 
+    const response = {
       ok: true, 
       actionUrl: robokassaActionUrl, // URL для action формы
       formData: formData, // Данные для POST запроса
       invoiceId,
       amount: FIRST_PAYMENT_AMOUNT,
       method: "POST", // Метод запроса
+    };
+    
+    console.log("[robokassa/create] ✅ Returning response:", {
+      ok: response.ok,
+      hasActionUrl: !!response.actionUrl,
+      hasFormData: !!response.formData,
+      formDataKeys: Object.keys(response.formData),
+      invoiceId: response.invoiceId,
     });
+    
+    return NextResponse.json(response);
   } catch (error: any) {
     console.error("[robokassa/create] error", error);
     console.error("[robokassa/create] error stack", error.stack);
