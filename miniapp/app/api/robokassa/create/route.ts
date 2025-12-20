@@ -115,21 +115,44 @@ export async function POST(req: Request) {
     
     const amountStr = FIRST_PAYMENT_AMOUNT.toFixed(2); // "1.00"
 
-    // Формируем Receipt для первого платежа
-    const receiptJson = buildFirstPaymentReceipt(FIRST_PAYMENT_AMOUNT);
-    const receiptEncoded = encodeURIComponent(receiptJson);
+    // ВАЖНО: Для теста можно отключить Receipt через переменную окружения
+    // Установите ROBOKASSA_SKIP_RECEIPT=true для теста без Receipt
+    const skipReceipt = process.env.ROBOKASSA_SKIP_RECEIPT === "true";
+    
+    let receiptJson: string | null = null;
+    let receiptEncoded: string | null = null;
+    let signatureBase: string;
+    let signatureValue: string;
 
-    // Подпись строго по документации:
-    // MerchantLogin:OutSum:InvoiceID:Receipt:ROBOKASSA_PASSWORD1
-    // ВАЖНО: Receipt в подписи - это JSON строка (НЕ encoded)
-    const signatureBase = `${merchantLogin}:${amountStr}:${invoiceId}:${receiptJson}:${password1}`;
-    const signatureValue = md5(signatureBase).toLowerCase();
+    if (skipReceipt) {
+      // Подпись БЕЗ Receipt: MerchantLogin:OutSum:InvoiceID:ROBOKASSA_PASSWORD1
+      signatureBase = `${merchantLogin}:${amountStr}:${invoiceId}:${password1}`;
+      signatureValue = md5(signatureBase).toLowerCase();
+      console.log("[robokassa/create] ⚠️ Receipt отключен для теста (ROBOKASSA_SKIP_RECEIPT=true)");
+    } else {
+      // Формируем Receipt для первого платежа
+      receiptJson = buildFirstPaymentReceipt(FIRST_PAYMENT_AMOUNT);
+      receiptEncoded = encodeURIComponent(receiptJson);
+
+      // Подпись строго по документации:
+      // MerchantLogin:OutSum:InvoiceID:Receipt:ROBOKASSA_PASSWORD1
+      // ВАЖНО: Receipt в подписи - это JSON строка (НЕ encoded)
+      signatureBase = `${merchantLogin}:${amountStr}:${invoiceId}:${receiptJson}:${password1}`;
+      signatureValue = md5(signatureBase).toLowerCase();
+    }
 
     // DEBUG: Логируем строку подписи БЕЗ пароля
-    const signatureBaseForLog = `${merchantLogin}:${amountStr}:${invoiceId}:${receiptJson}:[PASSWORD_HIDDEN]`;
+    const signatureBaseForLog = skipReceipt
+      ? `${merchantLogin}:${amountStr}:${invoiceId}:[PASSWORD_HIDDEN]`
+      : `${merchantLogin}:${amountStr}:${invoiceId}:${receiptJson}:[PASSWORD_HIDDEN]`;
+    
     console.log("[robokassa/create] InvoiceID:", invoiceId);
     console.log("[robokassa/create] OutSum:", amountStr);
-    console.log("[robokassa/create] Receipt JSON:", receiptJson);
+    console.log("[robokassa/create] Receipt enabled:", !skipReceipt);
+    if (receiptJson) {
+      console.log("[robokassa/create] Receipt JSON:", receiptJson);
+      console.log("[robokassa/create] Receipt JSON length:", receiptJson.length);
+    }
     console.log("[robokassa/create] Signature base (без пароля):", signatureBaseForLog);
     console.log("[robokassa/create] Signature value:", signatureValue);
 
@@ -154,8 +177,10 @@ export async function POST(req: Request) {
     params.push(`InvId=${invoiceId}`); // ВАЖНО: InvoiceID как строка, но только цифры
     params.push(`Description=${encodeURIComponent(description)}`);
     
-    // 2. Receipt (для фискализации 54-ФЗ)
-    params.push(`Receipt=${receiptEncoded}`);
+    // 2. Receipt (для фискализации 54-ФЗ) - только если не отключен
+    if (!skipReceipt && receiptEncoded) {
+      params.push(`Receipt=${receiptEncoded}`);
+    }
     
     // 3. Recurring - ВАЖНО: значение "1" для включения рекуррентных платежей
     params.push(`Recurring=1`);
