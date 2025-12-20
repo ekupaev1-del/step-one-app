@@ -12,6 +12,7 @@ function PaymentContent() {
   const [error, setError] = useState<string | null>(null);
   const [subscriptionStatus, setSubscriptionStatus] = useState<string | null>(null);
   const [trialEndAt, setTrialEndAt] = useState<string | null>(null);
+  const [agreedToTerms, setAgreedToTerms] = useState(false);
 
   useEffect(() => {
     const id = searchParams.get("id");
@@ -46,6 +47,10 @@ function PaymentContent() {
 
   const startTrial = async () => {
     if (!userId) return;
+    if (!agreedToTerms) {
+      setError("Необходимо согласиться с условиями оферты");
+      return;
+    }
     setLoading(true);
     setError(null);
     
@@ -190,13 +195,34 @@ function PaymentContent() {
             </div>
           )}
 
-          <button
-                onClick={startTrial}
-            disabled={!userId || loading}
-            className="w-full py-3 rounded-xl bg-accent text-white font-semibold hover:opacity-90 disabled:opacity-50"
-          >
-                {loading ? "Создаём оплату..." : "Начать пробный период"}
-          </button>
+          <div className="space-y-3">
+            <label className="flex items-start gap-3 cursor-pointer">
+              <input
+                type="checkbox"
+                checked={agreedToTerms}
+                onChange={(e) => setAgreedToTerms(e.target.checked)}
+                className="mt-1 w-5 h-5 rounded border-gray-300 text-accent focus:ring-accent cursor-pointer"
+              />
+              <span className="text-sm text-textPrimary flex-1">
+                Я согласен на автоматические списания согласно{" "}
+                <Link
+                  href={`/oferta?id=${userId}`}
+                  className="text-accent underline hover:text-accent/80"
+                  target="_blank"
+                >
+                  условиям оферты
+                </Link>
+              </span>
+            </label>
+
+            <button
+              onClick={startTrial}
+              disabled={!userId || loading || !agreedToTerms}
+              className="w-full py-3 rounded-xl bg-accent text-white font-semibold hover:opacity-90 disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+              {loading ? "Создаём оплату..." : "Начать пробный период"}
+            </button>
+          </div>
             </>
           )}
 
