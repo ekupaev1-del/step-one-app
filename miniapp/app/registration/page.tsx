@@ -45,8 +45,8 @@ function RegistrationPageContent() {
       return;
     }
     // Пропускаем проверку - анкета сама покажет экран согласия если нужно
-    setPrivacyAccepted(true);
-    setCheckingPrivacy(false);
+        setPrivacyAccepted(true);
+        setCheckingPrivacy(false);
   }, [mounted, userId]);
 
   // Показываем контент сразу, не ждем Suspense

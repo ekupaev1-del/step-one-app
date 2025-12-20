@@ -733,7 +733,7 @@ function ProfilePageContent() {
               </div>
             </div>
           )}
-            </div>
+        </div>
           )}
         </div>
 

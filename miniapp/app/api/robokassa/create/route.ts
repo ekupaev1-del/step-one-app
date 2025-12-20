@@ -182,8 +182,8 @@ export async function POST(req: Request) {
       params.push(`Receipt=${receiptEncoded}`);
     }
     
-    // 3. Recurring - ВАЖНО: значение "1" для включения рекуррентных платежей
-    params.push(`Recurring=1`);
+    // 3. Recurring - ВАЖНО: значение "true" для включения рекуррентных платежей (по документации Robokassa)
+    params.push(`Recurring=true`);
     
     // 4. SignatureValue - должен быть после всех параметров, влияющих на подпись
     params.push(`SignatureValue=${signatureValue}`);
@@ -205,27 +205,38 @@ export async function POST(req: Request) {
       console.log(`  ${index + 1}. ${key}=${displayValue}`);
     });
 
-    const paramsString = params.join("&");
-    
-    // ВАЖНО: Проверяем, какой домен использовать
-    // Если аккаунт в .kz, используем .kz, иначе .ru
-    // По умолчанию используем .ru, но можно переопределить через переменную окружения
+    // ВАЖНО: Robokassa требует POST форму, а не GET URL!
+    // Формируем данные для POST формы
     const robokassaDomain = process.env.ROBOKASSA_DOMAIN || "auth.robokassa.ru";
-    const robokassaUrl = `https://${robokassaDomain}/Merchant/Index.aspx`;
-    const paymentUrl = `${robokassaUrl}?${paramsString}`;
+    const robokassaActionUrl = `https://${robokassaDomain}/Merchant/Index.aspx`;
+    
+    // Формируем объект с параметрами для POST формы
+    const formData: Record<string, string> = {
+      MerchantLogin: merchantLogin,
+      InvoiceID: invoiceId, // ВАЖНО: в POST форме используется InvoiceID, а не InvId!
+      OutSum: amountStr,
+      Description: description,
+      SignatureValue: signatureValue,
+      Recurring: "true", // ВАЖНО: "true", а не "1"!
+      Culture: "ru",
+      Shp_userId: String(numericUserId),
+    };
+    
+    // Добавляем Receipt только если он включен
+    if (!skipReceipt && receiptEncoded) {
+      formData.Receipt = receiptEncoded;
+    }
     
     console.log("[robokassa/create] Using Robokassa domain:", robokassaDomain);
-
-    // DEBUG: Логируем итоговый URL и параметры
-    console.log("[robokassa/create] Payment URL:", paymentUrl);
-    console.log("[robokassa/create] URL length:", paymentUrl.length);
-    console.log("[robokassa/create] Parameters:", {
-      MerchantLogin: merchantLogin,
-      OutSum: amountStr,
-      InvId: invoiceId,
-      Recurring: "1",
-      Receipt: receiptEncoded.substring(0, 50) + "...",
-      SignatureValue: signatureValue.substring(0, 10) + "...",
+    console.log("[robokassa/create] Robokassa action URL:", robokassaActionUrl);
+    console.log("[robokassa/create] Form data (POST):", {
+      MerchantLogin: formData.MerchantLogin,
+      InvoiceID: formData.InvoiceID,
+      OutSum: formData.OutSum,
+      Description: formData.Description,
+      Receipt: formData.Receipt ? formData.Receipt.substring(0, 50) + "..." : "NOT SET",
+      Recurring: formData.Recurring,
+      SignatureValue: formData.SignatureValue.substring(0, 10) + "...",
     });
     console.log("[robokassa/create] ==========================================");
 
@@ -253,11 +264,14 @@ export async function POST(req: Request) {
       console.warn("[robokassa/create] Warning: DB error (ignored):", paymentErr.message);
     }
 
+    // ВАЖНО: Возвращаем данные для POST формы, а не URL
     return NextResponse.json({ 
       ok: true, 
-      paymentUrl,
+      actionUrl: robokassaActionUrl, // URL для action формы
+      formData: formData, // Данные для POST запроса
       invoiceId,
       amount: FIRST_PAYMENT_AMOUNT,
+      method: "POST", // Метод запроса
     });
   } catch (error: any) {
     console.error("[robokassa/create] error", error);

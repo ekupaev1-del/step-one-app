@@ -65,15 +65,35 @@ function PaymentContent() {
         throw new Error(errorMsg);
       }
       
-      if (!data.paymentUrl) {
-        throw new Error("URL оплаты не получен от сервера");
+      if (!data.actionUrl || !data.formData) {
+        throw new Error("Данные для оплаты не получены от сервера");
       }
       
-      console.log("[payment] ✅ Payment URL получен");
-      console.log("[payment] Redirecting to:", data.paymentUrl);
+      console.log("[payment] ✅ Payment data получены");
+      console.log("[payment] Action URL:", data.actionUrl);
+      console.log("[payment] Form data:", data.formData);
       
-      // Редирект на страницу оплаты Robokassa
-      window.location.href = data.paymentUrl;
+      // ВАЖНО: Robokassa требует POST форму, а не GET редирект!
+      // Создаем скрытую форму и отправляем её
+      const form = document.createElement("form");
+      form.method = "POST";
+      form.action = data.actionUrl;
+      form.style.display = "none";
+      
+      // Добавляем все поля формы
+      Object.entries(data.formData).forEach(([key, value]) => {
+        const input = document.createElement("input");
+        input.type = "hidden";
+        input.name = key;
+        input.value = String(value);
+        form.appendChild(input);
+      });
+      
+      // Добавляем форму в DOM и отправляем
+      document.body.appendChild(form);
+      form.submit();
+      
+      // Форма отправится, и произойдет редирект на Robokassa
     } catch (e: any) {
       console.error("[payment] Error:", e);
       setError(e.message || "Ошибка создания платежа");
@@ -127,29 +147,29 @@ function PaymentContent() {
 
           {canStartTrial && (
             <>
-              <div className="bg-accent/5 border border-accent/20 rounded-xl p-4 text-sm text-textPrimary">
-                <p className="font-semibold mb-1">3 дня бесплатно</p>
+          <div className="bg-accent/5 border border-accent/20 rounded-xl p-4 text-sm text-textPrimary">
+            <p className="font-semibold mb-1">3 дня бесплатно</p>
                 <p className="text-textSecondary mb-2">
                   Для активации триала необходимо привязать карту. С карты будет списано 1 ₽ для привязки.
                 </p>
-                <p className="text-textSecondary">
-                  После 3 дней бесплатного периода произойдёт автоматическое списание 199 ₽ за месяц. Подписка продлевается автоматически.
-                </p>
-              </div>
+            <p className="text-textSecondary">
+              После 3 дней бесплатного периода произойдёт автоматическое списание 199 ₽ за месяц. Подписка продлевается автоматически.
+            </p>
+          </div>
 
-              {error && (
-                <div className="p-3 rounded-lg bg-red-50 border border-red-200 text-red-700 text-sm">
-                  {error}
-                </div>
-              )}
+          {error && (
+            <div className="p-3 rounded-lg bg-red-50 border border-red-200 text-red-700 text-sm">
+              {error}
+            </div>
+          )}
 
-              <button
+          <button
                 onClick={startTrial}
-                disabled={!userId || loading}
-                className="w-full py-3 rounded-xl bg-accent text-white font-semibold hover:opacity-90 disabled:opacity-50"
-              >
+            disabled={!userId || loading}
+            className="w-full py-3 rounded-xl bg-accent text-white font-semibold hover:opacity-90 disabled:opacity-50"
+          >
                 {loading ? "Создаём оплату..." : "Начать пробный период"}
-              </button>
+          </button>
             </>
           )}
 

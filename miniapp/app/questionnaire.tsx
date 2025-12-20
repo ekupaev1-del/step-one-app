@@ -660,13 +660,13 @@ export function QuestionnaireFormContent({ initialUserId }: { initialUserId?: st
               />
               <span className="text-sm text-gray-700 flex-1">
                 Я согласен с{" "}
-                <Link 
-                  href={`/privacy${userId ? `?id=${userId}` : ''}` as any}
+            <Link 
+              href={`/privacy${userId ? `?id=${userId}` : ''}` as any}
                   className="text-accent hover:underline font-medium"
                   target="_blank"
-                >
+            >
                   Политикой конфиденциальности
-                </Link>
+            </Link>
               </span>
             </label>
             
@@ -679,13 +679,13 @@ export function QuestionnaireFormContent({ initialUserId }: { initialUserId?: st
               />
               <span className="text-sm text-gray-700 flex-1">
                 Я согласен с{" "}
-                <Link 
-                  href={`/terms${userId ? `?id=${userId}` : ''}` as any}
+            <Link 
+              href={`/terms${userId ? `?id=${userId}` : ''}` as any}
                   className="text-accent hover:underline font-medium"
                   target="_blank"
-                >
+            >
                   Пользовательским соглашением
-                </Link>
+            </Link>
               </span>
             </label>
           </div>

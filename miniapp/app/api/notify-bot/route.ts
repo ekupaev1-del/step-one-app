@@ -103,9 +103,9 @@ export async function POST(req: Request) {
     
     // Если это не кастомное сообщение, отправляем меню отдельно
     if (!body?.message) {
-      await sendTelegramMessage(user.telegram_id, "Выберите действие:", {
+    await sendTelegramMessage(user.telegram_id, "Выберите действие:", {
         ...getMainMenuKeyboard(user.id)
-      });
+    });
     }
   } catch (sendError: any) {
     console.error("[/api/notify-bot] Ошибка отправки сообщений:", sendError);

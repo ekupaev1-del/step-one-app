@@ -615,7 +615,7 @@ async function handleQuestionnaireSaved(
     await ctx.telegram.sendMessage(targetChatId, subscriptionMessage, {
       parse_mode: "HTML",
       reply_markup: subscriptionKeyboard
-    });
+        });
     subscriptionMessageSent = true;
     console.log("[bot] ✅ Сообщение о подписке отправлено");
   } catch (subscriptionError: any) {

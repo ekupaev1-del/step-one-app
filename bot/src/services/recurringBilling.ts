@@ -88,9 +88,9 @@ async function chargeUserAfterTrial(user: any) {
 
     if (response.ok && text.toLowerCase().includes("ok")) {
       // Платеж успешно отправлен
-      if (paymentRow) {
-        await supabase
-          .from("payments")
+    if (paymentRow) {
+      await supabase
+        .from("payments")
           .update({ status: "sent" })
           .eq("id", paymentRow.id);
       }
@@ -107,16 +107,16 @@ async function chargeUserAfterTrial(user: any) {
         await supabase
           .from("payments")
           .update({ status: "fail" })
-          .eq("id", paymentRow.id);
-      }
+        .eq("id", paymentRow.id);
+    }
 
-      await supabase
-        .from("users")
+    await supabase
+      .from("users")
         .update({ 
           subscription_status: "payment_failed",
           last_payment_status: "fail" 
         })
-        .eq("id", user.id);
+      .eq("id", user.id);
 
       console.error(`[recurring] ❌ Payment failed for user ${user.id}`);
 

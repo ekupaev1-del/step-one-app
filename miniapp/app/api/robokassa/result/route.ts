@@ -84,18 +84,18 @@ async function handle(req: Request) {
       console.log("[robokassa/result] Using Shp_userId:", userId);
     } else {
       const { data: payment } = await supabase
-        .from("payments")
+      .from("payments")
         .select("user_id")
-        .eq("invoice_id", invId)
-        .maybeSingle();
+      .eq("invoice_id", invId)
+      .maybeSingle();
 
       if (!payment) {
-        return NextResponse.json(
-          { ok: false, error: "Платёж не найден" },
-          { status: 404 }
-        );
-      }
-      
+      return NextResponse.json(
+        { ok: false, error: "Платёж не найден" },
+        { status: 404 }
+      );
+    }
+
       userId = payment.user_id;
     }
 
@@ -202,13 +202,13 @@ async function handle(req: Request) {
       const nextChargeAt = new Date(now.getTime() + 30 * 24 * 60 * 60 * 1000); // +30 дней
       
       const { error: updateError } = await supabase
-        .from("users")
-        .update({
-          subscription_status: "active",
+      .from("users")
+      .update({
+        subscription_status: "active",
           next_charge_at: nextChargeAt.toISOString(),
           paid_until: nextChargeAt.toISOString(),
-          last_payment_status: "success",
-        })
+        last_payment_status: "success",
+      })
         .eq("id", userId);
       
       if (updateError) {
