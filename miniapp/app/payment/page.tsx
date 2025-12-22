@@ -13,6 +13,7 @@ function PaymentContent() {
   const [subscriptionStatus, setSubscriptionStatus] = useState<string | null>(null);
   const [trialEndAt, setTrialEndAt] = useState<string | null>(null);
   const [agreedToTerms, setAgreedToTerms] = useState(false);
+  const [paymentData, setPaymentData] = useState<{ actionUrl: string; formData: Record<string, string> } | null>(null);
 
   useEffect(() => {
     const id = searchParams.get("id");
@@ -105,47 +106,13 @@ function PaymentContent() {
       console.log("[payment] Action URL:", data.actionUrl);
       console.log("[payment] Form data:", data.formData);
       
-      // Показываем сообщение пользователю перед редиректом
-      // Это даст время увидеть, что происходит
-      setError(null);
-      setLoading("redirecting");
-      
-      // Увеличиваем задержку, чтобы пользователь точно увидел сообщение
-      await new Promise(resolve => setTimeout(resolve, 1500));
-      
-      // ВАЖНО: Robokassa требует POST форму, а не GET редирект!
-      // Создаем скрытую форму и отправляем её
-      const form = document.createElement("form");
-      form.method = "POST";
-      form.action = data.actionUrl;
-      form.style.display = "none";
-      form.target = "_blank"; // Открываем в новом окне, чтобы не терять текущую страницу
-      
-      // Добавляем все поля формы
-      Object.entries(data.formData).forEach(([key, value]) => {
-        const input = document.createElement("input");
-        input.type = "hidden";
-        input.name = key;
-        input.value = String(value);
-        form.appendChild(input);
+      // Сохраняем данные платежа и показываем промежуточный экран
+      setPaymentData({
+        actionUrl: data.actionUrl,
+        formData: data.formData,
       });
-      
-      // Добавляем форму в DOM
-      document.body.appendChild(form);
-      
-      // Еще одна задержка перед отправкой
-      await new Promise(resolve => setTimeout(resolve, 500));
-      
-      // Открываем форму в новом окне
-      form.submit();
-      
-      // После отправки формы показываем сообщение
-      setLoading("opened");
-      
-      // Через 2 секунды можно закрыть сообщение или оставить как есть
-      setTimeout(() => {
-        setLoading(false);
-      }, 2000);
+      setLoading(false); // Сбрасываем загрузку, чтобы показать кнопку оплаты
+      setError(null);
       
       // Форма отправится, и произойдет редирект на Robokassa
     } catch (e: any) {
@@ -168,6 +135,34 @@ function PaymentContent() {
   const isTrialActive = subscriptionStatus === "trial" && trialEndAt;
   const isActive = subscriptionStatus === "active";
   const canStartTrial = !subscriptionStatus || subscriptionStatus === "none" || subscriptionStatus === "expired";
+
+  // Функция для отправки формы оплаты
+  const submitPaymentForm = () => {
+    if (!paymentData) return;
+    
+    setLoading("redirecting");
+    
+    // ВАЖНО: Robokassa требует POST форму, а не GET редирект!
+    // Создаем скрытую форму и отправляем её
+    const form = document.createElement("form");
+    form.method = "POST";
+    form.action = paymentData.actionUrl;
+    form.style.display = "none";
+    form.target = "_self"; // Открываем в том же окне
+    
+    // Добавляем все поля формы
+    Object.entries(paymentData.formData).forEach(([key, value]) => {
+      const input = document.createElement("input");
+      input.type = "hidden";
+      input.name = key;
+      input.value = String(value);
+      form.appendChild(input);
+    });
+    
+    // Добавляем форму в DOM и отправляем
+    document.body.appendChild(form);
+    form.submit();
+  };
 
   return (
     <AppLayout>
