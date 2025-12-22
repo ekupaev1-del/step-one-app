@@ -247,6 +247,14 @@ export async function POST(req: Request) {
       Receipt: receiptEncoded, // STEP 2: Receipt обязателен для самозанятого
       SignatureValue: signatureValue,
     };
+    
+    // Shp_userId опционален - добавляем только если userId существует
+    if (numericUserId) {
+      formData.Shp_userId = String(numericUserId);
+      console.log("[robokassa/create] Added optional Shp_userId:", numericUserId);
+    } else {
+      console.log("[robokassa/create] Shp_userId not provided - skipping (optional field)");
+    }
     // PART 3: ERROR 26 PROTECTION - Full POST payload logging
     console.log("[robokassa/create] ========== POST FORM DATA (PART 1) ==========");
     console.log("[robokassa/create] POST URL:", robokassaActionUrl);

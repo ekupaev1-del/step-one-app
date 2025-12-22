@@ -209,7 +209,7 @@ Stack: ${e.stack || "N/A"}
     // 3. InvoiceID
     // 4. SignatureValue
     // 5. Recurring
-    // 6. Shp_ параметры (если есть)
+    // 6. Shp_ параметры (если есть) - ОПЦИОНАЛЬНО
     // КРИТИЧНО: Description НЕ включаем в форму!
     const fieldOrder = [
       "MerchantLogin",
@@ -217,7 +217,7 @@ Stack: ${e.stack || "N/A"}
       "InvoiceID",
       "SignatureValue",
       "Recurring",
-      "Shp_userId"
+      // Shp_userId - ОПЦИОНАЛЬНО, включается только если есть в formData
     ];
     
     // Добавляем поля в правильном порядке
@@ -235,9 +235,27 @@ Stack: ${e.stack || "N/A"}
         formFields.push({ name: key, value: value });
         console.log(`[payment] Added form field: ${key} = ${value} (length: ${value.length})`);
       } else {
-        console.warn(`[payment] Missing form field: ${key}`);
+        // ВАЖНО: Не логируем предупреждение для опциональных полей
+        // Shp_userId опционален, поэтому не показываем warning
+        if (key !== "Shp_userId") {
+          console.warn(`[payment] Missing form field: ${key}`);
+        }
       }
     });
+    
+    // Добавляем Shp_userId ТОЛЬКО если он есть в formData (опционально)
+    if (paymentData.formData["Shp_userId"]) {
+      const shpValue = String(paymentData.formData["Shp_userId"]);
+      const shpInput = document.createElement("input");
+      shpInput.type = "hidden";
+      shpInput.name = "Shp_userId";
+      shpInput.value = shpValue;
+      form.appendChild(shpInput);
+      formFields.push({ name: "Shp_userId", value: shpValue });
+      console.log(`[payment] Added optional Shp_userId: ${shpValue}`);
+    } else {
+      console.log(`[payment] Shp_userId not provided - skipping (optional field)`);
+    }
     
     // Добавляем любые другие поля, которые не в списке (на всякий случай)
     Object.entries(paymentData.formData).forEach(([key, value]) => {
@@ -256,7 +274,8 @@ Stack: ${e.stack || "N/A"}
     // ВАЖНО: Проверяем, что все обязательные поля добавлены
     // КРИТИЧНО: Description НЕ обязателен - убран по требованиям Robokassa
     // Recurring обязателен для recurring-платежей
-    const requiredFields = ["MerchantLogin", "OutSum", "InvoiceID", "SignatureValue", "Recurring", "Shp_userId"];
+    // Shp_userId ОПЦИОНАЛЕН - НЕ включаем в requiredFields
+    const requiredFields = ["MerchantLogin", "OutSum", "InvoiceID", "SignatureValue", "Recurring"];
     const missingFields = requiredFields.filter(field => !formFields.find(f => f.name === field));
     if (missingFields.length > 0) {
       console.error("[payment] ❌ MISSING REQUIRED FIELDS:", missingFields);
