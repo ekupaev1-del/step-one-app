@@ -282,15 +282,17 @@ export async function runRecurringBilling() {
 }
 
 /**
- * Проверяет активные подписки, которые заканчиваются, и продлевает их
+ * STEP 4: Проверяет активные подписки, которые заканчиваются, и продлевает их
+ * Проверяет: subscription_status = 'active' AND next_charge_at <= now()
  */
 export async function renewActiveSubscriptions() {
   const now = new Date();
   const nowISO = now.toISOString();
 
-  console.log("[recurring] ========== CHECKING EXPIRING SUBSCRIPTIONS ==========");
+  console.log("[recurring] ========== STEP 4: CHECKING EXPIRING SUBSCRIPTIONS ==========");
+  console.log("[recurring] Current time:", nowISO);
 
-  // Находим пользователей с активными подписками, которые нужно продлить (next_charge_at <= now)
+  // STEP 4: Находим пользователей с активными подписками, которые нужно продлить
   const { data: users, error } = await supabase
     .from("users")
     .select("id, next_charge_at, robokassa_initial_invoice_id")
