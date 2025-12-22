@@ -37,7 +37,19 @@ async function chargeUserAfterTrial(user: any) {
   }
 
   // Генерируем новый InvoiceID (числовой формат)
-  const invoiceId = `${user.id}${Date.now()}`;
+  // КРИТИЧНО: Robokassa требует InvoiceID как int32 (<= 2147483647)
+  // НЕ используем timestamp - он слишком большой!
+  const MAX_INT32 = 2147483647;
+  const base = user.id * 1000000; // userId * 1M
+  const random = Math.floor(Math.random() * 1000000); // 0-999999
+  let invoiceIdNum = base + random;
+  
+  // Проверяем, что InvoiceID <= 2147483647
+  if (invoiceIdNum > MAX_INT32) {
+    invoiceIdNum = Math.floor(Math.random() * MAX_INT32) + 1; // 1-2147483647
+  }
+  
+  const invoiceId = String(invoiceIdNum);
   const receiptJson = buildSubscriptionReceipt();
   const receiptEncoded = encodeURIComponent(receiptJson);
 

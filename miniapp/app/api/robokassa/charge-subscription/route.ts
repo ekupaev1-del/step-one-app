@@ -118,31 +118,32 @@ export async function POST(req: Request) {
     console.log("[robokassa/charge-subscription] Parent invoice ID:", parentInvoiceId);
 
     // Генерируем новый уникальный InvoiceID для дочернего платежа
-    let invoiceId: string;
+    // КРИТИЧНО: Robokassa требует InvoiceID как int32 (<= 2147483647)
+    // НЕ используем timestamp - он слишком большой!
+    let invoiceId: number;
     let attempts = 0;
     const maxAttempts = 10;
-    const maxInvoiceId = BigInt('9223372036854775807');
+    const MAX_INT32 = 2147483647;
     
     do {
-      const timestamp = Date.now();
-      const random = Math.floor(Math.random() * 10000);
-      invoiceId = `${numericUserId}${timestamp}${random.toString().padStart(4, '0')}`;
+      // Генерируем InvoiceID: userId * 1000000 + random(0-999999)
+      // Это гарантирует уникальность и не превышает int32
+      const base = numericUserId * 1000000; // userId * 1M
+      const random = Math.floor(Math.random() * 1000000); // 0-999999
+      invoiceId = base + random;
       
-      if (!/^\d+$/.test(invoiceId)) {
-        throw new Error(`Invalid InvoiceID format: ${invoiceId}`);
-      }
-      
-      const invoiceIdNum = BigInt(invoiceId);
-      if (invoiceIdNum > maxInvoiceId) {
-        invoiceId = `${timestamp}${numericUserId}`;
-        console.warn(`[robokassa/charge-subscription] InvoiceID too large, using shorter version: ${invoiceId}`);
+      // КРИТИЧНО: Проверяем, что InvoiceID <= 2147483647 (int32 максимум)
+      if (invoiceId > MAX_INT32) {
+        // Если превышает, используем только random (без userId)
+        invoiceId = Math.floor(Math.random() * MAX_INT32) + 1; // 1-2147483647
+        console.warn(`[robokassa/charge-subscription] InvoiceID would exceed int32, using random: ${invoiceId}`);
       }
       
       // Проверяем уникальность
       const { data: existingPayment } = await supabase
         .from("payments")
         .select("id")
-        .eq("invoice_id", invoiceId)
+        .eq("invoice_id", String(invoiceId))
         .maybeSingle();
       
       if (!existingPayment) {
@@ -157,7 +158,13 @@ export async function POST(req: Request) {
       throw new Error(`Failed to generate unique InvoiceID after ${maxAttempts} attempts`);
     }
     
+    // КРИТИЧНО: Преобразуем в строку для использования в форме
+    const invoiceIdStr = String(invoiceId);
+    
     console.log("[robokassa/charge-subscription] Generated child InvoiceID:", invoiceId);
+    console.log("[robokassa/charge-subscription] InvoiceID type:", typeof invoiceId);
+    console.log("[robokassa/charge-subscription] InvoiceID as string:", invoiceIdStr);
+    console.log("[robokassa/charge-subscription] InvoiceID <= 2147483647:", invoiceId <= MAX_INT32);
 
     const amountStr = SUBSCRIPTION_AMOUNT.toFixed(2); // "199.00"
     
@@ -173,7 +180,8 @@ export async function POST(req: Request) {
     // КРИТИЧНО: Порядок строки подписи для STEP 2 (с Receipt и PreviousInvoiceID):
     // MerchantLogin:OutSum:InvoiceID:PreviousInvoiceID:Receipt:ROBOKASSA_PASSWORD1
     // Receipt - это JSON строка (НЕ encoded) в подписи
-    const signatureBase = `${merchantLogin}:${amountStr}:${invoiceId}:${parentInvoiceId}:${receiptJson}:${password1}`;
+    // InvoiceID используется как строка в подписи
+    const signatureBase = `${merchantLogin}:${amountStr}:${invoiceIdStr}:${parentInvoiceId}:${receiptJson}:${password1}`;
     const signatureValue = md5(signatureBase).toLowerCase();
     
     // Проверка подписи
@@ -182,11 +190,13 @@ export async function POST(req: Request) {
     }
 
     // DEBUG: Логируем строку подписи БЕЗ пароля
-    const signatureBaseForLog = `${merchantLogin}:${amountStr}:${invoiceId}:${parentInvoiceId}:${receiptJson}:[PASSWORD_HIDDEN]`;
+    const signatureBaseForLog = `${merchantLogin}:${amountStr}:${invoiceIdStr}:${parentInvoiceId}:${receiptJson}:[PASSWORD_HIDDEN]`;
     
     console.log("[robokassa/charge-subscription] ========== SIGNATURE DEBUG (STEP 2) ==========");
     console.log("[robokassa/charge-subscription] OutSum:", amountStr, "(must be '199.00')");
-    console.log("[robokassa/charge-subscription] InvoiceID (child):", invoiceId);
+    console.log("[robokassa/charge-subscription] InvoiceID (child):", invoiceId, "(type:", typeof invoiceId, ")");
+    console.log("[robokassa/charge-subscription] InvoiceID as string:", invoiceIdStr);
+    console.log("[robokassa/charge-subscription] InvoiceID <= 2147483647:", invoiceId <= 2147483647);
     console.log("[robokassa/charge-subscription] PreviousInvoiceID (parent):", parentInvoiceId);
     console.log("[robokassa/charge-subscription] Receipt JSON (до encode):", receiptJson);
     console.log("[robokassa/charge-subscription] Receipt encoded (после encode):", receiptEncoded);
@@ -198,9 +208,10 @@ export async function POST(req: Request) {
     const recurringUrl = "https://auth.robokassa.ru/Merchant/Recurring";
     
     // Формируем данные для POST запроса (STEP 2: дочерний recurring-платеж)
+    // КРИТИЧНО: InvoiceID передаем как строку (но это число <= 2147483647)
     const formData: Record<string, string> = {
       MerchantLogin: merchantLogin,
-      InvoiceID: invoiceId,
+      InvoiceID: invoiceIdStr, // КРИТИЧНО: строка, но число <= 2147483647
       PreviousInvoiceID: parentInvoiceId, // КРИТИЧНО: parent invoice ID из STEP 1
       OutSum: amountStr, // "199.00"
       Description: description,
@@ -210,9 +221,12 @@ export async function POST(req: Request) {
     
     console.log("[robokassa/charge-subscription] ========== FORM DATA DEBUG (STEP 2) ==========");
     console.log("[robokassa/charge-subscription] POST URL:", recurringUrl);
-    console.log("[robokassa/charge-subscription] Form data (POST):", {
+    console.log("[robokassa/charge-subscription] Full POST fields:", {
       MerchantLogin: formData.MerchantLogin,
       InvoiceID: formData.InvoiceID,
+      InvoiceID_type: typeof formData.InvoiceID,
+      InvoiceID_numeric: Number(formData.InvoiceID),
+      InvoiceID_isInt32: Number(formData.InvoiceID) <= 2147483647,
       PreviousInvoiceID: formData.PreviousInvoiceID,
       OutSum: formData.OutSum,
       Description: formData.Description,
@@ -227,7 +241,7 @@ export async function POST(req: Request) {
         .from("payments")
         .insert({
           user_id: numericUserId,
-          invoice_id: invoiceId,
+          invoice_id: invoiceIdStr, // Сохраняем как строку в БД
           previous_invoice_id: parentInvoiceId, // КРИТИЧНО: parent invoice ID
           amount: SUBSCRIPTION_AMOUNT,
           status: "pending",
@@ -237,7 +251,7 @@ export async function POST(req: Request) {
       if (paymentInsertError) {
         console.warn("[robokassa/charge-subscription] Warning: Failed to save payment to DB:", paymentInsertError.message);
       } else {
-        console.log("[robokassa/charge-subscription] ✅ Child payment saved to DB, invoice_id:", invoiceId);
+        console.log("[robokassa/charge-subscription] ✅ Child payment saved to DB, invoice_id:", invoiceIdStr);
       }
     } catch (paymentErr: any) {
       console.warn("[robokassa/charge-subscription] Warning: DB error (ignored):", paymentErr.message);
@@ -270,14 +284,14 @@ export async function POST(req: Request) {
         await supabase
           .from("payments")
           .update({ status: "success" })
-          .eq("invoice_id", invoiceId);
+          .eq("invoice_id", invoiceIdStr);
       } catch (e) {
         console.warn("[robokassa/charge-subscription] Warning: Failed to update payment status:", e);
       }
       
       return NextResponse.json({
         ok: true,
-        invoiceId,
+        invoiceId: invoiceIdStr,
         parentInvoiceId,
         amount: SUBSCRIPTION_AMOUNT,
         message: "Payment successful",
@@ -290,7 +304,7 @@ export async function POST(req: Request) {
         await supabase
           .from("payments")
           .update({ status: "failed" })
-          .eq("invoice_id", invoiceId);
+          .eq("invoice_id", invoiceIdStr);
       } catch (e) {
         console.warn("[robokassa/charge-subscription] Warning: Failed to update payment status:", e);
       }
