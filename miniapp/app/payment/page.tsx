@@ -240,19 +240,44 @@ Stack: ${e.stack || "N/A"}
       }
     });
     
+    // ВАЖНО: Проверяем, что все обязательные поля добавлены
+    const requiredFields = ["MerchantLogin", "InvoiceID", "Description", "SignatureValue", "OutSum", "Recurring"];
+    const missingFields = requiredFields.filter(field => !formFields.find(f => f.name === field));
+    if (missingFields.length > 0) {
+      console.error("[payment] ❌ MISSING REQUIRED FIELDS:", missingFields);
+      console.error("[payment] Available fields:", formFields.map(f => f.name));
+      setError(`Ошибка: отсутствуют обязательные поля: ${missingFields.join(", ")}`);
+      setLoading(false);
+      return;
+    }
+    
+    console.log("[payment] ✅ All required fields present:", requiredFields);
+    
     console.log("[payment] Form created with fields:", formFields);
     console.log("[payment] Form action URL:", form.action);
     console.log("[payment] Form method:", form.method);
     
     // Сохраняем debug информацию для отображения
+    // ВАЖНО: Показываем ВСЕ поля, включая те, что не в fieldOrder
+    const allFormFields: Array<{ name: string; value: string }> = [];
+    const formInputs = form.querySelectorAll('input[type="hidden"]');
+    formInputs.forEach((input) => {
+      const name = (input as HTMLInputElement).name;
+      const value = (input as HTMLInputElement).value;
+      allFormFields.push({ name, value });
+    });
+    
     const debugText = `=== DEBUG INFO ===
 Action URL: ${form.action}
 Method: ${form.method}
+Total fields: ${allFormFields.length}
 Fields:
-${formFields.map(f => `  ${f.name} = ${f.value}`).join('\n')}
+${allFormFields.map(f => `  ${f.name} = ${f.value.substring(0, 100)}${f.value.length > 100 ? '...' : ''}`).join('\n')}
 ==================`;
     setDebugInfo(debugText);
     console.log("[payment] Debug info:", debugText);
+    console.log("[payment] All form fields count:", allFormFields.length);
+    console.log("[payment] All form fields:", allFormFields);
     
     // Добавляем форму в DOM
     document.body.appendChild(form);
