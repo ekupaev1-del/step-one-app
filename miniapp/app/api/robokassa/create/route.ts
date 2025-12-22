@@ -220,7 +220,9 @@ export async function POST(req: Request) {
     console.log("[robokassa/create] ==============================================");
     
     // Проверяем, что все обязательные поля присутствуют
-    const requiredFields = ["MerchantLogin", "OutSum", "InvoiceID", "SignatureValue", "Recurring", "Shp_userId"];
+    const requiredFields = debugMinimal 
+      ? ["MerchantLogin", "OutSum", "InvoiceID", "SignatureValue", "Recurring"]
+      : ["MerchantLogin", "OutSum", "InvoiceID", "SignatureValue", "Recurring", "Shp_userId"];
     const missingFields = requiredFields.filter(field => !formData[field]);
     if (missingFields.length > 0) {
       throw new Error(`Missing required fields: ${missingFields.join(", ")}`);
