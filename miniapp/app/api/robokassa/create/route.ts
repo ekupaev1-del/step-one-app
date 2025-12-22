@@ -220,10 +220,10 @@ export async function POST(req: Request) {
     // 
     // ВАЖНО: Порядок параметров должен быть ТОЧНО как в примере
     // ВАЖНО: Receipt НЕ используется в примере для первого платежа
-    // ВАЖНО: Robokassa может требовать Recurring = "1" вместо "true"
-    // Пробуем "1" как в некоторых версиях API
-    // Если не работает, можно попробовать "true"
-    const recurringValue = process.env.ROBOKASSA_RECURRING_VALUE || "1"; // По умолчанию "1"
+    // ВАЖНО: Robokassa требует Recurring = "1" (не "true"!)
+    // По документации Robokassa и по сообщению поддержки, нужно использовать "1"
+    // Принудительно устанавливаем "1", игнорируя переменную окружения
+    const recurringValue = "1"; // ВСЕГДА "1" для рекуррентных платежей
     
     const formData: Record<string, string> = {
       MerchantLogin: merchantLogin,
@@ -231,11 +231,11 @@ export async function POST(req: Request) {
       Description: description,
       SignatureValue: signatureValue,
       OutSum: amountStr,
-      Recurring: recurringValue, // "1" или "true" в зависимости от настроек Robokassa
+      Recurring: recurringValue, // ВСЕГДА "1" для рекуррентных платежей
     };
     
     console.log("[robokassa/create] Recurring value:", formData.Recurring, "type:", typeof formData.Recurring);
-    console.log("[robokassa/create] Recurring value source:", recurringValue, "(from env ROBOKASSA_RECURRING_VALUE or default '1')");
+    console.log("[robokassa/create] Recurring is FORCED to '1' (required by Robokassa for recurring payments)");
     
     // Добавляем Shp_ параметры (в конце, после основных параметров)
     formData.Shp_userId = String(numericUserId);
