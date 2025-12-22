@@ -234,27 +234,25 @@ export async function POST(req: Request) {
     // 
     // ВАЖНО: Порядок параметров должен быть ТОЧНО как в примере
     // ВАЖНО: Receipt НЕ используется в примере для первого платежа
-    // Формируем данные для POST формы
-    // ВАЖНО: Порядок параметров в formData не влияет на подпись
-    // Но для ясности сохраняем логичный порядок
+    // Формируем данные для POST формы (STEP 1: только привязка карты)
+    // КРИТИЧНО: Receipt НЕ отправляем на этом шаге (Robokassa limitation)
     const formData: Record<string, string> = {
       MerchantLogin: merchantLogin,
       InvoiceID: invoiceId,
       Description: description,
       SignatureValue: signatureValue,
       OutSum: amountStr, // КРИТИЧНО: "1.00" (строка)
-      Recurring: "true", // Recurring=true для рекуррентных платежей (НЕ участвует в подписи!)
-      Receipt: receiptEncoded, // КРИТИЧНО: urlencoded Receipt (EXACTLY тот, что в подписи)
+      Recurring: "true", // Recurring=true для привязки карты (НЕ участвует в подписи!)
     };
     
     // Добавляем Shp_ параметры (в конце, после основных параметров)
     formData.Shp_userId = shpUserId;
     
-    // Добавляем Shp_ параметры (в конце, после основных параметров)
-    formData.Shp_userId = shpUserId;
+    // КРИТИЧНО: Receipt НЕ добавляем - это STEP 1 (только привязка карты)
+    // Фискализация будет на STEP 2 (дочерний recurring-платеж 199 RUB)
     
     console.log("[robokassa/create] Recurring = 'true' (НЕ участвует в подписи)");
-    console.log("[robokassa/create] Receipt added to formData (urlencoded):", receiptEncoded.substring(0, 100) + "...");
+    console.log("[robokassa/create] Receipt: NOT SENT (will be sent in STEP 2)");
     console.log("[robokassa/create] Shp_userId added to formData:", formData.Shp_userId);
     
     console.log("[robokassa/create] Using Robokassa domain:", robokassaDomain);
