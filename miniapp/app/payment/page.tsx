@@ -212,61 +212,77 @@ function PaymentContent() {
             </div>
           )}
 
-          <div className="space-y-3">
-            <div className="bg-gray-50 border border-gray-200 rounded-xl p-4">
-              <label className="flex items-start gap-3 cursor-pointer">
-                <input
-                  type="checkbox"
-                  checked={agreedToTerms}
-                  onChange={(e) => setAgreedToTerms(e.target.checked)}
-                  className="mt-0.5 w-5 h-5 rounded border-gray-300 text-accent focus:ring-2 focus:ring-accent cursor-pointer flex-shrink-0"
-                />
-                <span className="text-sm text-textPrimary flex-1 leading-relaxed">
-                  Я согласен на автоматические списания согласно{" "}
-                  <Link
-                    href={userId ? `/oferta?id=${userId}` : "/oferta"}
-                    className="text-accent underline hover:text-accent/80 font-medium"
-                    target="_blank"
-                  >
-                    условиям оферты
-                  </Link>
-                </span>
-              </label>
-            </div>
-
-            <button
-              onClick={startTrial}
-              disabled={!userId || !!loading || !agreedToTerms}
-              className="w-full py-3 rounded-xl bg-accent text-white font-semibold hover:opacity-90 disabled:opacity-50 disabled:cursor-not-allowed transition-opacity"
-            >
-              {loading === "creating" 
-                ? "Создаём оплату..." 
-                : loading === "redirecting"
-                ? "Открываем страницу оплаты..."
-                : loading === "opened"
-                ? "Страница оплаты открыта"
-                : "Начать пробный период"}
-            </button>
-            
-            {loading && (
-              <div className="mt-3 space-y-2">
-                <p className="text-sm text-textSecondary text-center">
-                  {loading === "creating" 
-                    ? "Подготовка платежа... Пожалуйста, подождите"
-                    : loading === "redirecting"
-                    ? "Открываем страницу оплаты Robokassa в новом окне..."
-                    : loading === "opened"
-                    ? "✅ Страница оплаты открыта в новом окне. Завершите оплату там."
-                    : ""}
-                </p>
-                {loading === "opened" && (
-                  <p className="text-xs text-textSecondary text-center">
-                    Если страница не открылась, проверьте блокировку всплывающих окон
-                  </p>
-                )}
+          {!paymentData ? (
+            <div className="space-y-3">
+              <div className="bg-gray-50 border border-gray-200 rounded-xl p-4">
+                <label className="flex items-start gap-3 cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={agreedToTerms}
+                    onChange={(e) => setAgreedToTerms(e.target.checked)}
+                    className="mt-0.5 w-5 h-5 rounded border-gray-300 text-accent focus:ring-2 focus:ring-accent cursor-pointer flex-shrink-0"
+                  />
+                  <span className="text-sm text-textPrimary flex-1 leading-relaxed">
+                    Я согласен на автоматические списания согласно{" "}
+                    <Link
+                      href={userId ? `/oferta?id=${userId}` : "/oferta"}
+                      className="text-accent underline hover:text-accent/80 font-medium"
+                      target="_blank"
+                    >
+                      условиям оферты
+                    </Link>
+                  </span>
+                </label>
               </div>
-            )}
-          </div>
+
+              <button
+                onClick={startTrial}
+                disabled={!userId || !!loading || !agreedToTerms}
+                className="w-full py-3 rounded-xl bg-accent text-white font-semibold hover:opacity-90 disabled:opacity-50 disabled:cursor-not-allowed transition-opacity"
+              >
+                {loading === "creating" 
+                  ? "Создаём оплату..." 
+                  : "Начать пробный период"}
+              </button>
+              
+              {loading === "creating" && (
+                <p className="text-sm text-textSecondary text-center mt-2">
+                  Подготовка платежа... Пожалуйста, подождите
+                </p>
+              )}
+            </div>
+          ) : (
+            <div className="space-y-4">
+              <div className="bg-blue-50 border border-blue-200 rounded-xl p-4">
+                <p className="text-sm font-semibold text-blue-800 mb-2">
+                  Готово к оплате!
+                </p>
+                <p className="text-sm text-blue-700">
+                  Нажмите кнопку ниже, чтобы перейти на страницу оплаты Robokassa и завершить оформление подписки.
+                </p>
+              </div>
+
+              <button
+                onClick={submitPaymentForm}
+                disabled={!!loading}
+                className="w-full py-3 rounded-xl bg-accent text-white font-semibold hover:opacity-90 disabled:opacity-50 disabled:cursor-not-allowed transition-opacity"
+              >
+                {loading === "redirecting" 
+                  ? "Переход на страницу оплаты..." 
+                  : "Перейти к оплате"}
+              </button>
+
+              <button
+                onClick={() => {
+                  setPaymentData(null);
+                  setLoading(false);
+                }}
+                className="w-full py-2 rounded-xl border border-gray-300 text-textPrimary font-medium hover:bg-gray-50 transition-colors"
+              >
+                Отмена
+              </button>
+            </div>
+          )}
             </>
           )}
 
