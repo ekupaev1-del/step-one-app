@@ -797,25 +797,14 @@ function ProfilePageContent() {
           
           <div className="space-y-3">
             <div className="flex justify-between items-center py-2 border-b border-gray-100">
-              <span className="text-textSecondary">Статус</span>
-              <span className={`font-medium ${
-                profile.subscriptionStatus === "active" ? "text-green-600" :
-                profile.subscriptionStatus === "trial" ? "text-blue-600" :
-                profile.subscriptionStatus === "payment_failed" ? "text-red-600" :
-                "text-textPrimary"
-              }`}>
-                {formatSubscriptionStatus(profile.subscriptionStatus)}
-              </span>
+              <span className="text-textSecondary">Тип подписки</span>
+              <span className="font-medium text-textPrimary">Подписка на 1 месяц</span>
             </div>
             
-            {getNextBillingDate() && (
-              <div className="flex justify-between items-center py-2 border-b border-gray-100">
-                <span className="text-textSecondary">
-                  {profile.subscriptionStatus === "trial" ? "Триал заканчивается" : "Следующее списание"}
-                </span>
-                <span className="font-medium text-textPrimary">{getNextBillingDate()}</span>
-              </div>
-            )}
+            <div className="flex justify-between items-center py-2 border-b border-gray-100">
+              <span className="text-textSecondary">Действует до</span>
+              <span className="font-medium text-textPrimary">22 января 2026 года</span>
+            </div>
             
             <div className="flex justify-between items-center py-2">
               <span className="text-textSecondary">Цена</span>
@@ -824,26 +813,14 @@ function ProfilePageContent() {
             
             {/* Кнопки действий */}
             <div className="pt-4 mt-4 border-t border-gray-100 space-y-3">
-              {/* Кнопка отмены подписки - только для active или trial */}
-              {(profile.subscriptionStatus === "trial" || profile.subscriptionStatus === "active") && (
-                <button
-                  onClick={handleCancelSubscription}
-                  disabled={cancellingSubscription}
-                  className="w-full px-4 py-2 bg-red-50 border border-red-200 text-red-600 font-medium rounded-lg hover:bg-red-100 transition-colors disabled:opacity-50"
-                >
-                  {cancellingSubscription ? "Отмена..." : "Отменить подписку"}
-                </button>
-              )}
-              
-              {/* Кнопка оформления подписки - если подписки нет или истекла */}
-              {(!profile.subscriptionStatus || profile.subscriptionStatus === "none" || profile.subscriptionStatus === "expired" || profile.subscriptionStatus === "payment_failed") && (
-                <Link
-                  href={`/payment?id=${userId}`}
-                  className="block w-full px-4 py-2 bg-accent text-white font-medium rounded-lg hover:opacity-90 transition-opacity text-center"
-                >
-                  Оформить подписку
-                </Link>
-              )}
+              {/* Кнопка отмены подписки - всегда видна для теста */}
+              <button
+                onClick={handleCancelSubscription}
+                disabled={cancellingSubscription}
+                className="w-full px-4 py-2 bg-red-600 text-white font-medium rounded-lg hover:bg-red-700 transition-colors disabled:opacity-50"
+              >
+                {cancellingSubscription ? "Отмена..." : "Отменить подписку"}
+              </button>
             </div>
           </div>
         </div>
