@@ -14,6 +14,8 @@ function PaymentContent() {
   const [trialEndAt, setTrialEndAt] = useState<string | null>(null);
   const [agreedToTerms, setAgreedToTerms] = useState(false);
   const [paymentData, setPaymentData] = useState<{ actionUrl: string; formData: Record<string, string> } | null>(null);
+  const [debugInfo, setDebugInfo] = useState<string | null>(null);
+  const [showDebug, setShowDebug] = useState(false);
 
   useEffect(() => {
     const id = searchParams.get("id");
@@ -128,8 +130,19 @@ function PaymentContent() {
       // Форма должна отправляться ТОЛЬКО при нажатии кнопки пользователем
     } catch (e: any) {
       console.error("[payment] Error:", e);
-      setError(e.message || "Ошибка создания платежа");
+      const errorMessage = e.message || "Ошибка создания платежа";
+      setError(errorMessage);
       setLoading(false);
+      
+      // Сохраняем debug информацию об ошибке
+      const errorDebug = `=== ERROR DEBUG ===
+Error: ${errorMessage}
+Time: ${new Date().toISOString()}
+User ID: ${userId}
+Stack: ${e.stack || "N/A"}
+==================`;
+      setDebugInfo(errorDebug);
+      setShowDebug(true);
     }
   };
 
@@ -231,6 +244,16 @@ function PaymentContent() {
     console.log("[payment] Form action URL:", form.action);
     console.log("[payment] Form method:", form.method);
     
+    // Сохраняем debug информацию для отображения
+    const debugText = `=== DEBUG INFO ===
+Action URL: ${form.action}
+Method: ${form.method}
+Fields:
+${formFields.map(f => `  ${f.name} = ${f.value}`).join('\n')}
+==================`;
+    setDebugInfo(debugText);
+    console.log("[payment] Debug info:", debugText);
+    
     // Добавляем форму в DOM
     document.body.appendChild(form);
     
@@ -287,7 +310,50 @@ function PaymentContent() {
 
           {error && (
             <div className="p-3 rounded-lg bg-red-50 border border-red-200 text-red-700 text-sm">
-              {error}
+              <p className="font-semibold mb-1">❌ Ошибка:</p>
+              <p>{error}</p>
+              {debugInfo && (
+                <button
+                  onClick={() => setShowDebug(!showDebug)}
+                  className="mt-2 text-xs underline"
+                >
+                  {showDebug ? "Скрыть" : "Показать"} debug информацию
+                </button>
+              )}
+            </div>
+          )}
+          
+          {paymentData && debugInfo && (
+            <div className="bg-yellow-50 border border-yellow-200 rounded-xl p-4">
+              <div className="flex items-center justify-between mb-2">
+                <p className="text-sm font-semibold text-yellow-800">🔍 Debug информация</p>
+                <button
+                  onClick={() => setShowDebug(!showDebug)}
+                  className="text-xs text-yellow-700 underline"
+                >
+                  {showDebug ? "Скрыть" : "Показать"}
+                </button>
+              </div>
+              {showDebug && (
+                <div className="mt-2">
+                  <textarea
+                    readOnly
+                    value={debugInfo}
+                    className="w-full p-2 text-xs font-mono bg-white border border-yellow-300 rounded resize-none"
+                    rows={10}
+                    onClick={(e) => (e.target as HTMLTextAreaElement).select()}
+                  />
+                  <button
+                    onClick={() => {
+                      navigator.clipboard.writeText(debugInfo);
+                      alert("Скопировано в буфер обмена!");
+                    }}
+                    className="mt-2 text-xs text-yellow-700 underline"
+                  >
+                    📋 Копировать debug информацию
+                  </button>
+                </div>
+              )}
             </div>
           )}
 
