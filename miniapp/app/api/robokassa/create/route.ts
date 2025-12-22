@@ -183,17 +183,22 @@ export async function POST(req: Request) {
     // 
     // ВАЖНО: Порядок параметров должен быть ТОЧНО как в примере
     // ВАЖНО: Receipt НЕ используется в примере для первого платежа
-    // ВАЖНО: Recurring должен быть строкой "true" (не boolean, не "1")
+    // ВАЖНО: Robokassa может требовать Recurring = "1" вместо "true"
+    // Пробуем "1" как в некоторых версиях API
+    // Если не работает, можно попробовать "true"
+    const recurringValue = process.env.ROBOKASSA_RECURRING_VALUE || "1"; // По умолчанию "1"
+    
     const formData: Record<string, string> = {
       MerchantLogin: merchantLogin,
       InvoiceID: invoiceId,
       Description: description,
       SignatureValue: signatureValue,
       OutSum: amountStr,
-      Recurring: "true", // ВАЖНО: строка "true" (как в примере документации)
+      Recurring: recurringValue, // "1" или "true" в зависимости от настроек Robokassa
     };
     
     console.log("[robokassa/create] Recurring value:", formData.Recurring, "type:", typeof formData.Recurring);
+    console.log("[robokassa/create] Recurring value source:", recurringValue, "(from env ROBOKASSA_RECURRING_VALUE or default '1')");
     
     // Добавляем Shp_ параметры (в конце, после основных параметров)
     formData.Shp_userId = String(numericUserId);
