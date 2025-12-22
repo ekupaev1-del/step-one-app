@@ -132,8 +132,12 @@ export async function POST(req: Request) {
     
     const amountStr = FIRST_PAYMENT_AMOUNT.toFixed(2); // "1.00"
 
-    // ВАЖНО: Для теста можно отключить Receipt через переменную окружения
-    // Установите ROBOKASSA_SKIP_RECEIPT=true для теста без Receipt
+    // ВАЖНО: По документации Robokassa для первого платежа с Recurring
+    // подпись БЕЗ Receipt: MerchantLogin:OutSum:InvoiceID:Password1
+    // В примере из документации Receipt НЕ показан для первого платежа
+    // Receipt нужен только для фискализации (54-ФЗ), но может вызывать ошибки
+    
+    // Проверяем, нужен ли Receipt (можно отключить через переменную окружения)
     const skipReceipt = process.env.ROBOKASSA_SKIP_RECEIPT === "true";
     
     let receiptJson: string | null = null;
@@ -141,59 +145,53 @@ export async function POST(req: Request) {
     let signatureBase: string;
     let signatureValue: string;
 
-    // ВАЖНО: По документации Robokassa, для первого платежа с Recurring
-    // подпись может быть БЕЗ Receipt: MerchantLogin:OutSum:InvoiceID:Password1
-    // Receipt добавляется отдельно для фискализации, но НЕ всегда обязателен
-    
-    // Проверяем, нужен ли Receipt (по умолчанию включаем для фискализации)
-    const useReceipt = !skipReceipt;
-    
-    if (!useReceipt) {
+    // По умолчанию используем подпись БЕЗ Receipt (как в примере документации)
+    // Если нужна фискализация - можно включить Receipt
+    if (skipReceipt) {
       // Подпись БЕЗ Receipt: MerchantLogin:OutSum:InvoiceID:ROBOKASSA_PASSWORD1
       signatureBase = `${merchantLogin}:${amountStr}:${invoiceId}:${password1}`;
       signatureValue = md5(signatureBase).toLowerCase();
-      console.log("[robokassa/create] ⚠️ Receipt отключен - подпись БЕЗ Receipt");
+      console.log("[robokassa/create] Receipt отключен - используем подпись БЕЗ Receipt (как в примере)");
     } else {
-      // Формируем Receipt для фискализации
+      // Пробуем с Receipt для фискализации
       try {
         receiptJson = buildFirstPaymentReceipt(FIRST_PAYMENT_AMOUNT);
         receiptEncoded = encodeURIComponent(receiptJson);
-        console.log("[robokassa/create] Receipt created successfully, length:", receiptJson.length);
+        
+        // Подпись С Receipt: MerchantLogin:OutSum:InvoiceID:Receipt:ROBOKASSA_PASSWORD1
+        // ВАЖНО: Receipt в подписи - это JSON строка (НЕ encoded)
+        signatureBase = `${merchantLogin}:${amountStr}:${invoiceId}:${receiptJson}:${password1}`;
+        signatureValue = md5(signatureBase).toLowerCase();
+        console.log("[robokassa/create] Receipt включен для фискализации");
       } catch (receiptError: any) {
         console.error("[robokassa/create] ❌ Error building Receipt:", receiptError);
-        // Если Receipt не удалось создать, пробуем без него
         console.log("[robokassa/create] ⚠️ Falling back to payment WITHOUT Receipt");
+        // Если Receipt не удалось создать, используем подпись без него
         receiptJson = null;
         receiptEncoded = null;
         signatureBase = `${merchantLogin}:${amountStr}:${invoiceId}:${password1}`;
         signatureValue = md5(signatureBase).toLowerCase();
       }
-      
-      // Если Receipt создан успешно, используем его в подписи
-      if (receiptJson) {
-        // Подпись С Receipt: MerchantLogin:OutSum:InvoiceID:Receipt:ROBOKASSA_PASSWORD1
-        // ВАЖНО: Receipt в подписи - это JSON строка (НЕ encoded)
-        signatureBase = `${merchantLogin}:${amountStr}:${invoiceId}:${receiptJson}:${password1}`;
-        signatureValue = md5(signatureBase).toLowerCase();
-      }
-      
-      // Дополнительная проверка подписи
-      if (!signatureValue || signatureValue.length !== 32) {
-        throw new Error(`Invalid signature generated: ${signatureValue}`);
-      }
+    }
+    
+    // Проверка подписи
+    if (!signatureValue || signatureValue.length !== 32) {
+      throw new Error(`Invalid signature generated: ${signatureValue}`);
     }
 
     // DEBUG: Логируем строку подписи БЕЗ пароля
-    const signatureBaseForLog = skipReceipt
-      ? `${merchantLogin}:${amountStr}:${invoiceId}:[PASSWORD_HIDDEN]`
-      : `${merchantLogin}:${amountStr}:${invoiceId}:${receiptJson}:[PASSWORD_HIDDEN]`;
+    const signatureBaseForLog = receiptJson
+      ? `${merchantLogin}:${amountStr}:${invoiceId}:${receiptJson}:[PASSWORD_HIDDEN]`
+      : `${merchantLogin}:${amountStr}:${invoiceId}:[PASSWORD_HIDDEN]`;
     
     console.log("[robokassa/create] InvoiceID:", invoiceId);
     console.log("[robokassa/create] OutSum:", amountStr);
-    console.log("[robokassa/create] Receipt enabled:", !skipReceipt);
+    console.log("[robokassa/create] Receipt enabled:", !!receiptJson);
     if (receiptJson) {
       console.log("[robokassa/create] Receipt JSON:", receiptJson);
       console.log("[robokassa/create] Receipt JSON length:", receiptJson.length);
+    } else {
+      console.log("[robokassa/create] Receipt NOT used (as in Robokassa documentation example)");
     }
     console.log("[robokassa/create] Signature base (без пароля):", signatureBaseForLog);
     console.log("[robokassa/create] Signature value:", signatureValue);
@@ -223,17 +221,17 @@ export async function POST(req: Request) {
       Recurring: "true", // ВАЖНО: "true", а не "1"!
     };
     
-    // Добавляем Shp_ параметры
+    // Добавляем Shp_ параметры (в конце, как в документации)
     formData.Shp_userId = String(numericUserId);
     
-    // ВАЖНО: Receipt добавляем только если он нужен для фискализации
+    // ВАЖНО: Receipt добавляем только если он был создан
     // В примере из документации Receipt НЕ показан для первого платежа
-    // Но если нужна фискализация - добавляем в конце
-    if (!skipReceipt && receiptEncoded) {
+    // Если нужна фискализация - можно включить через переменную окружения
+    if (receiptEncoded) {
       formData.Receipt = receiptEncoded;
       console.log("[robokassa/create] Receipt added to formData for fiscalization");
     } else {
-      console.log("[robokassa/create] Receipt NOT added (skipReceipt:", skipReceipt, ")");
+      console.log("[robokassa/create] Receipt NOT added (as in Robokassa documentation example)");
     }
     
     console.log("[robokassa/create] Using Robokassa domain:", robokassaDomain);
