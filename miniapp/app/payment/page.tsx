@@ -8,7 +8,7 @@ import AppLayout from "../components/AppLayout";
 function PaymentContent() {
   const searchParams = useSearchParams();
   const [userId, setUserId] = useState<number | null>(null);
-  const [loading, setLoading] = useState(false);
+  const [loading, setLoading] = useState<string | boolean>(false);
   const [error, setError] = useState<string | null>(null);
   const [subscriptionStatus, setSubscriptionStatus] = useState<string | null>(null);
   const [trialEndAt, setTrialEndAt] = useState<string | null>(null);
@@ -51,7 +51,7 @@ function PaymentContent() {
       setError("Необходимо согласиться с условиями оферты");
       return;
     }
-    setLoading(true);
+    setLoading("creating");
     setError(null);
     
     try {
@@ -105,12 +105,21 @@ function PaymentContent() {
       console.log("[payment] Action URL:", data.actionUrl);
       console.log("[payment] Form data:", data.formData);
       
+      // Показываем сообщение пользователю перед редиректом
+      // Это даст время увидеть, что происходит
+      setError(null);
+      setLoading("redirecting");
+      
+      // Небольшая задержка, чтобы пользователь увидел состояние загрузки
+      await new Promise(resolve => setTimeout(resolve, 800));
+      
       // ВАЖНО: Robokassa требует POST форму, а не GET редирект!
       // Создаем скрытую форму и отправляем её
       const form = document.createElement("form");
       form.method = "POST";
       form.action = data.actionUrl;
       form.style.display = "none";
+      form.target = "_self"; // Открываем в том же окне
       
       // Добавляем все поля формы
       Object.entries(data.formData).forEach(([key, value]) => {
@@ -123,6 +132,10 @@ function PaymentContent() {
       
       // Добавляем форму в DOM и отправляем
       document.body.appendChild(form);
+      
+      // Еще одна небольшая задержка перед отправкой
+      await new Promise(resolve => setTimeout(resolve, 300));
+      
       form.submit();
       
       // Форма отправится, и произойдет редирект на Robokassa
@@ -219,11 +232,23 @@ function PaymentContent() {
 
             <button
               onClick={startTrial}
-              disabled={!userId || loading || !agreedToTerms}
+              disabled={!userId || !!loading || !agreedToTerms}
               className="w-full py-3 rounded-xl bg-accent text-white font-semibold hover:opacity-90 disabled:opacity-50 disabled:cursor-not-allowed transition-opacity"
             >
-              {loading ? "Создаём оплату..." : "Начать пробный период"}
+              {loading === "creating" 
+                ? "Создаём оплату..." 
+                : loading === "redirecting"
+                ? "Перенаправление на страницу оплаты..."
+                : "Начать пробный период"}
             </button>
+            
+            {loading && (
+              <p className="text-xs text-textSecondary text-center mt-2">
+                {loading === "creating" 
+                  ? "Подготовка платежа... Пожалуйста, подождите"
+                  : "Открываем страницу оплаты Robokassa..."}
+              </p>
+            )}
           </div>
             </>
           )}
