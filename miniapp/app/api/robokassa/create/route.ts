@@ -216,11 +216,10 @@ export async function POST(req: Request) {
     console.log("[robokassa/create] InvoiceID:", invoiceId, "(type:", typeof invoiceId, ")");
     console.log("[robokassa/create] InvoiceID as string:", invoiceIdStr);
     console.log("[robokassa/create] InvoiceID <= 2147483647:", invoiceId <= 2147483647);
-    console.log("[robokassa/create] Shp_userId:", shpUserId, "(NOT in signature, but in POST)");
     console.log("[robokassa/create] ========== EXCLUDED FROM SIGNATURE ==========");
     console.log("[robokassa/create] Recurring: true (NOT in signature)");
     console.log("[robokassa/create] Description: (NOT in signature, but in POST)");
-    console.log("[robokassa/create] Receipt: NOT SENT (Robokassa limitation)");
+    console.log("[robokassa/create] Receipt: SENT (required for self-employed fiscalization)");
     console.log("[robokassa/create] =================================================");
 
     // ВАЖНО: Robokassa требует POST форму, а не GET URL!
