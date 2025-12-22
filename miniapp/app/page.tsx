@@ -7,12 +7,29 @@ export default async function Page({
 }: {
   searchParams?: { id?: string | string[] };
 }) {
+  // Если это редирект от Robokassa после оплаты - обрабатываем по-другому
   const id = searchParams?.id;
   const idValue = Array.isArray(id) ? id[0] : id;
-  const target =
-    typeof idValue === "string" && idValue.length > 0
-      ? `/registration?id=${idValue}`
-      : "/registration";
-
-  redirect(target as any);
+  
+  // Если id передан - редиректим на регистрацию
+  if (typeof idValue === "string" && idValue.length > 0) {
+    redirect(`/registration?id=${idValue}` as any);
+  }
+  
+  // Если id не передан - показываем простую страницу вместо ошибки 400
+  // Это может быть редирект от Robokassa или прямой доступ
+  return (
+    <div style={{ 
+      minHeight: '100vh', 
+      display: 'flex', 
+      alignItems: 'center', 
+      justifyContent: 'center',
+      flexDirection: 'column',
+      padding: '20px',
+      textAlign: 'center'
+    }}>
+      <h1>Step One</h1>
+      <p>Откройте приложение через Telegram бота</p>
+    </div>
+  );
 }
