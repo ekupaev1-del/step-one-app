@@ -202,10 +202,14 @@ function PaymentContent() {
         const input = document.createElement("input");
         input.type = "hidden";
         input.name = key;
+        // ВАЖНО: Не кодируем значение - браузер сам закодирует при отправке формы
+        // Но убеждаемся, что это строка
         input.value = value;
         form.appendChild(input);
         formFields.push({ name: key, value: value });
-        console.log(`[payment] Added form field: ${key} = ${value}`);
+        console.log(`[payment] Added form field: ${key} = ${value} (length: ${value.length})`);
+      } else {
+        console.warn(`[payment] Missing form field: ${key}`);
       }
     });
     

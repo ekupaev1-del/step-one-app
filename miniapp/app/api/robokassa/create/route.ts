@@ -202,16 +202,28 @@ export async function POST(req: Request) {
     
     console.log("[robokassa/create] Using Robokassa domain:", robokassaDomain);
     console.log("[robokassa/create] Robokassa action URL:", robokassaActionUrl);
+    // Логируем все параметры для отладки
     console.log("[robokassa/create] Form data (POST):", {
       MerchantLogin: formData.MerchantLogin,
       InvoiceID: formData.InvoiceID,
+      InvoiceID_length: formData.InvoiceID.length,
       OutSum: formData.OutSum,
       Description: formData.Description,
+      Description_length: formData.Description.length,
       Recurring: formData.Recurring,
+      Recurring_type: typeof formData.Recurring,
       Shp_userId: formData.Shp_userId,
       SignatureValue: formData.SignatureValue.substring(0, 10) + "...",
+      SignatureValue_length: formData.SignatureValue.length,
       Receipt: "NOT SET (as in documentation example)",
     });
+    
+    // Проверяем, что все обязательные поля присутствуют
+    const requiredFields = ["MerchantLogin", "InvoiceID", "Description", "SignatureValue", "OutSum", "Recurring"];
+    const missingFields = requiredFields.filter(field => !formData[field]);
+    if (missingFields.length > 0) {
+      throw new Error(`Missing required fields: ${missingFields.join(", ")}`);
+    }
     console.log("[robokassa/create] ==========================================");
 
     // Сохраняем платеж в БД (опционально, для отслеживания)
