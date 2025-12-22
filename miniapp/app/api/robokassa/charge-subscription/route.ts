@@ -82,13 +82,13 @@ export async function POST(req: Request) {
 
     // Проверка переменных окружения
     const merchantLogin = process.env.ROBOKASSA_MERCHANT_LOGIN;
-    const password2 = process.env.ROBOKASSA_PASSWORD2; // PART 2: Используем Password2 для recurring
+    const password1 = process.env.ROBOKASSA_PASSWORD1; // STEP 4: Используем Password1 для recurring
 
-    if (!merchantLogin || !password2) {
+    if (!merchantLogin || !password1) {
       return NextResponse.json(
         { 
           ok: false, 
-          error: "ROBOKASSA_MERCHANT_LOGIN или ROBOKASSA_PASSWORD2 не заданы" 
+          error: "ROBOKASSA_MERCHANT_LOGIN или ROBOKASSA_PASSWORD1 не заданы" 
         },
         { status: 500 }
       );
@@ -181,19 +181,19 @@ export async function POST(req: Request) {
       throw new Error(`Invalid OutSum: expected "199.00", got "${amountStr}"`);
     }
 
-    // PART 2: RECURRING PAYMENT (AFTER 3 DAYS)
+    // STEP 4: RECURRING PAYMENT (AFTER 3 DAYS)
     // КРИТИЧНО: Подпись для recurring-платежа:
-    // md5(MerchantLogin:OutSum:InvoiceID:Password2)
+    // md5(MerchantLogin:OutSum:InvoiceID:Password1)
     //
     // ВАЖНО:
     // - PreviousInvoiceID НЕ включается в подпись
     // - Recurring НЕ отправляется
-    // - Receipt НЕ отправляется
+    // - Receipt НЕ отправляется (для recurring не нужен)
     // - Description НЕ участвует в подписи (но отправляется в POST)
     // - OutSum = строка "199.00"
     
-    // Формируем подпись СТРОГО по требованиям: MerchantLogin:OutSum:InvoiceID:Password2
-    const signatureBase = `${merchantLogin}:${amountStr}:${invoiceIdStr}:${password2}`;
+    // Формируем подпись СТРОГО по требованиям: MerchantLogin:OutSum:InvoiceID:Password1
+    const signatureBase = `${merchantLogin}:${amountStr}:${invoiceIdStr}:${password1}`;
     const signatureValue = md5(signatureBase).toLowerCase();
     
     // Проверка подписи
@@ -227,20 +227,20 @@ export async function POST(req: Request) {
     console.log("[robokassa/charge-subscription] Description: NOT in signature");
     console.log("[robokassa/charge-subscription] ==============================================");
 
-    // PART 2: POST fields для recurring-платежа
+    // STEP 4: POST fields для recurring-платежа
     // POST fields:
     // - MerchantLogin
     // - OutSum = "199.00"
     // - InvoiceID (new unique integer)
-    // - PreviousInvoiceID = parent_invoice_id
-    // - Description = "Подписка Step One — 1 месяц"
+    // - PreviousInvoiceID = recurring_parent_invoice_id
+    // - Description = "Подписка Step One — продление"
     // - SignatureValue
     //
     // ❌ НЕ отправляем:
     // - Recurring (для recurring-платежа не нужен)
     // - Receipt (не отправляется для recurring)
     
-    const description = "Подписка Step One — 1 месяц";
+    const description = "Подписка Step One — продление";
     const recurringUrl = "https://auth.robokassa.ru/Merchant/Recurring";
     
     const formData: Record<string, string> = {
@@ -265,9 +265,10 @@ export async function POST(req: Request) {
     console.log("[robokassa/charge-subscription] Exact signature string BEFORE md5:", signatureBaseForLog);
     console.log("[robokassa/charge-subscription] Full signature string (with password):", signatureBase);
     console.log("[robokassa/charge-subscription] Final SignatureValue (md5):", signatureValue);
-    console.log("[robokassa/charge-subscription] If Robokassa returns error 26:");
-    console.log("[robokassa/charge-subscription]   - Check signature formula: MerchantLogin:OutSum:InvoiceID:Password2");
-    console.log("[robokassa/charge-subscription]   - Verify Password2 is correct");
+    console.log("[robokassa/charge-subscription] If Robokassa returns error:");
+    console.log("[robokassa/charge-subscription]   - Check signature formula: MerchantLogin:OutSum:InvoiceID:Password1");
+    console.log("[robokassa/charge-subscription]   - Verify Password1 is correct");
+    console.log("[robokassa/charge-subscription]   - Verify PreviousInvoiceID is correct");
     console.log("[robokassa/charge-subscription] ==============================================");
 
     // Сохраняем платеж в БД перед отправкой
@@ -310,7 +311,7 @@ export async function POST(req: Request) {
     console.log("[robokassa/charge-subscription] Robokassa response status:", response.status);
     console.log("[robokassa/charge-subscription] Robokassa response text:", responseText);
 
-    // PART 2: Robokassa возвращает "OK" при успехе
+    // STEP 5: ERROR HANDLING - Robokassa возвращает "OK" при успехе
     if (responseText.trim().toLowerCase() === "ok") {
       console.log("[robokassa/charge-subscription] ✅ Payment successful!");
       
@@ -324,7 +325,7 @@ export async function POST(req: Request) {
         console.warn("[robokassa/charge-subscription] Warning: Failed to update payment status:", e);
       }
       
-      // PART 2: Обновляем статус подписки
+      // STEP 4: Обновляем статус подписки
       const now = new Date();
       const paidUntil = new Date(now.getTime() + 30 * 24 * 60 * 60 * 1000); // +30 дней
       
@@ -334,11 +335,12 @@ export async function POST(req: Request) {
           .update({
             subscription_status: "active",
             paid_until: paidUntil.toISOString(),
+            next_charge_at: paidUntil.toISOString(), // Следующее списание через 30 дней
             last_payment_status: "success",
           })
           .eq("id", numericUserId);
         
-        console.log("[robokassa/charge-subscription] ✅ Subscription activated, paid until:", paidUntil.toISOString());
+        console.log("[robokassa/charge-subscription] ✅ Subscription renewed, paid until:", paidUntil.toISOString());
       } catch (e) {
         console.warn("[robokassa/charge-subscription] Warning: Failed to update subscription status:", e);
       }
@@ -351,8 +353,18 @@ export async function POST(req: Request) {
         message: "Payment successful",
       });
     } else {
-      console.error("[robokassa/charge-subscription] ❌ Payment failed:", responseText);
-      console.error("[robokassa/charge-subscription] Invalid signature or recurring not accepted");
+      // STEP 5: ERROR HANDLING
+      console.error("[robokassa/charge-subscription] ❌ Payment failed");
+      console.error("[robokassa/charge-subscription] Response code:", response.status);
+      console.error("[robokassa/charge-subscription] Response message:", responseText);
+      console.error("[robokassa/charge-subscription] Full request payload:", {
+        MerchantLogin: merchantLogin,
+        OutSum: amountStr,
+        InvoiceID: invoiceIdStr,
+        PreviousInvoiceID: parentInvoiceId,
+        Description: description,
+        SignatureValue: signatureValue.substring(0, 10) + "...",
+      });
       
       // Обновляем статус платежа в БД
       try {
@@ -362,6 +374,38 @@ export async function POST(req: Request) {
           .eq("invoice_id", invoiceIdStr);
       } catch (e) {
         console.warn("[robokassa/charge-subscription] Warning: Failed to update payment status:", e);
+      }
+      
+      // STEP 5: Помечаем подписку как payment_failed и уведомляем пользователя
+      try {
+        await supabase
+          .from("users")
+          .update({
+            subscription_status: "payment_failed",
+            last_payment_status: "failed",
+          })
+          .eq("id", numericUserId);
+        
+        // STEP 5: Уведомляем пользователя в Telegram
+        const { data: user } = await supabase
+          .from("users")
+          .select("telegram_id")
+          .eq("id", numericUserId)
+          .maybeSingle();
+        
+        if (user?.telegram_id) {
+          const notifyUrl = `${process.env.MINIAPP_BASE_URL || "https://step-one-app-git-dev-emins-projects-4717eabc.vercel.app"}/api/notify-bot`;
+          await fetch(notifyUrl, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              userId: numericUserId,
+              message: "❌ Ошибка оплаты подписки. Пожалуйста, проверьте карту или обратитесь в поддержку.",
+            }),
+          });
+        }
+      } catch (e) {
+        console.warn("[robokassa/charge-subscription] Warning: Failed to update user status:", e);
       }
       
       return NextResponse.json(

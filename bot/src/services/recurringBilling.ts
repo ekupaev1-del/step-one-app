@@ -10,22 +10,7 @@ function md5(input: string) {
   return crypto.createHash("md5").update(input).digest("hex");
 }
 
-function buildSubscriptionReceipt() {
-  const receipt = {
-    sno: "usn_income", // УСН доходы (self-employed)
-    items: [
-      {
-        name: "Подписка Step One — 30 дней",
-        quantity: 1,
-        sum: SUBSCRIPTION_AMOUNT,
-        payment_method: "full_payment",
-        payment_object: "service",
-        tax: "none",
-      },
-    ],
-  };
-  return JSON.stringify(receipt);
-}
+// STEP 4: Receipt НЕ используется для recurring-платежей
 
 /**
  * Списывает 199 RUB с пользователя после окончания триала или для продления подписки
@@ -81,10 +66,10 @@ async function chargeUserAfterTrial(user: any) {
   console.log(`[recurring] PART 2: Signature base (без пароля): ${env.robokassaMerchantLogin}:${outSumStr}:${invoiceId}:[PASSWORD_HIDDEN]`);
   console.log(`[recurring] PART 2: Signature value: ${signatureValue}`);
 
-  console.log(`[recurring] PART 2: Charging user ${user.id}`);
-  console.log(`[recurring] PART 2: Initial invoice: ${user.robokassa_initial_invoice_id}`);
-  console.log(`[recurring] PART 2: New invoice: ${invoiceId}`);
-  console.log(`[recurring] PART 2: Receipt NOT sent (Robokassa requirement)`);
+  console.log(`[recurring] STEP 4: Charging user ${user.id}`);
+  console.log(`[recurring] STEP 4: Parent invoice: ${user.robokassa_initial_invoice_id}`);
+  console.log(`[recurring] STEP 4: New invoice: ${invoiceId}`);
+  console.log(`[recurring] STEP 4: Receipt NOT sent (for recurring not needed)`);
 
   // Записываем платеж как pending перед запросом
   const { data: paymentRow } = await supabase
@@ -102,7 +87,7 @@ async function chargeUserAfterTrial(user: any) {
 
   try {
     console.log(`[recurring] Sending POST request to: ${RECURRING_URL}`);
-    console.log(`[recurring] PART 2: Request body params:`, {
+    console.log(`[recurring] STEP 4: Request body params:`, {
       MerchantLogin: env.robokassaMerchantLogin,
       InvoiceID: invoiceId,
       PreviousInvoiceID: user.robokassa_initial_invoice_id,
@@ -125,40 +110,59 @@ async function chargeUserAfterTrial(user: any) {
     console.log(`[recurring] Response status: ${response.status}`);
     console.log(`[recurring] Response text: ${text}`);
 
-    // Robokassa возвращает "OK" при успехе (регистронезависимо)
+    // STEP 4: Robokassa возвращает "OK" при успехе
     if (response.ok && text.trim().toLowerCase() === "ok") {
       // Платеж успешно отправлен
-    if (paymentRow) {
+      if (paymentRow) {
+        await supabase
+          .from("payments")
+          .update({ status: "success" })
+          .eq("id", paymentRow.id);
+      }
+
+      // STEP 4: Обновляем статус подписки
+      const now = new Date();
+      const paidUntil = new Date(now.getTime() + 30 * 24 * 60 * 60 * 1000); // +30 дней
+      
       await supabase
-        .from("payments")
-          .update({ status: "sent" })
+        .from("users")
+        .update({
+          subscription_status: "active",
+          paid_until: paidUntil.toISOString(),
+          next_charge_at: paidUntil.toISOString(),
+          last_payment_status: "success",
+        })
+        .eq("id", user.id);
+
+      console.log(`[recurring] ✅ Payment successful for user ${user.id}, paid until: ${paidUntil.toISOString()}`);
+    } else {
+      // STEP 5: ERROR HANDLING - Платеж не прошел
+      console.error(`[recurring] ❌ Payment failed for user ${user.id}`);
+      console.error(`[recurring] Response code: ${response.status}`);
+      console.error(`[recurring] Response message: ${text}`);
+      console.error(`[recurring] Full request payload:`, {
+        MerchantLogin: env.robokassaMerchantLogin,
+        OutSum: outSumStr,
+        InvoiceID: invoiceId,
+        PreviousInvoiceID: user.robokassa_initial_invoice_id,
+        Description: description,
+        SignatureValue: signatureValue.substring(0, 10) + "...",
+      });
+      
+      if (paymentRow) {
+        await supabase
+          .from("payments")
+          .update({ status: "failed" })
           .eq("id", paymentRow.id);
       }
 
       await supabase
         .from("users")
-        .update({ last_payment_status: "sent" })
-        .eq("id", user.id);
-
-      console.log(`[recurring] ✅ Payment sent for user ${user.id}`);
-    } else {
-      // Платеж не прошел
-      if (paymentRow) {
-        await supabase
-          .from("payments")
-          .update({ status: "fail" })
-        .eq("id", paymentRow.id);
-    }
-
-    await supabase
-      .from("users")
         .update({ 
           subscription_status: "payment_failed",
-          last_payment_status: "fail" 
+          last_payment_status: "failed" 
         })
-      .eq("id", user.id);
-
-      console.error(`[recurring] ❌ Payment failed for user ${user.id}`);
+        .eq("id", user.id);
 
       // Отправляем уведомление пользователю о неудачном платеже
       try {
@@ -187,12 +191,17 @@ async function chargeUserAfterTrial(user: any) {
       }
     }
   } catch (error: any) {
+    // STEP 5: ERROR HANDLING
     console.error(`[recurring] Charge error for user ${user.id}:`, error);
+    console.error(`[recurring] Error details:`, {
+      message: error?.message,
+      stack: error?.stack,
+    });
     
     if (paymentRow) {
       await supabase
         .from("payments")
-        .update({ status: "fail" })
+        .update({ status: "failed" })
         .eq("id", paymentRow.id);
     }
     
@@ -200,30 +209,58 @@ async function chargeUserAfterTrial(user: any) {
       .from("users")
       .update({ 
         subscription_status: "payment_failed",
-        last_payment_status: "fail" 
+        last_payment_status: "failed" 
       })
       .eq("id", user.id);
+    
+    // STEP 5: Уведомляем пользователя
+    try {
+      const { data: userData } = await supabase
+        .from("users")
+        .select("telegram_id")
+        .eq("id", user.id)
+        .maybeSingle();
+      
+      if (userData?.telegram_id) {
+        const notifyUrl = process.env.MINIAPP_BASE_URL 
+          ? `${process.env.MINIAPP_BASE_URL}/api/notify-bot`
+          : "https://step-one-app-git-dev-emins-projects-4717eabc.vercel.app/api/notify-bot";
+        
+        await fetch(notifyUrl, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            userId: user.id,
+            message: "❌ Ошибка оплаты подписки. Пожалуйста, проверьте карту или обратитесь в поддержку.",
+          }),
+        });
+      }
+    } catch (notifyError) {
+      console.error(`[recurring] Error notifying user ${user.id}:`, notifyError);
+    }
   }
 }
 
 /**
- * Проверяет триалы, которые закончились, и списывает 199 RUB
+ * STEP 4: Проверяет триалы, которые закончились, и списывает 199 RUB
+ * Проверяет: trial_ends_at < now() AND subscription_active = true
  */
 export async function runRecurringBilling() {
   const now = new Date();
   const nowISO = now.toISOString();
 
-  console.log("[recurring] ========== CHECKING EXPIRED TRIALS ==========");
+  console.log("[recurring] ========== STEP 4: CHECKING EXPIRED TRIALS ==========");
   console.log("[recurring] Current time:", nowISO);
 
-  // Находим пользователей с истекшими триалами (проверяем next_charge_at)
+  // STEP 4: Находим пользователей с истекшими триалами
+  // trial_ends_at < now() AND subscription_status = 'trial'
   const { data: users, error } = await supabase
     .from("users")
-    .select("id, next_charge_at, robokassa_initial_invoice_id")
+    .select("id, trial_end_at, robokassa_initial_invoice_id")
     .eq("subscription_status", "trial")
-    .not("next_charge_at", "is", null)
+    .not("trial_end_at", "is", null)
     .not("robokassa_initial_invoice_id", "is", null)
-    .lte("next_charge_at", nowISO);
+    .lte("trial_end_at", nowISO);
 
   if (error) {
     console.error("[recurring] Fetch users error:", error);

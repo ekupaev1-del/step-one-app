@@ -2,15 +2,49 @@ import { NextResponse } from "next/server";
 import { createServerSupabaseClient } from "../../../../lib/supabaseAdmin";
 import crypto from "crypto";
 
-// Первый платеж для привязки карты = 1 RUB
-const FIRST_PAYMENT_AMOUNT = 1.00;
+// Первый платеж = 199 RUB (с Recurring=true для привязки карты)
+const SUBSCRIPTION_AMOUNT = 199.00;
 
 function md5(input: string): string {
   return crypto.createHash("md5").update(input).digest("hex");
 }
 
-// STEP 1: Receipt НЕ используется (Robokassa limitation)
-// Фискализация будет на STEP 2 (дочерний recurring-платеж 199 RUB)
+/**
+ * Строит Receipt для подписки (54-ФЗ)
+ * Формат строго по документации Robokassa для самозанятого
+ */
+function buildSubscriptionReceipt(amount: number): string {
+  const receipt = {
+    sno: "usn_income", // УСН доходы (self-employed, самозанятый)
+    items: [
+      {
+        name: "Подписка Step One — 1 месяц",
+        quantity: 1,
+        sum: 199, // Сумма должна совпадать с OutSum (199.00)
+        payment_method: "full_payment",
+        payment_object: "service",
+        tax: "none",
+      },
+    ],
+  };
+  
+  const receiptJson = JSON.stringify(receipt);
+  
+  // Проверяем, что Receipt валидный JSON
+  try {
+    const parsed = JSON.parse(receiptJson);
+    if (parsed.items && parsed.items[0]) {
+      const itemSum = parsed.items[0].sum;
+      if (Math.abs(itemSum - amount) > 0.01) {
+        throw new Error(`Receipt sum mismatch: ${itemSum} != ${amount}`);
+      }
+    }
+  } catch (e: any) {
+    throw new Error(`Invalid Receipt JSON: ${e.message || e}`);
+  }
+  
+  return receiptJson;
+}
 
 export async function POST(req: Request) {
   try {
@@ -65,7 +99,7 @@ export async function POST(req: Request) {
     console.log("[robokassa/create] =================================================");
 
     console.log("[robokassa/create] UserId:", numericUserId);
-    console.log("[robokassa/create] Amount:", FIRST_PAYMENT_AMOUNT, "RUB");
+    console.log("[robokassa/create] Amount:", SUBSCRIPTION_AMOUNT, "RUB");
 
     // Проверяем пользователя (минимальная проверка)
     const { data: user, error: userError } = await supabase
@@ -81,27 +115,27 @@ export async function POST(req: Request) {
       );
     }
 
-    // Генерируем уникальный InvoiceID
-    // КРИТИЧНО: Robokassa требует InvoiceID как int32 (<= 2147483647)
-    // НЕ используем timestamp - он слишком большой!
-    // Используем безопасный генератор: userId * 1000000 + random(0-999999)
+    // STEP 1: Генерируем уникальный InvoiceID
+    // КРИТИЧНО: InvoiceID = простое число (НЕ bigint, НЕ timestamp в миллисекундах)
+    // Используем: Math.floor(Date.now() / 1000) - секунды с эпохи
     let invoiceId: number;
     let attempts = 0;
     const maxAttempts = 10;
     const MAX_INT32 = 2147483647;
     
     do {
-      // Генерируем InvoiceID: userId * 1000000 + random(0-999999)
-      // Это гарантирует уникальность и не превышает int32
-      const base = numericUserId * 1000000; // userId * 1M
-      const random = Math.floor(Math.random() * 1000000); // 0-999999
-      invoiceId = base + random;
+      // Генерируем InvoiceID как секунды с эпохи (не миллисекунды!)
+      invoiceId = Math.floor(Date.now() / 1000);
+      
+      // Добавляем случайное число для уникальности (если несколько запросов в одну секунду)
+      const random = Math.floor(Math.random() * 1000); // 0-999
+      invoiceId = invoiceId * 1000 + random;
       
       // КРИТИЧНО: Проверяем, что InvoiceID <= 2147483647 (int32 максимум)
       if (invoiceId > MAX_INT32) {
-        // Если превышает, используем только random (без userId)
-        invoiceId = Math.floor(Math.random() * MAX_INT32) + 1; // 1-2147483647
-        console.warn(`[robokassa/create] InvoiceID would exceed int32, using random: ${invoiceId}`);
+        // Если превышает, используем только timestamp в секундах
+        invoiceId = Math.floor(Date.now() / 1000);
+        console.warn(`[robokassa/create] InvoiceID would exceed int32, using seconds only: ${invoiceId}`);
       }
       
       // Проверяем, не использовался ли уже этот InvoiceID в БД
@@ -127,7 +161,7 @@ export async function POST(req: Request) {
       throw new Error(`Failed to generate unique InvoiceID after ${maxAttempts} attempts`);
     }
     
-    // КРИТИЧНО: Преобразуем в строку для использования в форме
+    // Преобразуем в строку для использования в форме
     const invoiceIdStr = String(invoiceId);
     
     console.log("[robokassa/create] Generated unique InvoiceID:", invoiceId);
@@ -135,28 +169,31 @@ export async function POST(req: Request) {
     console.log("[robokassa/create] InvoiceID as string:", invoiceIdStr);
     console.log("[robokassa/create] InvoiceID <= 2147483647:", invoiceId <= MAX_INT32);
     
-    const amountStr = FIRST_PAYMENT_AMOUNT.toFixed(2); // "1.00"
+    const amountStr = SUBSCRIPTION_AMOUNT.toFixed(2); // "199.00"
     
-    // КРИТИЧНО: Проверяем, что OutSum = "1.00" (строка, не число)
-    if (amountStr !== "1.00") {
-      throw new Error(`Invalid OutSum: expected "1.00", got "${amountStr}"`);
+    // Проверяем, что OutSum = "199.00"
+    if (amountStr !== "199.00") {
+      throw new Error(`Invalid OutSum: expected "199.00", got "${amountStr}"`);
     }
 
-    // PART 1: FIRST (PARENT) PAYMENT (TRIAL 1 RUB)
-    // КРИТИЧНО: Подпись для первого платежа:
-    // md5(MerchantLogin:OutSum:InvoiceID:Password1)
+    // STEP 1: FIRST (PARENT) PAYMENT (199 RUB with Recurring=true)
+    // КРИТИЧНО: Подпись для первого платежа С Receipt:
+    // md5(MerchantLogin:OutSum:InvoiceID:Receipt:Password1)
     // 
     // ВАЖНО:
     // - Shp_* параметры НЕ включаются в подпись
     // - Recurring НЕ участвует в подписи (но отправляется в POST)
     // - Description НЕ участвует в подписи (но отправляется в POST)
-    // - Receipt НЕ отправляется для recurring parent payment
-    // - OutSum = строка "1.00"
+    // - Receipt ОБЯЗАТЕЛЕН для самозанятого (фискализация ФЗ-54)
+    // - OutSum = строка "199.00"
     
-    const shpUserId = String(numericUserId);
+    // STEP 2: Строим Receipt для фискализации
+    const receiptJson = buildSubscriptionReceipt(SUBSCRIPTION_AMOUNT);
+    const receiptEncoded = encodeURIComponent(receiptJson);
     
-    // Формируем подпись СТРОГО по требованиям: MerchantLogin:OutSum:InvoiceID:Password1
-    const signatureBase = `${merchantLogin}:${amountStr}:${invoiceIdStr}:${password1}`;
+    // Формируем подпись С Receipt: MerchantLogin:OutSum:InvoiceID:Receipt:Password1
+    // Receipt в подписи - это JSON строка (НЕ encoded)
+    const signatureBase = `${merchantLogin}:${amountStr}:${invoiceIdStr}:${receiptJson}:${password1}`;
     const signatureValue = md5(signatureBase).toLowerCase();
     
     // Проверка подписи
@@ -190,28 +227,25 @@ export async function POST(req: Request) {
     const robokassaDomain = process.env.ROBOKASSA_DOMAIN || "auth.robokassa.ru";
     const robokassaActionUrl = `https://${robokassaDomain}/Merchant/Index.aspx`;
     
-    // PART 1: POST fields для первого платежа
+    // STEP 1: POST fields для первого платежа
     // POST fields:
     // - MerchantLogin
-    // - OutSum = "1.00"
-    // - InvoiceID (unique integer)
-    // - Description = "Подписка Step One — пробный период 3 дня"
+    // - OutSum = "199.00"
+    // - InvoiceID (unique integer, NOT bigint, NOT timestamp in ms)
+    // - Description = "Подписка Step One — 1 месяц"
     // - Recurring = true
-    // - Shp_userId (telegram user id)
+    // - Receipt (urlencoded JSON для фискализации ФЗ-54)
     // - SignatureValue
-    //
-    // ❌ НЕ отправляем:
-    // - Receipt (для recurring parent payment)
     
-    const description = "Подписка Step One — пробный период 3 дня";
+    const description = "Подписка Step One — 1 месяц";
     
     const formData: Record<string, string> = {
       MerchantLogin: merchantLogin,
-      OutSum: amountStr, // "1.00"
+      OutSum: amountStr, // "199.00"
       InvoiceID: invoiceIdStr,
-      Description: description, // ВАЖНО: Description отправляется в POST
+      Description: description,
       Recurring: "true", // Recurring=true для привязки карты
-      Shp_userId: shpUserId,
+      Receipt: receiptEncoded, // STEP 2: Receipt обязателен для самозанятого
       SignatureValue: signatureValue,
     };
     // PART 3: ERROR 26 PROTECTION - Full POST payload logging
@@ -230,7 +264,7 @@ export async function POST(req: Request) {
     console.log("[robokassa/create] ==============================================");
     
     // Проверяем, что все обязательные поля присутствуют
-    const requiredFields = ["MerchantLogin", "OutSum", "InvoiceID", "Description", "Recurring", "Shp_userId", "SignatureValue"];
+    const requiredFields = ["MerchantLogin", "OutSum", "InvoiceID", "Description", "Recurring", "Receipt", "SignatureValue"];
     const missingFields = requiredFields.filter(field => !formData[field]);
     if (missingFields.length > 0) {
       throw new Error(`Missing required fields: ${missingFields.join(", ")}`);
@@ -245,31 +279,31 @@ export async function POST(req: Request) {
     
     // ВАЖНО: Проверяем, что OutSum имеет правильный формат (число с 2 знаками после запятой)
     if (!/^\d+\.\d{2}$/.test(formData.OutSum)) {
-      throw new Error(`Invalid OutSum format: ${formData.OutSum}. Expected format: "1.00"`);
+      throw new Error(`Invalid OutSum format: ${formData.OutSum}. Expected format: "199.00"`);
     }
     
-    // PART 3: ERROR 26 PROTECTION - Log exact signature string BEFORE md5
+    // STEP 5: ERROR HANDLING - Log exact signature string BEFORE md5
     console.log("[robokassa/create] ========== ERROR 26 PROTECTION ==========");
     console.log("[robokassa/create] Exact signature string BEFORE md5:", signatureBaseForLog);
     console.log("[robokassa/create] Full signature string (with password):", signatureBase);
     console.log("[robokassa/create] Final SignatureValue (md5):", signatureValue);
     console.log("[robokassa/create] If Robokassa returns error 26:");
-    console.log("[robokassa/create]   - Check signature formula: MerchantLogin:OutSum:InvoiceID:Password1");
+    console.log("[robokassa/create]   - Check signature formula: MerchantLogin:OutSum:InvoiceID:Receipt:Password1");
     console.log("[robokassa/create]   - Verify Password1 is correct");
     console.log("[robokassa/create]   - Verify Recurring is approved on merchant side");
+    console.log("[robokassa/create]   - Verify Receipt JSON is valid");
     console.log("[robokassa/create] ==========================================");
 
     // Сохраняем платеж в БД для отслеживания (STEP 1: parent payment)
-    // ВАЖНО: Этот InvoiceID будет сохранен как parent_invoice_id после успешной оплаты
-    // и использован в STEP 2 для дочернего recurring-платежа
+    // ВАЖНО: Этот InvoiceID будет сохранен как recurring_parent_invoice_id после успешной оплаты
     try {
       const { error: paymentInsertError } = await supabase
         .from("payments")
         .insert({
           user_id: numericUserId,
-          invoice_id: invoiceIdStr, // Сохраняем как строку в БД
+          invoice_id: invoiceIdStr,
           previous_invoice_id: null, // Для первого платежа (parent) всегда null
-          amount: FIRST_PAYMENT_AMOUNT,
+          amount: SUBSCRIPTION_AMOUNT,
           status: "pending",
           is_recurring: true,
         });
@@ -279,8 +313,7 @@ export async function POST(req: Request) {
         console.warn("[robokassa/create] Warning: Failed to save payment to DB:", paymentInsertError.message);
       } else {
         console.log("[robokassa/create] ✅ Parent payment saved to DB, invoice_id:", invoiceIdStr);
-        console.log("[robokassa/create] Этот InvoiceID будет сохранен как parent_invoice_id после успешной оплаты");
-        console.log("[robokassa/create] STEP 2 будет использовать этот parent_invoice_id для дочернего платежа 199 RUB");
+        console.log("[robokassa/create] Этот InvoiceID будет сохранен как recurring_parent_invoice_id после успешной оплаты");
       }
     } catch (paymentErr: any) {
       // Игнорируем ошибки БД - платеж уже создан
@@ -292,9 +325,9 @@ export async function POST(req: Request) {
       ok: true, 
       actionUrl: robokassaActionUrl, // URL для action формы
       formData: formData, // Данные для POST запроса
-      invoiceId: invoiceIdStr, // InvoiceID как строка (но число <= 2147483647)
-      amount: FIRST_PAYMENT_AMOUNT,
-      method: "POST", // Метод запроса
+      invoiceId: invoiceIdStr,
+      amount: SUBSCRIPTION_AMOUNT,
+      method: "POST",
     };
     
     console.log("[robokassa/create] ✅ Returning response:", {

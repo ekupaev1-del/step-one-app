@@ -143,23 +143,25 @@ async function handle(req: Request) {
       }
     }
 
-    // Логика обработки платежа
+    // STEP 3: Логика обработки платежа
     const now = new Date();
     
-    if (amount === 1) {
-      // Это первый платеж 1 RUB - активируем триал
-      const trialStartedAt = now;
+    // STEP 3: Первый платеж = 199 RUB (с Recurring=true)
+    // Триал (3 дня) обрабатывается ТОЛЬКО в нашей БД логике
+    // Robokassa НЕ знает о триале
+    if (Math.abs(amount - 199) < 0.01) {
+      // Это первый платеж 199 RUB - активируем триал
+      const subscriptionStartedAt = now;
       const trialEndsAt = new Date(now.getTime() + 3 * 24 * 60 * 60 * 1000); // +3 дня
-      const nextChargeAt = trialEndsAt; // Следующее списание после окончания триала
       
+      // STEP 3: Сохраняем recurring_parent_invoice_id для будущих recurring-платежей
       const { error: updateError } = await supabase
         .from("users")
         .update({
           subscription_status: "trial",
-          trial_started_at: trialStartedAt.toISOString(),
-          trial_end_at: trialEndsAt.toISOString(),
-          next_charge_at: nextChargeAt.toISOString(),
-          robokassa_initial_invoice_id: invId, // Сохраняем initial invoice ID для рекуррентных платежей
+          trial_started_at: subscriptionStartedAt.toISOString(), // STEP 3: subscription_started_at = now() (используем trial_started_at)
+          trial_end_at: trialEndsAt.toISOString(), // STEP 3: trial_ends_at = now() + 3 days
+          robokassa_initial_invoice_id: invId, // STEP 3: recurring_parent_invoice_id = InvoiceID (используем robokassa_initial_invoice_id)
           last_payment_status: "success",
         })
         .eq("id", userId);
@@ -170,10 +172,9 @@ async function handle(req: Request) {
       }
 
       console.log("[robokassa/result] ✅ Trial activated for user:", userId);
-      console.log("[robokassa/result] Trial started at:", trialStartedAt.toISOString());
+      console.log("[robokassa/result] Subscription started at:", subscriptionStartedAt.toISOString());
       console.log("[robokassa/result] Trial ends at:", trialEndsAt.toISOString());
-      console.log("[robokassa/result] Next charge at:", nextChargeAt.toISOString());
-      console.log("[robokassa/result] Initial invoice ID:", invId);
+      console.log("[robokassa/result] Recurring parent invoice ID:", invId);
 
       // PART 4: Отправляем уведомление боту о активации триала
       // После успешной оплаты бот должен отправить сообщение и меню
@@ -199,54 +200,63 @@ async function handle(req: Request) {
       } catch (notifyError) {
         console.error("[robokassa/result] Error notifying bot:", notifyError);
       }
-    } else if (Math.abs(amount - 199) < 0.01) {
-      // Это рекуррентный платеж 199 RUB - активируем подписку на 30 дней
-      // Используем Math.abs для сравнения, так как amount может быть 199.00
-      const nextChargeAt = new Date(now.getTime() + 30 * 24 * 60 * 60 * 1000); // +30 дней
+    } else {
+      // STEP 4: Это recurring-платеж 199 RUB (после триала)
+      // Проверяем, что это не первый платеж (есть previous_invoice_id в payments)
+      const { data: payment } = await supabase
+        .from("payments")
+        .select("previous_invoice_id")
+        .eq("invoice_id", invId)
+        .maybeSingle();
       
-      const { error: updateError } = await supabase
-      .from("users")
-      .update({
-        subscription_status: "active",
-          next_charge_at: nextChargeAt.toISOString(),
-          paid_until: nextChargeAt.toISOString(),
-        last_payment_status: "success",
-      })
-        .eq("id", userId);
-      
-      if (updateError) {
-        console.error("[robokassa/result] Error updating user for subscription:", updateError);
-        throw new Error(`Failed to activate subscription: ${updateError.message}`);
-      }
-
-      console.log("[robokassa/result] ✅ Subscription activated for user:", userId);
-      console.log("[robokassa/result] Next charge at:", nextChargeAt.toISOString());
-
-      // Отправляем уведомление боту об успешном платеже
-      try {
-        const { data: user } = await supabase
-          .from("users")
-          .select("telegram_id")
-          .eq("id", userId)
-          .maybeSingle();
+      if (payment?.previous_invoice_id) {
+        // Это recurring-платеж - продлеваем подписку на 30 дней
+        const nextChargeAt = new Date(now.getTime() + 30 * 24 * 60 * 60 * 1000); // +30 дней
         
-        if (user?.telegram_id) {
-          const notifyUrl = `${process.env.MINIAPP_BASE_URL || "https://step-one-app-git-dev-emins-projects-4717eabc.vercel.app"}/api/notify-bot`;
-          await fetch(notifyUrl, {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({
-              userId,
-              message: "✅ Подписка продлена! Доступ активен до " + nextChargeAt.toLocaleDateString("ru-RU", {
-                day: "numeric",
-                month: "long",
-                year: "numeric",
-              }) + ".",
-            }),
-          });
+        const { error: updateError } = await supabase
+          .from("users")
+          .update({
+            subscription_status: "active",
+            next_charge_at: nextChargeAt.toISOString(),
+            paid_until: nextChargeAt.toISOString(),
+            last_payment_status: "success",
+          })
+          .eq("id", userId);
+        
+        if (updateError) {
+          console.error("[robokassa/result] Error updating user for subscription:", updateError);
+          throw new Error(`Failed to activate subscription: ${updateError.message}`);
         }
-      } catch (notifyError) {
-        console.error("[robokassa/result] Error notifying bot:", notifyError);
+
+        console.log("[robokassa/result] ✅ Subscription renewed for user:", userId);
+        console.log("[robokassa/result] Next charge at:", nextChargeAt.toISOString());
+
+        // Отправляем уведомление боту об успешном платеже
+        try {
+          const { data: user } = await supabase
+            .from("users")
+            .select("telegram_id")
+            .eq("id", userId)
+            .maybeSingle();
+          
+          if (user?.telegram_id) {
+            const notifyUrl = `${process.env.MINIAPP_BASE_URL || "https://step-one-app-git-dev-emins-projects-4717eabc.vercel.app"}/api/notify-bot`;
+            await fetch(notifyUrl, {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({
+                userId,
+                message: "✅ Подписка продлена! Доступ активен до " + nextChargeAt.toLocaleDateString("ru-RU", {
+                  day: "numeric",
+                  month: "long",
+                  year: "numeric",
+                }) + ".",
+              }),
+            });
+          }
+        } catch (notifyError) {
+          console.error("[robokassa/result] Error notifying bot:", notifyError);
+        }
       }
     }
 
