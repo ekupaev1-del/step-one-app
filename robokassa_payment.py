@@ -75,7 +75,7 @@ def generate_payment_link(
 if __name__ == "__main__":
     # Ваши данные
     MERCHANT_LOGIN = "stepone"  # Ваш Merchant Login
-    MERCHANT_PASSWORD_1 = "ваш_пароль_1"  # Пароль #1 из настроек Robokassa
+    MERCHANT_PASSWORD_1 = "B2Bnpr5rF948tbTZXsg"  # Пароль #1 из настроек Robokassa
     COST = 199.00  # Сумма к оплате
     INVOICE_ID = 12345  # Уникальный номер счета
     DESCRIPTION = "Подписка Step One — пробный период 3 дня"
@@ -112,7 +112,7 @@ if __name__ == "__main__":
     
     # Проверка подписи (для Result URL)
     print("=== Проверка подписи для Result URL ===")
-    MERCHANT_PASSWORD_2 = "ваш_пароль_2"  # Пароль #2 для Result URL
+    MERCHANT_PASSWORD_2 = "FCxKxmU1VgdE4V0S4Q1f"  # Пароль #2 для Result URL (уже вставлен)
     
     # Симуляция данных от Robokassa
     received_out_sum = "199.00"
