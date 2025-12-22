@@ -247,11 +247,12 @@ export async function POST(req: Request) {
     // Добавляем Shp_ параметры (в конце, после основных параметров)
     formData.Shp_userId = shpUserId;
     
-    console.log("[robokassa/create] Recurring = 'true' (НЕ участвует в подписи)");
-    console.log("[robokassa/create] Receipt added to formData (urlencoded):", receiptEncoded.substring(0, 100) + "...");
-    
     // Добавляем Shp_ параметры (в конце, после основных параметров)
     formData.Shp_userId = shpUserId;
+    
+    console.log("[robokassa/create] Recurring = 'true' (НЕ участвует в подписи)");
+    console.log("[robokassa/create] Receipt added to formData (urlencoded):", receiptEncoded.substring(0, 100) + "...");
+    console.log("[robokassa/create] Shp_userId added to formData:", formData.Shp_userId);
     
     console.log("[robokassa/create] Using Robokassa domain:", robokassaDomain);
     console.log("[robokassa/create] Robokassa action URL:", robokassaActionUrl);
