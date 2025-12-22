@@ -41,9 +41,13 @@ async function chargeUserAfterTrial(user: any) {
   const receiptJson = buildSubscriptionReceipt();
   const receiptEncoded = encodeURIComponent(receiptJson);
 
+  // ВАЖНО: OutSum должен быть строкой с двумя знаками после запятой
+  const outSumStr = SUBSCRIPTION_AMOUNT.toFixed(2); // "199.00"
+
   // SignatureValue: MerchantLogin:OutSum:InvoiceID:Receipt:Password1
   // PreviousInvoiceID НЕ включается в подпись для рекуррентных платежей
-  const signatureBase = `${env.robokassaMerchantLogin}:${SUBSCRIPTION_AMOUNT}:${invoiceId}:${receiptJson}:${env.robokassaPassword1}`;
+  // ВАЖНО: В подписи используется JSON строка Receipt (НЕ encoded), OutSum как строка с .00
+  const signatureBase = `${env.robokassaMerchantLogin}:${outSumStr}:${invoiceId}:${receiptJson}:${env.robokassaPassword1}`;
   const signatureValue = md5(signatureBase).toLowerCase();
 
   const description = "Подписка Step One — 30 дней";
@@ -51,11 +55,14 @@ async function chargeUserAfterTrial(user: any) {
     MerchantLogin: env.robokassaMerchantLogin,
     InvoiceID: invoiceId,
     PreviousInvoiceID: user.robokassa_initial_invoice_id,
-    OutSum: SUBSCRIPTION_AMOUNT.toString(),
+    OutSum: outSumStr, // "199.00" - строка с двумя знаками
     Description: description,
     SignatureValue: signatureValue,
     Receipt: receiptEncoded,
   });
+
+  console.log(`[recurring] Signature base (без пароля): ${env.robokassaMerchantLogin}:${outSumStr}:${invoiceId}:${receiptJson}:[PASSWORD_HIDDEN]`);
+  console.log(`[recurring] Signature value: ${signatureValue}`);
 
   console.log(`[recurring] Charging user ${user.id}`);
   console.log(`[recurring] Initial invoice: ${user.robokassa_initial_invoice_id}`);
@@ -77,16 +84,31 @@ async function chargeUserAfterTrial(user: any) {
     .maybeSingle();
 
   try {
+    console.log(`[recurring] Sending POST request to: ${RECURRING_URL}`);
+    console.log(`[recurring] Request body params:`, {
+      MerchantLogin: env.robokassaMerchantLogin,
+      InvoiceID: invoiceId,
+      PreviousInvoiceID: user.robokassa_initial_invoice_id,
+      OutSum: outSumStr,
+      Description: description,
+      Receipt: receiptEncoded.substring(0, 50) + "...",
+      SignatureValue: signatureValue.substring(0, 10) + "...",
+    });
+
     const response = await fetch(RECURRING_URL, {
       method: "POST",
-      body,
+      headers: {
+        "Content-Type": "application/x-www-form-urlencoded",
+      },
+      body: body.toString(),
     });
     const text = await response.text();
 
     console.log(`[recurring] Response status: ${response.status}`);
-    console.log(`[recurring] Response text: ${text.substring(0, 200)}`);
+    console.log(`[recurring] Response text: ${text}`);
 
-    if (response.ok && text.toLowerCase().includes("ok")) {
+    // Robokassa возвращает "OK" при успехе (регистронезависимо)
+    if (response.ok && text.trim().toLowerCase() === "ok") {
       // Платеж успешно отправлен
     if (paymentRow) {
       await supabase

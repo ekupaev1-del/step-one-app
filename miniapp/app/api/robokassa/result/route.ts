@@ -197,8 +197,9 @@ async function handle(req: Request) {
       } catch (notifyError) {
         console.error("[robokassa/result] Error notifying bot:", notifyError);
       }
-    } else if (amount === 199) {
+    } else if (Math.abs(amount - 199) < 0.01) {
       // Это рекуррентный платеж 199 RUB - активируем подписку на 30 дней
+      // Используем Math.abs для сравнения, так как amount может быть 199.00
       const nextChargeAt = new Date(now.getTime() + 30 * 24 * 60 * 60 * 1000); // +30 дней
       
       const { error: updateError } = await supabase
