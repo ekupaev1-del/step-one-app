@@ -115,10 +115,12 @@ export async function POST(req: Request) {
     // Генерируем уникальный InvoiceID
     // ВАЖНО: Robokassa требует числовой InvoiceID для рекуррентных платежей
     // Используем только цифры, без букв
-    // Добавляем случайное число для гарантии уникальности
+    // Делаем InvoiceID короче - используем только последние 6 цифр timestamp + userId + random
+    // Это гарантирует уникальность и не превышает разумные ограничения
     const timestamp = Date.now();
-    const random = Math.floor(Math.random() * 1000);
-    const invoiceId = `${numericUserId}${timestamp}${random}`;
+    const timestampShort = timestamp.toString().slice(-6); // Последние 6 цифр
+    const random = Math.floor(Math.random() * 100); // 0-99
+    const invoiceId = `${numericUserId}${timestampShort}${random.toString().padStart(2, '0')}`;
     
     // Проверяем, что InvoiceID состоит только из цифр
     if (!/^\d+$/.test(invoiceId)) {
@@ -126,9 +128,12 @@ export async function POST(req: Request) {
     }
     
     // Проверяем длину InvoiceID (Robokassa может иметь ограничения)
-    if (invoiceId.length > 50) {
+    // Ограничиваем до 20 символов для надежности
+    if (invoiceId.length > 20) {
       throw new Error(`InvoiceID too long: ${invoiceId.length} characters`);
     }
+    
+    console.log("[robokassa/create] Generated InvoiceID:", invoiceId, "length:", invoiceId.length);
     
     const amountStr = FIRST_PAYMENT_AMOUNT.toFixed(2); // "1.00"
 
@@ -178,14 +183,17 @@ export async function POST(req: Request) {
     // 
     // ВАЖНО: Порядок параметров должен быть ТОЧНО как в примере
     // ВАЖНО: Receipt НЕ используется в примере для первого платежа
+    // ВАЖНО: Recurring должен быть строкой "true" (не boolean, не "1")
     const formData: Record<string, string> = {
       MerchantLogin: merchantLogin,
       InvoiceID: invoiceId,
       Description: description,
       SignatureValue: signatureValue,
       OutSum: amountStr,
-      Recurring: "true", // ВАЖНО: "true", а не "1"!
+      Recurring: "true", // ВАЖНО: строка "true" (как в примере документации)
     };
+    
+    console.log("[robokassa/create] Recurring value:", formData.Recurring, "type:", typeof formData.Recurring);
     
     // Добавляем Shp_ параметры (в конце, после основных параметров)
     formData.Shp_userId = String(numericUserId);

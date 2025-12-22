@@ -162,6 +162,10 @@ function PaymentContent() {
     
     console.log("[payment] ========== USER CLICKED 'Перейти к оплате' ==========");
     console.log("[payment] This is the ONLY way form should be submitted!");
+    console.log("[payment] Payment data:", {
+      actionUrl: paymentData.actionUrl,
+      formData: paymentData.formData,
+    });
     setLoading("redirecting");
     
     // ВАЖНО: Robokassa требует POST форму, а не GET редирект!
@@ -191,26 +195,37 @@ function PaymentContent() {
     ];
     
     // Добавляем поля в правильном порядке
+    const formFields: Array<{ name: string; value: string }> = [];
     fieldOrder.forEach((key) => {
       if (paymentData.formData[key]) {
+        const value = String(paymentData.formData[key]);
         const input = document.createElement("input");
         input.type = "hidden";
         input.name = key;
-        input.value = String(paymentData.formData[key]);
+        input.value = value;
         form.appendChild(input);
+        formFields.push({ name: key, value: value });
+        console.log(`[payment] Added form field: ${key} = ${value}`);
       }
     });
     
     // Добавляем любые другие поля, которые не в списке (на всякий случай)
     Object.entries(paymentData.formData).forEach(([key, value]) => {
       if (!fieldOrder.includes(key)) {
+        const valueStr = String(value);
         const input = document.createElement("input");
         input.type = "hidden";
         input.name = key;
-        input.value = String(value);
+        input.value = valueStr;
         form.appendChild(input);
+        formFields.push({ name: key, value: valueStr });
+        console.log(`[payment] Added additional form field: ${key} = ${valueStr}`);
       }
     });
+    
+    console.log("[payment] Form created with fields:", formFields);
+    console.log("[payment] Form action URL:", form.action);
+    console.log("[payment] Form method:", form.method);
     
     // Добавляем форму в DOM
     document.body.appendChild(form);
