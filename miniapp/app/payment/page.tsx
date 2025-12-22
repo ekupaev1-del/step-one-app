@@ -8,7 +8,7 @@ import AppLayout from "../components/AppLayout";
 function PaymentContent() {
   const searchParams = useSearchParams();
   const [userId, setUserId] = useState<number | null>(null);
-  const [loading, setLoading] = useState(false);
+  const [loading, setLoading] = useState<string | boolean>(false);
   const [error, setError] = useState<string | null>(null);
   const [subscriptionStatus, setSubscriptionStatus] = useState<string | null>(null);
   const [trialEndAt, setTrialEndAt] = useState<string | null>(null);
@@ -52,7 +52,7 @@ function PaymentContent() {
       setError("Необходимо согласиться с условиями оферты");
       return;
     }
-    setLoading(true);
+    setLoading("creating");
     setError(null);
     
     try {
@@ -63,15 +63,51 @@ function PaymentContent() {
       });
       const data = await res.json();
       
-      if (!res.ok || !data || !data.ok) {
-        throw new Error(data?.error || "Ошибка создания платежа");
+      console.log("[payment] Response status:", res.status);
+      console.log("[payment] Response data:", JSON.stringify(data, null, 2));
+      
+      // Проверяем статус ответа
+      if (!res.ok) {
+        const errorMsg = data?.error || `HTTP ${res.status}: Ошибка сервера`;
+        console.error("[payment] HTTP error:", res.status, errorMsg);
+        throw new Error(errorMsg);
       }
+      
+      // Проверяем, что API вернул успешный ответ
+      if (!data || !data.ok) {
+        const errorMsg = data?.error || "Ошибка создания платежа";
+        console.error("[payment] API error:", errorMsg, data);
+        throw new Error(errorMsg);
+      }
+      
+      // Проверяем наличие данных для POST формы
+      console.log("[payment] Checking response data:", {
+        hasOk: !!data.ok,
+        hasActionUrl: !!data.actionUrl,
+        hasFormData: !!data.formData,
+        actionUrl: data.actionUrl,
+        formDataType: typeof data.formData,
+        formDataKeys: data.formData ? Object.keys(data.formData) : null,
+        fullResponseKeys: Object.keys(data),
+      });
       
       if (!data.actionUrl || !data.formData) {
-        throw new Error("Данные для оплаты не получены от сервера");
+        console.error("[payment] Missing required data:", {
+          hasActionUrl: !!data.actionUrl,
+          hasFormData: !!data.formData,
+          actionUrl: data.actionUrl,
+          formDataKeys: data.formData ? Object.keys(data.formData) : null,
+          fullResponse: data,
+        });
+        throw new Error("Данные для оплаты не получены от сервера. Проверьте логи консоли.");
       }
       
+      console.log("[payment] ✅ Payment data получены");
+      console.log("[payment] Action URL:", data.actionUrl);
+      console.log("[payment] Form data:", data.formData);
+      
       // Сохраняем данные платежа - НЕ отправляем форму автоматически!
+      // Пользователь останется на странице и сам решит, когда переходить к оплате
       setPaymentData({
         actionUrl: data.actionUrl,
         formData: data.formData,
@@ -99,9 +135,15 @@ function PaymentContent() {
   const isActive = subscriptionStatus === "active";
   const canStartTrial = !subscriptionStatus || subscriptionStatus === "none" || subscriptionStatus === "expired";
 
-  // Функция для отправки формы оплаты - вызывается только при нажатии кнопки
+  // Функция для отправки формы оплаты - вызывается ТОЛЬКО при нажатии кнопки
   const submitPaymentForm = () => {
-    if (!paymentData) return;
+    if (!paymentData) {
+      console.error("[payment] No payment data to submit");
+      return;
+    }
+    
+    console.log("[payment] User clicked 'Перейти к оплате' - submitting form");
+    setLoading("redirecting");
     
     // ВАЖНО: Robokassa требует POST форму, а не GET редирект!
     // Создаем скрытую форму и отправляем её
@@ -122,7 +164,11 @@ function PaymentContent() {
     
     // Добавляем форму в DOM и отправляем
     document.body.appendChild(form);
-    form.submit();
+    
+    // Небольшая задержка перед отправкой, чтобы пользователь увидел изменение состояния
+    setTimeout(() => {
+      form.submit();
+    }, 100);
   };
 
   return (
@@ -198,13 +244,15 @@ function PaymentContent() {
 
               <button
                 onClick={startTrial}
-                disabled={!userId || loading || !agreedToTerms}
+                disabled={!userId || !!loading || !agreedToTerms}
                 className="w-full py-3 rounded-xl bg-accent text-white font-semibold hover:opacity-90 disabled:opacity-50 disabled:cursor-not-allowed transition-opacity"
               >
-                {loading ? "Создаём оплату..." : "Начать пробный период"}
+                {loading === "creating" 
+                  ? "Создаём оплату..." 
+                  : "Начать пробный период"}
               </button>
               
-              {loading && (
+              {loading === "creating" && (
                 <p className="text-sm text-textSecondary text-center mt-2">
                   Подготовка платежа... Пожалуйста, подождите
                 </p>
@@ -223,9 +271,12 @@ function PaymentContent() {
 
               <button
                 onClick={submitPaymentForm}
-                className="w-full py-3 rounded-xl bg-accent text-white font-semibold hover:opacity-90 transition-opacity"
+                disabled={!!loading}
+                className="w-full py-3 rounded-xl bg-accent text-white font-semibold hover:opacity-90 disabled:opacity-50 disabled:cursor-not-allowed transition-opacity"
               >
-                Перейти к оплате
+                {loading === "redirecting" 
+                  ? "Переход на страницу оплаты..." 
+                  : "Перейти к оплате"}
               </button>
 
               <button
