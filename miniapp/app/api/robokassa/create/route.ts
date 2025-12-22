@@ -113,27 +113,64 @@ export async function POST(req: Request) {
     }
 
     // Генерируем уникальный InvoiceID
-    // ВАЖНО: Robokassa требует числовой InvoiceID для рекуррентных платежей
-    // Используем только цифры, без букв
-    // Делаем InvoiceID короче - используем только последние 6 цифр timestamp + userId + random
-    // Это гарантирует уникальность и не превышает разумные ограничения
-    const timestamp = Date.now();
-    const timestampShort = timestamp.toString().slice(-6); // Последние 6 цифр
-    const random = Math.floor(Math.random() * 100); // 0-99
-    const invoiceId = `${numericUserId}${timestampShort}${random.toString().padStart(2, '0')}`;
+    // ВАЖНО: Robokassa требует числовой InvoiceID от 1 до 9223372036854775807
+    // InvoiceID должен быть уникальным для каждой оплаты
+    // Используем timestamp + userId + случайное число для гарантии уникальности
+    let invoiceId: string;
+    let attempts = 0;
+    const maxAttempts = 10;
+    const maxInvoiceId = BigInt('9223372036854775807');
     
-    // Проверяем, что InvoiceID состоит только из цифр
-    if (!/^\d+$/.test(invoiceId)) {
-      throw new Error(`Invalid InvoiceID format: ${invoiceId}. Must contain only digits.`);
+    do {
+      // Генерируем InvoiceID: timestamp (13 цифр) + userId (до 10 цифр) + random (4 цифры)
+      // Это гарантирует уникальность и не превышает лимит Robokassa
+      const timestamp = Date.now(); // 13 цифр
+      const random = Math.floor(Math.random() * 10000); // 0-9999 (4 цифры)
+      // Формат: timestamp + userId + random (все цифры)
+      invoiceId = `${timestamp}${numericUserId}${random.toString().padStart(4, '0')}`;
+      
+      // Проверяем, что InvoiceID состоит только из цифр
+      if (!/^\d+$/.test(invoiceId)) {
+        throw new Error(`Invalid InvoiceID format: ${invoiceId}. Must contain only digits.`);
+      }
+      
+      // Проверяем, что InvoiceID не превышает максимальное значение Robokassa
+      const invoiceIdNum = BigInt(invoiceId);
+      if (invoiceIdNum > maxInvoiceId) {
+        // Если превышает, используем только timestamp + userId (без random)
+        invoiceId = `${timestamp}${numericUserId}`;
+        console.warn(`[robokassa/create] InvoiceID too large, using shorter version: ${invoiceId}`);
+      }
+      
+      // Проверяем, не использовался ли уже этот InvoiceID в БД
+      const { data: existingPayment } = await supabase
+        .from("payments")
+        .select("id")
+        .eq("invoice_id", invoiceId)
+        .maybeSingle();
+      
+      if (!existingPayment) {
+        // InvoiceID уникален, можно использовать
+        break;
+      }
+      
+      attempts++;
+      console.warn(`[robokassa/create] InvoiceID ${invoiceId} already exists, generating new one (attempt ${attempts}/${maxAttempts})`);
+      
+      // Небольшая задержка перед следующей попыткой
+      await new Promise(resolve => setTimeout(resolve, 10));
+    } while (attempts < maxAttempts);
+    
+    if (attempts >= maxAttempts) {
+      throw new Error(`Failed to generate unique InvoiceID after ${maxAttempts} attempts`);
     }
     
-    // Проверяем длину InvoiceID (Robokassa может иметь ограничения)
-    // Ограничиваем до 20 символов для надежности
-    if (invoiceId.length > 20) {
-      throw new Error(`InvoiceID too long: ${invoiceId.length} characters`);
-    }
-    
-    console.log("[robokassa/create] Generated InvoiceID:", invoiceId, "length:", invoiceId.length);
+    console.log("[robokassa/create] Generated unique InvoiceID:", invoiceId, "length:", invoiceId.length);
+    console.log("[robokassa/create] InvoiceID numeric value check:", {
+      invoiceId,
+      isInRange: BigInt(invoiceId) <= maxInvoiceId,
+      maxAllowed: maxInvoiceId.toString()
+    });
     
     const amountStr = FIRST_PAYMENT_AMOUNT.toFixed(2); // "1.00"
 
