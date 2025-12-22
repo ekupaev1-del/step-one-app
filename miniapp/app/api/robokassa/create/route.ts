@@ -208,6 +208,29 @@ export async function POST(req: Request) {
     const robokassaDomain = process.env.ROBOKASSA_DOMAIN || "auth.robokassa.ru";
     const robokassaActionUrl = `https://${robokassaDomain}/Merchant/Index.aspx`;
     
+    // КРИТИЧНО: Формируем данные для POST формы СТРОГО по требованиям
+    // В POST-запросе ОСТАВИТЬ ТОЛЬКО:
+    // - MerchantLogin
+    // - OutSum
+    // - InvoiceID (int <= 2_147_483_647)
+    // - SignatureValue
+    // - Recurring=true
+    // - Shp_userId
+    //
+    // ❌ УБРАТЬ:
+    // - Description
+    // - Receipt
+    // - любые дополнительные поля
+    const formData: Record<string, string> = {
+      MerchantLogin: merchantLogin,
+      OutSum: amountStr, // КРИТИЧНО: "1.00" (строка)
+      InvoiceID: invoiceIdStr, // КРИТИЧНО: строка, но число <= 2147483647
+      SignatureValue: signatureValue,
+      Recurring: "true", // Recurring=true для привязки карты (НЕ участвует в подписи!)
+      Shp_userId: shpUserId, // Shp_ параметры в конце
+    };
+    
+    // КРИТИЧНО: Description, Receipt и другие поля НЕ добавляем
     // ========== POST FORM DATA DEBUG ==========
     console.log("[robokassa/create] ========== POST FORM DATA (STEP 1) ==========");
     console.log("[robokassa/create] POST URL:", robokassaActionUrl);
@@ -220,9 +243,7 @@ export async function POST(req: Request) {
     console.log("[robokassa/create] ==============================================");
     
     // Проверяем, что все обязательные поля присутствуют
-    const requiredFields = debugMinimal 
-      ? ["MerchantLogin", "OutSum", "InvoiceID", "SignatureValue", "Recurring"]
-      : ["MerchantLogin", "OutSum", "InvoiceID", "SignatureValue", "Recurring", "Shp_userId"];
+    const requiredFields = ["MerchantLogin", "OutSum", "InvoiceID", "SignatureValue", "Recurring", "Shp_userId"];
     const missingFields = requiredFields.filter(field => !formData[field]);
     if (missingFields.length > 0) {
       throw new Error(`Missing required fields: ${missingFields.join(", ")}`);
