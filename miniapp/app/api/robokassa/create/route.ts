@@ -199,6 +199,17 @@ export async function POST(req: Request) {
     console.log("[robokassa/create] Receipt: NOT USED (as in Robokassa documentation example)");
     console.log("[robokassa/create] Signature base (без пароля):", signatureBaseForLog);
     console.log("[robokassa/create] Signature value:", signatureValue);
+    
+    // ВАЖНО: Проверяем подпись еще раз для отладки
+    const testSignatureBase = `${merchantLogin}:${amountStr}:${invoiceId}:${password1}`;
+    const testSignature = md5(testSignatureBase).toLowerCase();
+    if (testSignature !== signatureValue) {
+      console.error("[robokassa/create] ❌ SIGNATURE MISMATCH!");
+      console.error("[robokassa/create] Expected:", signatureValue);
+      console.error("[robokassa/create] Calculated:", testSignature);
+    } else {
+      console.log("[robokassa/create] ✅ Signature verification passed");
+    }
 
     // ВАЖНО: Robokassa требует POST форму, а не GET URL!
     // Формируем данные для POST формы
