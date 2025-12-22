@@ -293,8 +293,14 @@ function PaymentContent() {
                 </div>
 
                 <button
-                  onClick={submitPaymentForm}
+                  onClick={(e) => {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    console.log("[payment] BUTTON CLICKED - user explicitly clicked 'Перейти к оплате'");
+                    submitPaymentForm(e);
+                  }}
                   disabled={!!loading}
+                  type="button"
                   className="w-full py-3 rounded-xl bg-accent text-white font-semibold hover:opacity-90 disabled:opacity-50 disabled:cursor-not-allowed transition-opacity"
                 >
                   {loading === "redirecting" 
