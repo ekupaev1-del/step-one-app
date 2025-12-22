@@ -208,48 +208,15 @@ export async function POST(req: Request) {
     const robokassaDomain = process.env.ROBOKASSA_DOMAIN || "auth.robokassa.ru";
     const robokassaActionUrl = `https://${robokassaDomain}/Merchant/Index.aspx`;
     
-    // КРИТИЧНО: Формируем данные для POST формы СТРОГО по требованиям
-    // В POST-запросе ОСТАВИТЬ ТОЛЬКО:
-    // - MerchantLogin
-    // - OutSum
-    // - InvoiceID (int <= 2_147_483_647)
-    // - SignatureValue
-    // - Recurring=true
-    // - Shp_userId
-    //
-    // ❌ УБРАТЬ:
-    // - Description
-    // - Receipt
-    // - любые дополнительные поля
-    const formData: Record<string, string> = {
-      MerchantLogin: merchantLogin,
-      OutSum: amountStr, // КРИТИЧНО: "1.00" (строка)
-      InvoiceID: invoiceIdStr, // КРИТИЧНО: строка, но число <= 2147483647
-      SignatureValue: signatureValue,
-      Recurring: "true", // Recurring=true для привязки карты (НЕ участвует в подписи!)
-      Shp_userId: shpUserId, // Shp_ параметры в конце
-    };
-    
-    // КРИТИЧНО: Description, Receipt и другие поля НЕ добавляем
-    // DEBUG: Выводим детальную информацию ПЕРЕД отправкой
+    // ========== POST FORM DATA DEBUG ==========
     console.log("[robokassa/create] ========== POST FORM DATA (STEP 1) ==========");
     console.log("[robokassa/create] POST URL:", robokassaActionUrl);
     console.log("[robokassa/create] POST Method: POST");
-    console.log("[robokassa/create] ========== SIGNATURE DEBUG ==========");
-    console.log("[robokassa/create] Signature base (БЕЗ пароля):", signatureBaseForLog);
-    console.log("[robokassa/create] Signature value (md5):", signatureValue);
-    console.log("[robokassa/create] ========== FULL POST FIELDS ==========");
-    console.log("[robokassa/create] MerchantLogin:", formData.MerchantLogin);
-    console.log("[robokassa/create] OutSum:", formData.OutSum, "(type:", typeof formData.OutSum, ")");
-    console.log("[robokassa/create] InvoiceID:", formData.InvoiceID, "(type:", typeof formData.InvoiceID, ")");
-    console.log("[robokassa/create] InvoiceID numeric:", Number(formData.InvoiceID));
-    console.log("[robokassa/create] InvoiceID isInt32:", Number(formData.InvoiceID) <= 2147483647);
-    console.log("[robokassa/create] SignatureValue:", formData.SignatureValue);
-    console.log("[robokassa/create] Recurring:", formData.Recurring, "(NOT in signature)");
-    console.log("[robokassa/create] Shp_userId:", formData.Shp_userId, "(IN signature as Shp_userId=" + formData.Shp_userId + ")");
-    console.log("[robokassa/create] ========== EXCLUDED FIELDS ==========");
-    console.log("[robokassa/create] Description: REMOVED (not in POST)");
-    console.log("[robokassa/create] Receipt: REMOVED (not in POST)");
+    console.log("[robokassa/create] ========== EXACT POST FIELDS ==========");
+    Object.entries(formData).forEach(([key, value]) => {
+      console.log(`[robokassa/create] ${key}:`, value, `(type: ${typeof value}, length: ${String(value).length})`);
+    });
+    console.log("[robokassa/create] Total POST fields:", Object.keys(formData).length);
     console.log("[robokassa/create] ==============================================");
     
     // Проверяем, что все обязательные поля присутствуют
