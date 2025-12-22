@@ -82,13 +82,13 @@ export async function POST(req: Request) {
 
     // Проверка переменных окружения
     const merchantLogin = process.env.ROBOKASSA_MERCHANT_LOGIN;
-    const password1 = process.env.ROBOKASSA_PASSWORD1;
+    const password2 = process.env.ROBOKASSA_PASSWORD2; // PART 2: Используем Password2 для recurring
 
-    if (!merchantLogin || !password1) {
+    if (!merchantLogin || !password2) {
       return NextResponse.json(
         { 
           ok: false, 
-          error: "ROBOKASSA_MERCHANT_LOGIN или ROBOKASSA_PASSWORD1 не заданы" 
+          error: "ROBOKASSA_MERCHANT_LOGIN или ROBOKASSA_PASSWORD2 не заданы" 
         },
         { status: 500 }
       );
@@ -174,45 +174,19 @@ export async function POST(req: Request) {
       throw new Error(`Invalid OutSum: expected "199.00", got "${amountStr}"`);
     }
 
-    // Строим Receipt для фискализации (STEP 2: обязателен)
-    const receiptJson = buildSubscriptionReceipt(SUBSCRIPTION_AMOUNT);
-    const receiptEncoded = encodeURIComponent(receiptJson);
-    
-    // КРИТИЧНО: Robokassa требует включать ВСЕ параметры Shp_* в подпись
-    // - в алфавитном порядке
-    // - в формате key=value
-    // - разделять двоеточием
-    const shpUserId = String(numericUserId);
-    
-    // Собираем все Shp_* параметры в объект
-    const shpParams: Record<string, string> = {
-      Shp_userId: shpUserId,
-    };
-    
-    // Сортируем Shp_* параметры по имени (алфавитно)
-    const shpKeys = Object.keys(shpParams).sort();
-    
-    // Формируем строку Shp_* параметров для подписи
-    // Каждый параметр в формате key=value, разделены двоеточием
-    const shpParamsString = shpKeys.map(key => `${key}=${shpParams[key]}`).join(':');
-    
-    // КРИТИЧНО: Порядок строки подписи для STEP 2 (recurring-платеж):
-    // MerchantLogin:OutSum:InvoiceID:PreviousInvoiceID:{Shp_* params}:Password1
-    //
-    // Пример: stepone:199.00:322475650:322475649:Shp_userId=322:ROBOKASSA_PASSWORD1
+    // PART 2: RECURRING PAYMENT (AFTER 3 DAYS)
+    // КРИТИЧНО: Подпись для recurring-платежа:
+    // md5(MerchantLogin:OutSum:InvoiceID:Password2)
     //
     // ВАЖНО:
-    // - Receipt НЕ участвует в подписи для recurring-платежа (только в POST body)
-    // - Recurring НЕ участвует в подписи
-    // - Description НЕ участвует в подписи
-    // - Shp_* параметры участвуют ОБЯЗАТЕЛЬНО
-    // - Shp_* идут после PreviousInvoiceID
-    // - Shp_* сортируются алфавитно
-    // - Формат строго key=value для каждого Shp_*
+    // - PreviousInvoiceID НЕ включается в подпись
+    // - Recurring НЕ отправляется
+    // - Receipt НЕ отправляется
+    // - Description НЕ участвует в подписи (но отправляется в POST)
     // - OutSum = строка "199.00"
-    //
-    // Формируем подпись ВРУЧНУЮ строкой (НЕ через Object.values/entries)
-    const signatureBase = `${merchantLogin}:${amountStr}:${invoiceIdStr}:${parentInvoiceId}:${shpParamsString}:${password1}`;
+    
+    // Формируем подпись СТРОГО по требованиям: MerchantLogin:OutSum:InvoiceID:Password2
+    const signatureBase = `${merchantLogin}:${amountStr}:${invoiceIdStr}:${password2}`;
     const signatureValue = md5(signatureBase).toLowerCase();
     
     // Проверка подписи
@@ -221,13 +195,13 @@ export async function POST(req: Request) {
     }
 
     // DEBUG: Логируем строку подписи БЕЗ пароля
-    const signatureBaseForLog = `${merchantLogin}:${amountStr}:${invoiceIdStr}:${parentInvoiceId}:${shpParamsString}:[PASSWORD_HIDDEN]`;
+    const signatureBaseForLog = `${merchantLogin}:${amountStr}:${invoiceIdStr}:[PASSWORD_HIDDEN]`;
     
     console.log("[robokassa/charge-subscription] ========== STEP 2: MONTHLY CHARGE ==========");
     console.log("[robokassa/charge-subscription] Purpose: Recurring payment 199 RUB with fiscalization");
     console.log("[robokassa/charge-subscription] ========== SIGNATURE DEBUG ==========");
     console.log("[robokassa/charge-subscription] Signature base (БЕЗ пароля):", signatureBaseForLog);
-    console.log("[robokassa/charge-subscription] Signature base (ПОЛНАЯ):", `${merchantLogin}:${amountStr}:${invoiceIdStr}:${parentInvoiceId}:${shpParamsString}:${password1.substring(0, 4)}...`);
+    console.log("[robokassa/charge-subscription] Signature base (ПОЛНАЯ):", `${merchantLogin}:${amountStr}:${invoiceIdStr}:${password2.substring(0, 4)}...`);
     console.log("[robokassa/charge-subscription] Signature value (md5):", signatureValue);
     console.log("[robokassa/charge-subscription] ========== PARAMETERS ==========");
     console.log("[robokassa/charge-subscription] MerchantLogin:", merchantLogin);
@@ -236,52 +210,57 @@ export async function POST(req: Request) {
     console.log("[robokassa/charge-subscription] InvoiceID as string:", invoiceIdStr);
     console.log("[robokassa/charge-subscription] InvoiceID <= 2147483647:", invoiceId <= 2147483647);
     console.log("[robokassa/charge-subscription] PreviousInvoiceID (parent):", parentInvoiceId);
-    console.log("[robokassa/charge-subscription] ========== Shp_* PARAMETERS ==========");
-    console.log("[robokassa/charge-subscription] Shp_* params (sorted):", shpKeys);
-    console.log("[robokassa/charge-subscription] Shp_* params string:", shpParamsString);
-    console.log("[robokassa/charge-subscription] Shp_userId:", shpUserId);
-    console.log("[robokassa/charge-subscription] ========== RECEIPT (FZ-54) ==========");
-    console.log("[robokassa/charge-subscription] Receipt JSON (до encode):", receiptJson);
-    console.log("[robokassa/charge-subscription] Receipt encoded (после encode):", receiptEncoded);
-    console.log("[robokassa/charge-subscription] Receipt: SENT in POST body (NOT in signature)");
+    console.log("[robokassa/charge-subscription] ========== EXCLUDED FROM SIGNATURE ==========");
+    console.log("[robokassa/charge-subscription] PreviousInvoiceID: (NOT in signature, but in POST)");
+    console.log("[robokassa/charge-subscription] Recurring: NOT sent (NOT in signature, NOT in POST)");
+    console.log("[robokassa/charge-subscription] Description: (NOT in signature, but in POST)");
+    console.log("[robokassa/charge-subscription] Receipt: NOT SENT (Robokassa requirement)");
     console.log("[robokassa/charge-subscription] ========== EXCLUDED FROM SIGNATURE ==========");
     console.log("[robokassa/charge-subscription] Recurring: NOT in signature");
     console.log("[robokassa/charge-subscription] Description: NOT in signature");
     console.log("[robokassa/charge-subscription] ==============================================");
 
-    const description = "Подписка Step One — 30 дней";
+    // PART 2: POST fields для recurring-платежа
+    // POST fields:
+    // - MerchantLogin
+    // - OutSum = "199.00"
+    // - InvoiceID (new unique integer)
+    // - PreviousInvoiceID = parent_invoice_id
+    // - Description = "Подписка Step One — 1 месяц"
+    // - SignatureValue
+    //
+    // ❌ НЕ отправляем:
+    // - Recurring (для recurring-платежа не нужен)
+    // - Receipt (не отправляется для recurring)
+    
+    const description = "Подписка Step One — 1 месяц";
     const recurringUrl = "https://auth.robokassa.ru/Merchant/Recurring";
     
-    // Формируем данные для POST запроса (STEP 2: дочерний recurring-платеж)
-    // КРИТИЧНО: InvoiceID передаем как строку (но это число <= 2147483647)
     const formData: Record<string, string> = {
       MerchantLogin: merchantLogin,
-      InvoiceID: invoiceIdStr, // КРИТИЧНО: строка, но число <= 2147483647
-      PreviousInvoiceID: parentInvoiceId, // КРИТИЧНО: parent invoice ID из STEP 1
       OutSum: amountStr, // "199.00"
-      Description: description,
+      InvoiceID: invoiceIdStr,
+      PreviousInvoiceID: parentInvoiceId, // ВАЖНО: parent invoice ID из PART 1
+      Description: description, // ВАЖНО: Description отправляется в POST
       SignatureValue: signatureValue,
-      Receipt: receiptEncoded, // КРИТИЧНО: Receipt обязателен для STEP 2 (фискализация ФЗ-54)
     };
     
-    // Добавляем Shp_ параметры (в конце, после основных параметров)
-    formData.Shp_userId = shpUserId;
-    
-    // DEBUG: Выводим детальную информацию о форме ПЕРЕД отправкой
-    console.log("[robokassa/charge-subscription] ========== POST FORM DATA (STEP 2) ==========");
+    // PART 3: ERROR 26 PROTECTION - Full POST payload logging
+    console.log("[robokassa/charge-subscription] ========== POST FORM DATA (PART 2) ==========");
     console.log("[robokassa/charge-subscription] POST URL:", recurringUrl);
     console.log("[robokassa/charge-subscription] POST Method: POST");
-    console.log("[robokassa/charge-subscription] ========== FULL POST FIELDS ==========");
-    console.log("[robokassa/charge-subscription] MerchantLogin:", formData.MerchantLogin);
-    console.log("[robokassa/charge-subscription] OutSum:", formData.OutSum, "(type:", typeof formData.OutSum, ")");
-    console.log("[robokassa/charge-subscription] InvoiceID:", formData.InvoiceID, "(type:", typeof formData.InvoiceID, ")");
-    console.log("[robokassa/charge-subscription] InvoiceID numeric:", Number(formData.InvoiceID));
-    console.log("[robokassa/charge-subscription] InvoiceID isInt32:", Number(formData.InvoiceID) <= 2147483647);
-    console.log("[robokassa/charge-subscription] PreviousInvoiceID:", formData.PreviousInvoiceID);
-    console.log("[robokassa/charge-subscription] SignatureValue:", formData.SignatureValue);
-    console.log("[robokassa/charge-subscription] Description:", formData.Description, "(NOT in signature)");
-    console.log("[robokassa/charge-subscription] Shp_userId:", formData.Shp_userId, "(IN signature as Shp_userId=" + formData.Shp_userId + ")");
-    console.log("[robokassa/charge-subscription] Receipt:", formData.Receipt.substring(0, 50) + "...", "(SENT in POST body, NOT in signature)");
+    console.log("[robokassa/charge-subscription] ========== FULL POST PAYLOAD (without passwords) ==========");
+    Object.entries(formData).forEach(([key, value]) => {
+      console.log(`[robokassa/charge-subscription] ${key}:`, value, `(type: ${typeof value}, length: ${String(value).length})`);
+    });
+    console.log("[robokassa/charge-subscription] Total POST fields:", Object.keys(formData).length);
+    console.log("[robokassa/charge-subscription] ========== ERROR 26 PROTECTION ==========");
+    console.log("[robokassa/charge-subscription] Exact signature string BEFORE md5:", signatureBaseForLog);
+    console.log("[robokassa/charge-subscription] Full signature string (with password):", signatureBase);
+    console.log("[robokassa/charge-subscription] Final SignatureValue (md5):", signatureValue);
+    console.log("[robokassa/charge-subscription] If Robokassa returns error 26:");
+    console.log("[robokassa/charge-subscription]   - Check signature formula: MerchantLogin:OutSum:InvoiceID:Password2");
+    console.log("[robokassa/charge-subscription]   - Verify Password2 is correct");
     console.log("[robokassa/charge-subscription] ==============================================");
 
     // Сохраняем платеж в БД перед отправкой
@@ -324,7 +303,7 @@ export async function POST(req: Request) {
     console.log("[robokassa/charge-subscription] Robokassa response status:", response.status);
     console.log("[robokassa/charge-subscription] Robokassa response text:", responseText);
 
-    // Robokassa возвращает "OK" при успехе
+    // PART 2: Robokassa возвращает "OK" при успехе
     if (responseText.trim().toLowerCase() === "ok") {
       console.log("[robokassa/charge-subscription] ✅ Payment successful!");
       
@@ -338,6 +317,25 @@ export async function POST(req: Request) {
         console.warn("[robokassa/charge-subscription] Warning: Failed to update payment status:", e);
       }
       
+      // PART 2: Обновляем статус подписки
+      const now = new Date();
+      const paidUntil = new Date(now.getTime() + 30 * 24 * 60 * 60 * 1000); // +30 дней
+      
+      try {
+        await supabase
+          .from("users")
+          .update({
+            subscription_status: "active",
+            paid_until: paidUntil.toISOString(),
+            last_payment_status: "success",
+          })
+          .eq("id", numericUserId);
+        
+        console.log("[robokassa/charge-subscription] ✅ Subscription activated, paid until:", paidUntil.toISOString());
+      } catch (e) {
+        console.warn("[robokassa/charge-subscription] Warning: Failed to update subscription status:", e);
+      }
+      
       return NextResponse.json({
         ok: true,
         invoiceId: invoiceIdStr,
@@ -347,6 +345,7 @@ export async function POST(req: Request) {
       });
     } else {
       console.error("[robokassa/charge-subscription] ❌ Payment failed:", responseText);
+      console.error("[robokassa/charge-subscription] Invalid signature or recurring not accepted");
       
       // Обновляем статус платежа в БД
       try {

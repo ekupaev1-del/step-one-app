@@ -94,19 +94,17 @@ export async function POST(req: Request) {
     return NextResponse.json({ ok: false, error: "telegram_id is missing for user" }, { status: 400 });
   }
 
-  // Если передан message, отправляем его, иначе отправляем стандартное сообщение
+  // PART 4: Если передан message, отправляем его с меню
   const messageText = body?.message || "Спасибо! Мы сохранили твои данные. Теперь вы можете отправлять фото, текст или аудио своих блюд — я всё проанализирую.";
-  const menuKeyboard = body?.message ? undefined : getMainMenuKeyboard(user.id);
+  const shouldSendMenu = body?.sendMenu === true || !body?.message; // PART 4: Отправлять меню если sendMenu=true или если нет кастомного сообщения
 
   try {
+    // Отправляем сообщение с меню
+    const menuKeyboard = shouldSendMenu ? getMainMenuKeyboard(user.id) : undefined;
     await sendTelegramMessage(user.telegram_id, messageText, menuKeyboard);
     
-    // Если это не кастомное сообщение, отправляем меню отдельно
-    if (!body?.message) {
-    await sendTelegramMessage(user.telegram_id, "Выберите действие:", {
-        ...getMainMenuKeyboard(user.id)
-    });
-    }
+    // PART 4: Меню отправляется сразу (no restart required)
+    console.log("[/api/notify-bot] ✅ Message sent with menu (4 buttons)");
   } catch (sendError: any) {
     console.error("[/api/notify-bot] Ошибка отправки сообщений:", sendError);
     return NextResponse.json({ ok: false, error: "Failed to send telegram messages" }, { status: 502 });

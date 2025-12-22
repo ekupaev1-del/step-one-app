@@ -175,7 +175,8 @@ async function handle(req: Request) {
       console.log("[robokassa/result] Next charge at:", nextChargeAt.toISOString());
       console.log("[robokassa/result] Initial invoice ID:", invId);
 
-      // Отправляем уведомление боту о активации триала
+      // PART 4: Отправляем уведомление боту о активации триала
+      // После успешной оплаты бот должен отправить сообщение и меню
       try {
         const { data: user } = await supabase
           .from("users")
@@ -190,7 +191,8 @@ async function handle(req: Request) {
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({
               userId,
-              message: "Спасибо! Пробный период активирован на 3 дня.\nСледующее списание — 199 ₽ через 3 дня.",
+              message: "Спасибо! Мы сохранили твои данные.\nТы можешь отправлять фото, текст или голос с едой — я всё проанализирую.",
+              sendMenu: true, // PART 4: Отправить меню с 4 кнопками сразу
             }),
           });
         }

@@ -132,46 +132,21 @@ export async function POST(req: Request) {
       throw new Error(`Invalid OutSum: expected "1.00", got "${amountStr}"`);
     }
 
-    // STEP 1: CARD BINDING PAYMENT (PARENT PAYMENT)
-    // КРИТИЧНО: Robokassa не принимает Recurring=true + Receipt + amount=1.00 одновременно
-    // Решение: НЕ отправляем Receipt на этом шаге, только привязка карты
-    // Фискализация будет на STEP 2 (дочерний recurring-платеж 199 RUB)
+    // PART 1: FIRST (PARENT) PAYMENT (TRIAL 1 RUB)
+    // КРИТИЧНО: Подпись для первого платежа:
+    // md5(MerchantLogin:OutSum:InvoiceID:Password1)
+    // 
+    // ВАЖНО:
+    // - Shp_* параметры НЕ включаются в подпись
+    // - Recurring НЕ участвует в подписи (но отправляется в POST)
+    // - Description НЕ участвует в подписи (но отправляется в POST)
+    // - Receipt НЕ отправляется для recurring parent payment
+    // - OutSum = строка "1.00"
     
-    // КРИТИЧНО: Robokassa требует включать ВСЕ параметры Shp_* в подпись
-    // - в алфавитном порядке
-    // - в формате key=value
-    // - разделять двоеточием
     const shpUserId = String(numericUserId);
     
-    // Собираем все Shp_* параметры в объект
-    const shpParams: Record<string, string> = {
-      Shp_userId: shpUserId,
-    };
-    
-    // Сортируем Shp_* параметры по имени (алфавитно)
-    const shpKeys = Object.keys(shpParams).sort();
-    
-    // Формируем строку Shp_* параметров для подписи
-    // Каждый параметр в формате key=value, разделены двоеточием
-    const shpParamsString = shpKeys.map(key => `${key}=${shpParams[key]}`).join(':');
-    
-    // КРИТИЧНО: Порядок строки подписи для STEP 1:
-    // MerchantLogin:OutSum:InvoiceID:{Shp_* params}:ROBOKASSA_PASSWORD1
-    // 
-    // Пример: stepone:1.00:322360500:Shp_userId=322:B2Bnpr5rF948tbTZXsg
-    //
-    // ВАЖНО:
-    // - Recurring НЕ участвует в подписи
-    // - Description НЕ участвует в подписи
-    // - Receipt НЕ участвует в подписи (не отправляется)
-    // - Shp_* параметры участвуют ОБЯЗАТЕЛЬНО
-    // - Shp_* идут после InvoiceID
-    // - Shp_* сортируются алфавитно
-    // - Формат строго key=value для каждого Shp_*
-    // - OutSum = строка "1.00"
-    //
-    // Формируем подпись ВРУЧНУЮ строкой (НЕ через Object.values/entries)
-    const signatureBase = `${merchantLogin}:${amountStr}:${invoiceIdStr}:${shpParamsString}:${password1}`;
+    // Формируем подпись СТРОГО по требованиям: MerchantLogin:OutSum:InvoiceID:Password1
+    const signatureBase = `${merchantLogin}:${amountStr}:${invoiceIdStr}:${password1}`;
     const signatureValue = md5(signatureBase).toLowerCase();
     
     // Проверка подписи
@@ -180,13 +155,13 @@ export async function POST(req: Request) {
     }
 
     // DEBUG: Логируем строку подписи БЕЗ пароля
-    const signatureBaseForLog = `${merchantLogin}:${amountStr}:${invoiceIdStr}:${shpParamsString}:[PASSWORD_HIDDEN]`;
+    const signatureBaseForLog = `${merchantLogin}:${amountStr}:${invoiceIdStr}:[PASSWORD_HIDDEN]`;
     
     console.log("[robokassa/create] ========== STEP 1: CARD BINDING PAYMENT ==========");
     console.log("[robokassa/create] Purpose: Bind card and get parent InvoiceID");
     console.log("[robokassa/create] ========== SIGNATURE DEBUG ==========");
     console.log("[robokassa/create] Signature base (БЕЗ пароля):", signatureBaseForLog);
-    console.log("[robokassa/create] Signature base (ПОЛНАЯ):", `${merchantLogin}:${amountStr}:${invoiceIdStr}:${shpParamsString}:${password1.substring(0, 4)}...`);
+    console.log("[robokassa/create] Signature base (ПОЛНАЯ):", `${merchantLogin}:${amountStr}:${invoiceIdStr}:${password1.substring(0, 4)}...`);
     console.log("[robokassa/create] Signature value (md5):", signatureValue);
     console.log("[robokassa/create] ========== PARAMETERS ==========");
     console.log("[robokassa/create] MerchantLogin:", merchantLogin);
@@ -194,13 +169,10 @@ export async function POST(req: Request) {
     console.log("[robokassa/create] InvoiceID:", invoiceId, "(type:", typeof invoiceId, ")");
     console.log("[robokassa/create] InvoiceID as string:", invoiceIdStr);
     console.log("[robokassa/create] InvoiceID <= 2147483647:", invoiceId <= 2147483647);
-    console.log("[robokassa/create] ========== Shp_* PARAMETERS ==========");
-    console.log("[robokassa/create] Shp_* params (sorted):", shpKeys);
-    console.log("[robokassa/create] Shp_* params string:", shpParamsString);
-    console.log("[robokassa/create] Shp_userId:", shpUserId);
+    console.log("[robokassa/create] Shp_userId:", shpUserId, "(NOT in signature, but in POST)");
     console.log("[robokassa/create] ========== EXCLUDED FROM SIGNATURE ==========");
     console.log("[robokassa/create] Recurring: true (NOT in signature)");
-    console.log("[robokassa/create] Description: NOT in signature (and NOT in POST)");
+    console.log("[robokassa/create] Description: (NOT in signature, but in POST)");
     console.log("[robokassa/create] Receipt: NOT SENT (Robokassa limitation)");
     console.log("[robokassa/create] =================================================");
 
@@ -208,42 +180,47 @@ export async function POST(req: Request) {
     const robokassaDomain = process.env.ROBOKASSA_DOMAIN || "auth.robokassa.ru";
     const robokassaActionUrl = `https://${robokassaDomain}/Merchant/Index.aspx`;
     
-    // КРИТИЧНО: Формируем данные для POST формы СТРОГО по требованиям
-    // В POST-запросе ОСТАВИТЬ ТОЛЬКО:
+    // PART 1: POST fields для первого платежа
+    // POST fields:
     // - MerchantLogin
-    // - OutSum
-    // - InvoiceID (int <= 2_147_483_647)
+    // - OutSum = "1.00"
+    // - InvoiceID (unique integer)
+    // - Description = "Подписка Step One — пробный период 3 дня"
+    // - Recurring = true
+    // - Shp_userId (telegram user id)
     // - SignatureValue
-    // - Recurring=true
-    // - Shp_userId
     //
-    // ❌ УБРАТЬ:
-    // - Description
-    // - Receipt
-    // - любые дополнительные поля
+    // ❌ НЕ отправляем:
+    // - Receipt (для recurring parent payment)
+    
+    const description = "Подписка Step One — пробный период 3 дня";
+    
     const formData: Record<string, string> = {
       MerchantLogin: merchantLogin,
-      OutSum: amountStr, // КРИТИЧНО: "1.00" (строка)
-      InvoiceID: invoiceIdStr, // КРИТИЧНО: строка, но число <= 2147483647
+      OutSum: amountStr, // "1.00"
+      InvoiceID: invoiceIdStr,
+      Description: description, // ВАЖНО: Description отправляется в POST
+      Recurring: "true", // Recurring=true для привязки карты
+      Shp_userId: shpUserId,
       SignatureValue: signatureValue,
-      Recurring: "true", // Recurring=true для привязки карты (НЕ участвует в подписи!)
-      Shp_userId: shpUserId, // Shp_ параметры в конце
     };
-    
-    // КРИТИЧНО: Description, Receipt и другие поля НЕ добавляем
-    // ========== POST FORM DATA DEBUG ==========
-    console.log("[robokassa/create] ========== POST FORM DATA (STEP 1) ==========");
+    // PART 3: ERROR 26 PROTECTION - Full POST payload logging
+    console.log("[robokassa/create] ========== POST FORM DATA (PART 1) ==========");
     console.log("[robokassa/create] POST URL:", robokassaActionUrl);
     console.log("[robokassa/create] POST Method: POST");
-    console.log("[robokassa/create] ========== EXACT POST FIELDS ==========");
+    console.log("[robokassa/create] ========== FULL POST PAYLOAD (without passwords) ==========");
     Object.entries(formData).forEach(([key, value]) => {
-      console.log(`[robokassa/create] ${key}:`, value, `(type: ${typeof value}, length: ${String(value).length})`);
+      if (key === "SignatureValue") {
+        console.log(`[robokassa/create] ${key}:`, value, `(type: ${typeof value}, length: ${String(value).length})`);
+      } else {
+        console.log(`[robokassa/create] ${key}:`, value, `(type: ${typeof value}, length: ${String(value).length})`);
+      }
     });
     console.log("[robokassa/create] Total POST fields:", Object.keys(formData).length);
     console.log("[robokassa/create] ==============================================");
     
     // Проверяем, что все обязательные поля присутствуют
-    const requiredFields = ["MerchantLogin", "OutSum", "InvoiceID", "SignatureValue", "Recurring", "Shp_userId"];
+    const requiredFields = ["MerchantLogin", "OutSum", "InvoiceID", "Description", "Recurring", "Shp_userId", "SignatureValue"];
     const missingFields = requiredFields.filter(field => !formData[field]);
     if (missingFields.length > 0) {
       throw new Error(`Missing required fields: ${missingFields.join(", ")}`);
@@ -260,6 +237,16 @@ export async function POST(req: Request) {
     if (!/^\d+\.\d{2}$/.test(formData.OutSum)) {
       throw new Error(`Invalid OutSum format: ${formData.OutSum}. Expected format: "1.00"`);
     }
+    
+    // PART 3: ERROR 26 PROTECTION - Log exact signature string BEFORE md5
+    console.log("[robokassa/create] ========== ERROR 26 PROTECTION ==========");
+    console.log("[robokassa/create] Exact signature string BEFORE md5:", signatureBaseForLog);
+    console.log("[robokassa/create] Full signature string (with password):", signatureBase);
+    console.log("[robokassa/create] Final SignatureValue (md5):", signatureValue);
+    console.log("[robokassa/create] If Robokassa returns error 26:");
+    console.log("[robokassa/create]   - Check signature formula: MerchantLogin:OutSum:InvoiceID:Password1");
+    console.log("[robokassa/create]   - Verify Password1 is correct");
+    console.log("[robokassa/create]   - Verify Recurring is approved on merchant side");
     console.log("[robokassa/create] ==========================================");
 
     // Сохраняем платеж в БД для отслеживания (STEP 1: parent payment)

@@ -53,16 +53,20 @@ async function chargeUserAfterTrial(user: any) {
   const receiptJson = buildSubscriptionReceipt();
   const receiptEncoded = encodeURIComponent(receiptJson);
 
-  // ВАЖНО: OutSum должен быть строкой с двумя знаками после запятой
+  // PART 2: ВАЖНО: OutSum должен быть строкой с двумя знаками после запятой
   const outSumStr = SUBSCRIPTION_AMOUNT.toFixed(2); // "199.00"
 
-  // SignatureValue: MerchantLogin:OutSum:InvoiceID:Receipt:Password1
-  // PreviousInvoiceID НЕ включается в подпись для рекуррентных платежей
-  // ВАЖНО: В подписи используется JSON строка Receipt (НЕ encoded), OutSum как строка с .00
-  const signatureBase = `${env.robokassaMerchantLogin}:${outSumStr}:${invoiceId}:${receiptJson}:${env.robokassaPassword1}`;
+  // PART 2: SignatureValue для recurring-платежа:
+  // md5(MerchantLogin:OutSum:InvoiceID:Password2)
+  //
+  // ВАЖНО:
+  // - PreviousInvoiceID НЕ включается в подпись
+  // - Receipt НЕ отправляется для recurring
+  // - Recurring НЕ отправляется
+  const signatureBase = `${env.robokassaMerchantLogin}:${outSumStr}:${invoiceId}:${env.robokassaPassword2}`;
   const signatureValue = md5(signatureBase).toLowerCase();
 
-  const description = "Подписка Step One — 30 дней";
+  const description = "Подписка Step One — 1 месяц";
   const body = new URLSearchParams({
     MerchantLogin: env.robokassaMerchantLogin,
     InvoiceID: invoiceId,
@@ -70,16 +74,17 @@ async function chargeUserAfterTrial(user: any) {
     OutSum: outSumStr, // "199.00" - строка с двумя знаками
     Description: description,
     SignatureValue: signatureValue,
-    Receipt: receiptEncoded,
+    // PART 2: Receipt НЕ отправляется для recurring
+    // PART 2: Recurring НЕ отправляется
   });
 
-  console.log(`[recurring] Signature base (без пароля): ${env.robokassaMerchantLogin}:${outSumStr}:${invoiceId}:${receiptJson}:[PASSWORD_HIDDEN]`);
-  console.log(`[recurring] Signature value: ${signatureValue}`);
+  console.log(`[recurring] PART 2: Signature base (без пароля): ${env.robokassaMerchantLogin}:${outSumStr}:${invoiceId}:[PASSWORD_HIDDEN]`);
+  console.log(`[recurring] PART 2: Signature value: ${signatureValue}`);
 
-  console.log(`[recurring] Charging user ${user.id}`);
-  console.log(`[recurring] Initial invoice: ${user.robokassa_initial_invoice_id}`);
-  console.log(`[recurring] New invoice: ${invoiceId}`);
-  console.log(`[recurring] Receipt JSON: ${receiptJson}`);
+  console.log(`[recurring] PART 2: Charging user ${user.id}`);
+  console.log(`[recurring] PART 2: Initial invoice: ${user.robokassa_initial_invoice_id}`);
+  console.log(`[recurring] PART 2: New invoice: ${invoiceId}`);
+  console.log(`[recurring] PART 2: Receipt NOT sent (Robokassa requirement)`);
 
   // Записываем платеж как pending перед запросом
   const { data: paymentRow } = await supabase
@@ -97,14 +102,15 @@ async function chargeUserAfterTrial(user: any) {
 
   try {
     console.log(`[recurring] Sending POST request to: ${RECURRING_URL}`);
-    console.log(`[recurring] Request body params:`, {
+    console.log(`[recurring] PART 2: Request body params:`, {
       MerchantLogin: env.robokassaMerchantLogin,
       InvoiceID: invoiceId,
       PreviousInvoiceID: user.robokassa_initial_invoice_id,
       OutSum: outSumStr,
       Description: description,
-      Receipt: receiptEncoded.substring(0, 50) + "...",
       SignatureValue: signatureValue.substring(0, 10) + "...",
+      Receipt: "NOT SENT",
+      Recurring: "NOT SENT",
     });
 
     const response = await fetch(RECURRING_URL, {
