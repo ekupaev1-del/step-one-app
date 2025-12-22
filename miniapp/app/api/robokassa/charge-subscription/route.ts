@@ -94,6 +94,13 @@ export async function POST(req: Request) {
       );
     }
 
+    // КРИТИЧНО: Проверка правильности MerchantLogin
+    console.log("[robokassa/charge-subscription] ========== MERCHANT LOGIN CHECK ==========");
+    console.log("[robokassa/charge-subscription] MerchantLogin from env:", merchantLogin);
+    console.log("[robokassa/charge-subscription] MerchantLogin length:", merchantLogin.length);
+    console.log("[robokassa/charge-subscription] ⚠️ Убедитесь, что MerchantLogin совпадает с 'Идентификатором магазина' из ЛК Robokassa");
+    console.log("[robokassa/charge-subscription] =================================================");
+
     // Получаем пользователя и parent_invoice_id
     const { data: user, error: userError } = await supabase
       .from("users")

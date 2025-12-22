@@ -54,6 +54,16 @@ export async function POST(req: Request) {
       );
     }
 
+    // КРИТИЧНО: Проверка правильности MerchantLogin
+    // Robokassa указала, что правильный идентификатор магазина должен быть из ЛК
+    // Если используется неправильный MerchantLogin, Robokassa вернет ошибку
+    console.log("[robokassa/create] ========== MERCHANT LOGIN CHECK ==========");
+    console.log("[robokassa/create] MerchantLogin from env:", merchantLogin);
+    console.log("[robokassa/create] MerchantLogin length:", merchantLogin.length);
+    console.log("[robokassa/create] ⚠️ Убедитесь, что MerchantLogin совпадает с 'Идентификатором магазина' из ЛК Robokassa");
+    console.log("[robokassa/create] ⚠️ Идентификатор магазина находится в: ЛК → Мои магазины → [магазин] → Технические настройки");
+    console.log("[robokassa/create] =================================================");
+
     console.log("[robokassa/create] UserId:", numericUserId);
     console.log("[robokassa/create] Amount:", FIRST_PAYMENT_AMOUNT, "RUB");
 
