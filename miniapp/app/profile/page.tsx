@@ -799,9 +799,17 @@ function ProfilePageContent() {
           <h2 className="text-lg font-semibold text-textPrimary mb-4">Подписка</h2>
           
           {subscriptionCanceled ? (
-            <div className="text-center py-4">
-              <p className="text-lg font-semibold text-red-600 mb-2">Отменена подписка</p>
-              <p className="text-sm text-textSecondary">Подписка была успешно отменена</p>
+            <div className="text-center py-4 space-y-4">
+              <div>
+                <p className="text-lg font-semibold text-red-600 mb-2">Отменена подписка</p>
+                <p className="text-sm text-textSecondary">Подписка была успешно отменена</p>
+              </div>
+              <Link
+                href={`/payment?id=${userId}`}
+                className="block w-full px-4 py-2 bg-accent text-white font-medium rounded-lg hover:opacity-90 transition-opacity text-center"
+              >
+                Возобновить подписку
+              </Link>
             </div>
           ) : (
             <div className="space-y-3">
