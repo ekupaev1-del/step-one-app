@@ -178,12 +178,26 @@ export async function POST(req: Request) {
     const receiptJson = buildSubscriptionReceipt(SUBSCRIPTION_AMOUNT);
     const receiptEncoded = encodeURIComponent(receiptJson);
     
-    // КРИТИЧНО: Shp_userId в подписи должен быть в формате "Shp_userId=322"
+    // КРИТИЧНО: Robokassa требует включать ВСЕ параметры Shp_* в подпись
+    // - в алфавитном порядке
+    // - в формате key=value
+    // - разделять двоеточием
     const shpUserId = String(numericUserId);
-    const shpUserIdInSignature = `Shp_userId=${shpUserId}`;
+    
+    // Собираем все Shp_* параметры в объект
+    const shpParams: Record<string, string> = {
+      Shp_userId: shpUserId,
+    };
+    
+    // Сортируем Shp_* параметры по имени (алфавитно)
+    const shpKeys = Object.keys(shpParams).sort();
+    
+    // Формируем строку Shp_* параметров для подписи
+    // Каждый параметр в формате key=value, разделены двоеточием
+    const shpParamsString = shpKeys.map(key => `${key}=${shpParams[key]}`).join(':');
     
     // КРИТИЧНО: Порядок строки подписи для STEP 2 (recurring-платеж):
-    // MerchantLogin:OutSum:InvoiceID:PreviousInvoiceID:Shp_userId=322:Password1
+    // MerchantLogin:OutSum:InvoiceID:PreviousInvoiceID:{Shp_* params}:Password1
     //
     // Пример: stepone:199.00:322475650:322475649:Shp_userId=322:ROBOKASSA_PASSWORD1
     //
@@ -193,12 +207,12 @@ export async function POST(req: Request) {
     // - Description НЕ участвует в подписи
     // - Shp_* параметры участвуют ОБЯЗАТЕЛЬНО
     // - Shp_* идут после PreviousInvoiceID
-    // - Формат строго Shp_userId=322
-    // - Порядок Shp_* — алфавитный (если несколько)
+    // - Shp_* сортируются алфавитно
+    // - Формат строго key=value для каждого Shp_*
     // - OutSum = строка "199.00"
     //
     // Формируем подпись ВРУЧНУЮ строкой (НЕ через Object.values/entries)
-    const signatureBase = `${merchantLogin}:${amountStr}:${invoiceIdStr}:${parentInvoiceId}:${shpUserIdInSignature}:${password1}`;
+    const signatureBase = `${merchantLogin}:${amountStr}:${invoiceIdStr}:${parentInvoiceId}:${shpParamsString}:${password1}`;
     const signatureValue = md5(signatureBase).toLowerCase();
     
     // Проверка подписи
@@ -207,13 +221,13 @@ export async function POST(req: Request) {
     }
 
     // DEBUG: Логируем строку подписи БЕЗ пароля
-    const signatureBaseForLog = `${merchantLogin}:${amountStr}:${invoiceIdStr}:${parentInvoiceId}:${shpUserIdInSignature}:[PASSWORD_HIDDEN]`;
+    const signatureBaseForLog = `${merchantLogin}:${amountStr}:${invoiceIdStr}:${parentInvoiceId}:${shpParamsString}:[PASSWORD_HIDDEN]`;
     
     console.log("[robokassa/charge-subscription] ========== STEP 2: MONTHLY CHARGE ==========");
     console.log("[robokassa/charge-subscription] Purpose: Recurring payment 199 RUB with fiscalization");
     console.log("[robokassa/charge-subscription] ========== SIGNATURE DEBUG ==========");
     console.log("[robokassa/charge-subscription] Signature base (БЕЗ пароля):", signatureBaseForLog);
-    console.log("[robokassa/charge-subscription] Signature base (ПОЛНАЯ):", `${merchantLogin}:${amountStr}:${invoiceIdStr}:${parentInvoiceId}:${shpUserIdInSignature}:${password1.substring(0, 4)}...`);
+    console.log("[robokassa/charge-subscription] Signature base (ПОЛНАЯ):", `${merchantLogin}:${amountStr}:${invoiceIdStr}:${parentInvoiceId}:${shpParamsString}:${password1.substring(0, 4)}...`);
     console.log("[robokassa/charge-subscription] Signature value (md5):", signatureValue);
     console.log("[robokassa/charge-subscription] ========== PARAMETERS ==========");
     console.log("[robokassa/charge-subscription] MerchantLogin:", merchantLogin);
@@ -222,8 +236,10 @@ export async function POST(req: Request) {
     console.log("[robokassa/charge-subscription] InvoiceID as string:", invoiceIdStr);
     console.log("[robokassa/charge-subscription] InvoiceID <= 2147483647:", invoiceId <= 2147483647);
     console.log("[robokassa/charge-subscription] PreviousInvoiceID (parent):", parentInvoiceId);
+    console.log("[robokassa/charge-subscription] ========== Shp_* PARAMETERS ==========");
+    console.log("[robokassa/charge-subscription] Shp_* params (sorted):", shpKeys);
+    console.log("[robokassa/charge-subscription] Shp_* params string:", shpParamsString);
     console.log("[robokassa/charge-subscription] Shp_userId:", shpUserId);
-    console.log("[robokassa/charge-subscription] Shp_userId в подписи:", shpUserIdInSignature);
     console.log("[robokassa/charge-subscription] ========== RECEIPT (FZ-54) ==========");
     console.log("[robokassa/charge-subscription] Receipt JSON (до encode):", receiptJson);
     console.log("[robokassa/charge-subscription] Receipt encoded (после encode):", receiptEncoded);

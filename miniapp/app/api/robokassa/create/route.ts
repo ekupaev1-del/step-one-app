@@ -137,14 +137,28 @@ export async function POST(req: Request) {
     // Решение: НЕ отправляем Receipt на этом шаге, только привязка карты
     // Фискализация будет на STEP 2 (дочерний recurring-платеж 199 RUB)
     
-    // КРИТИЧНО: Shp_userId в подписи должен быть в формате "Shp_userId=322"
+    // КРИТИЧНО: Robokassa требует включать ВСЕ параметры Shp_* в подпись
+    // - в алфавитном порядке
+    // - в формате key=value
+    // - разделять двоеточием
     const shpUserId = String(numericUserId);
-    const shpUserIdInSignature = `Shp_userId=${shpUserId}`;
     
-    // КРИТИЧНО: Порядок строки подписи для STEP 1 (БЕЗ Receipt, БЕЗ Recurring, БЕЗ Description):
-    // MerchantLogin:OutSum:InvoiceID:Shp_userId=<value>:ROBOKASSA_PASSWORD1
+    // Собираем все Shp_* параметры в объект
+    const shpParams: Record<string, string> = {
+      Shp_userId: shpUserId,
+    };
+    
+    // Сортируем Shp_* параметры по имени (алфавитно)
+    const shpKeys = Object.keys(shpParams).sort();
+    
+    // Формируем строку Shp_* параметров для подписи
+    // Каждый параметр в формате key=value, разделены двоеточием
+    const shpParamsString = shpKeys.map(key => `${key}=${shpParams[key]}`).join(':');
+    
+    // КРИТИЧНО: Порядок строки подписи для STEP 1:
+    // MerchantLogin:OutSum:InvoiceID:{Shp_* params}:ROBOKASSA_PASSWORD1
     // 
-    // Пример: stepone:1.00:322475649:Shp_userId=322:ROBOKASSA_PASSWORD1
+    // Пример: stepone:1.00:322360500:Shp_userId=322:B2Bnpr5rF948tbTZXsg
     //
     // ВАЖНО:
     // - Recurring НЕ участвует в подписи
@@ -152,12 +166,12 @@ export async function POST(req: Request) {
     // - Receipt НЕ участвует в подписи (не отправляется)
     // - Shp_* параметры участвуют ОБЯЗАТЕЛЬНО
     // - Shp_* идут после InvoiceID
-    // - Формат строго Shp_userId=322
-    // - Порядок Shp_* — алфавитный (если несколько)
+    // - Shp_* сортируются алфавитно
+    // - Формат строго key=value для каждого Shp_*
     // - OutSum = строка "1.00"
     //
     // Формируем подпись ВРУЧНУЮ строкой (НЕ через Object.values/entries)
-    const signatureBase = `${merchantLogin}:${amountStr}:${invoiceIdStr}:${shpUserIdInSignature}:${password1}`;
+    const signatureBase = `${merchantLogin}:${amountStr}:${invoiceIdStr}:${shpParamsString}:${password1}`;
     const signatureValue = md5(signatureBase).toLowerCase();
     
     // Проверка подписи
@@ -166,13 +180,13 @@ export async function POST(req: Request) {
     }
 
     // DEBUG: Логируем строку подписи БЕЗ пароля
-    const signatureBaseForLog = `${merchantLogin}:${amountStr}:${invoiceIdStr}:${shpUserIdInSignature}:[PASSWORD_HIDDEN]`;
+    const signatureBaseForLog = `${merchantLogin}:${amountStr}:${invoiceIdStr}:${shpParamsString}:[PASSWORD_HIDDEN]`;
     
     console.log("[robokassa/create] ========== STEP 1: CARD BINDING PAYMENT ==========");
     console.log("[robokassa/create] Purpose: Bind card and get parent InvoiceID");
     console.log("[robokassa/create] ========== SIGNATURE DEBUG ==========");
     console.log("[robokassa/create] Signature base (БЕЗ пароля):", signatureBaseForLog);
-    console.log("[robokassa/create] Signature base (ПОЛНАЯ):", `${merchantLogin}:${amountStr}:${invoiceIdStr}:${shpUserIdInSignature}:${password1.substring(0, 4)}...`);
+    console.log("[robokassa/create] Signature base (ПОЛНАЯ):", `${merchantLogin}:${amountStr}:${invoiceIdStr}:${shpParamsString}:${password1.substring(0, 4)}...`);
     console.log("[robokassa/create] Signature value (md5):", signatureValue);
     console.log("[robokassa/create] ========== PARAMETERS ==========");
     console.log("[robokassa/create] MerchantLogin:", merchantLogin);
@@ -180,8 +194,10 @@ export async function POST(req: Request) {
     console.log("[robokassa/create] InvoiceID:", invoiceId, "(type:", typeof invoiceId, ")");
     console.log("[robokassa/create] InvoiceID as string:", invoiceIdStr);
     console.log("[robokassa/create] InvoiceID <= 2147483647:", invoiceId <= 2147483647);
+    console.log("[robokassa/create] ========== Shp_* PARAMETERS ==========");
+    console.log("[robokassa/create] Shp_* params (sorted):", shpKeys);
+    console.log("[robokassa/create] Shp_* params string:", shpParamsString);
     console.log("[robokassa/create] Shp_userId:", shpUserId);
-    console.log("[robokassa/create] Shp_userId в подписи:", shpUserIdInSignature);
     console.log("[robokassa/create] ========== EXCLUDED FROM SIGNATURE ==========");
     console.log("[robokassa/create] Recurring: true (NOT in signature)");
     console.log("[robokassa/create] Description: NOT in signature (and NOT in POST)");
