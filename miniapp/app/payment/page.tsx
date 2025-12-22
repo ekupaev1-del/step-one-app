@@ -308,13 +308,28 @@ ${allFormFields.map(f => `  ${f.name} = ${f.value}`).join('\n')}
     // Добавляем форму в DOM
     document.body.appendChild(form);
     
-    console.log("[payment] Form created, will submit in 500ms...");
+    // ВАЖНО: Даем пользователю время скопировать debug информацию
+    // Увеличиваем задержку до 3 секунд, чтобы пользователь успел скопировать
+    console.log("[payment] Form created, will submit in 3 seconds...");
+    console.log("[payment] You can copy debug info now!");
     
-    // Задержка перед отправкой
+    // Показываем обратный отсчет
+    let countdown = 3;
+    const countdownInterval = setInterval(() => {
+      countdown--;
+      if (countdown > 0) {
+        console.log(`[payment] Submitting in ${countdown} seconds...`);
+      } else {
+        clearInterval(countdownInterval);
+      }
+    }, 1000);
+    
+    // Задержка перед отправкой - 3 секунды
     setTimeout(() => {
-      console.log("[payment] Submitting form NOW - this should ONLY happen after user click!");
+      clearInterval(countdownInterval);
+      console.log("[payment] Submitting form NOW!");
       form.submit();
-    }, 500);
+    }, 3000);
   };
 
   return (
