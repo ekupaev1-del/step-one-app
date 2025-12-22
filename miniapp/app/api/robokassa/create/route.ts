@@ -17,13 +17,14 @@ function md5(input: string): string {
 function buildFirstPaymentReceipt(amount: number): string {
   // ВАЖНО: Сумма должна быть числом, не строкой
   // Robokassa требует точное совпадение суммы в Receipt с OutSum
+  // Формат строго по документации Robokassa для 54-ФЗ
   const receipt = {
     sno: "usn_income", // УСН доходы (self-employed, самозанятый)
     items: [
       {
         name: "Подписка Step One — пробный период 3 дня",
         quantity: 1.0, // Количество как число
-        sum: amount, // Сумма должна совпадать с OutSum (1.00)
+        sum: Number(amount.toFixed(2)), // Сумма должна совпадать с OutSum (1.00), обязательно число
         payment_method: "full_payment", // Полная предоплата
         payment_object: "service", // Услуга
         tax: "none", // Без НДС (самозанятый)
@@ -37,9 +38,16 @@ function buildFirstPaymentReceipt(amount: number): string {
   
   // Проверяем, что Receipt валидный JSON
   try {
-    JSON.parse(receiptJson);
-  } catch (e) {
-    throw new Error(`Invalid Receipt JSON: ${e}`);
+    const parsed = JSON.parse(receiptJson);
+    // Дополнительная проверка суммы
+    if (parsed.items && parsed.items[0]) {
+      const itemSum = parsed.items[0].sum;
+      if (Math.abs(itemSum - amount) > 0.01) {
+        throw new Error(`Receipt sum mismatch: ${itemSum} != ${amount}`);
+      }
+    }
+  } catch (e: any) {
+    throw new Error(`Invalid Receipt JSON: ${e.message || e}`);
   }
   
   return receiptJson;
@@ -133,14 +141,25 @@ export async function POST(req: Request) {
       console.log("[robokassa/create] ⚠️ Receipt отключен для теста (ROBOKASSA_SKIP_RECEIPT=true)");
     } else {
       // Формируем Receipt для первого платежа
-      receiptJson = buildFirstPaymentReceipt(FIRST_PAYMENT_AMOUNT);
-      receiptEncoded = encodeURIComponent(receiptJson);
+      try {
+        receiptJson = buildFirstPaymentReceipt(FIRST_PAYMENT_AMOUNT);
+        receiptEncoded = encodeURIComponent(receiptJson);
+        console.log("[robokassa/create] Receipt created successfully, length:", receiptJson.length);
+      } catch (receiptError: any) {
+        console.error("[robokassa/create] ❌ Error building Receipt:", receiptError);
+        throw new Error(`Failed to build Receipt: ${receiptError.message}`);
+      }
 
       // Подпись строго по документации:
       // MerchantLogin:OutSum:InvoiceID:Receipt:ROBOKASSA_PASSWORD1
       // ВАЖНО: Receipt в подписи - это JSON строка (НЕ encoded)
       signatureBase = `${merchantLogin}:${amountStr}:${invoiceId}:${receiptJson}:${password1}`;
       signatureValue = md5(signatureBase).toLowerCase();
+      
+      // Дополнительная проверка подписи
+      if (!signatureValue || signatureValue.length !== 32) {
+        throw new Error(`Invalid signature generated: ${signatureValue}`);
+      }
     }
 
     // DEBUG: Логируем строку подписи БЕЗ пароля
