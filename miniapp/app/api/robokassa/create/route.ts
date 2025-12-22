@@ -173,14 +173,22 @@ export async function POST(req: Request) {
     });
     
     const amountStr = FIRST_PAYMENT_AMOUNT.toFixed(2); // "1.00"
+    
+    // Проверяем, что OutSum = "1.00"
+    if (amountStr !== "1.00") {
+      throw new Error(`Invalid OutSum: expected "1.00", got "${amountStr}"`);
+    }
 
     // Строим минимальный Receipt для фискализации
     const receiptJson = buildFirstPaymentReceipt(FIRST_PAYMENT_AMOUNT);
     const receiptEncoded = encodeURIComponent(receiptJson);
     
-    // Подпись С Receipt: MerchantLogin:OutSum:InvoiceID:Receipt:ROBOKASSA_PASSWORD1
-    // ВАЖНО: Receipt в подписи - это JSON строка (НЕ encoded)
-    const signatureBase = `${merchantLogin}:${amountStr}:${invoiceId}:${receiptJson}:${password1}`;
+    // ВАЖНО: Используем urlencoded Receipt в строке подписи
+    // Порядок параметров в подписи:
+    // MerchantLogin:OutSum:InvoiceID:Receipt:Shp_userId:Password1
+    // Где Receipt - это urlencoded версия
+    const shpUserId = String(numericUserId);
+    const signatureBase = `${merchantLogin}:${amountStr}:${invoiceId}:${receiptEncoded}:${shpUserId}:${password1}`;
     const signatureValue = md5(signatureBase).toLowerCase();
     
     // Проверка подписи
@@ -189,14 +197,17 @@ export async function POST(req: Request) {
     }
 
     // DEBUG: Логируем строку подписи БЕЗ пароля
-    const signatureBaseForLog = `${merchantLogin}:${amountStr}:${invoiceId}:${receiptJson}:[PASSWORD_HIDDEN]`;
+    const signatureBaseForLog = `${merchantLogin}:${amountStr}:${invoiceId}:${receiptEncoded}:${shpUserId}:[PASSWORD_HIDDEN]`;
     
+    console.log("[robokassa/create] ========== SIGNATURE DEBUG ==========");
+    console.log("[robokassa/create] OutSum:", amountStr, "(must be '1.00')");
     console.log("[robokassa/create] InvoiceID:", invoiceId);
-    console.log("[robokassa/create] OutSum:", amountStr);
     console.log("[robokassa/create] Receipt JSON:", receiptJson);
-    console.log("[robokassa/create] Receipt encoded length:", receiptEncoded.length);
-    console.log("[robokassa/create] Signature base (без пароля):", signatureBaseForLog);
-    console.log("[robokassa/create] Signature value:", signatureValue);
+    console.log("[robokassa/create] Receipt encoded:", receiptEncoded.substring(0, 100) + "...");
+    console.log("[robokassa/create] Shp_userId:", shpUserId);
+    console.log("[robokassa/create] Signature base (БЕЗ пароля):", signatureBaseForLog);
+    console.log("[robokassa/create] Signature value (md5):", signatureValue);
+    console.log("[robokassa/create] =====================================");
 
     // ВАЖНО: Robokassa требует POST форму, а не GET URL!
     // Формируем данные для POST формы
@@ -233,16 +244,12 @@ export async function POST(req: Request) {
     console.log("[robokassa/create] Receipt added to formData");
     
     // Добавляем Shp_ параметры (в конце, после основных параметров)
-    formData.Shp_userId = String(numericUserId);
-    
-    console.log("[robokassa/create] Shp_userId:", formData.Shp_userId);
+    formData.Shp_userId = shpUserId;
     
     console.log("[robokassa/create] Using Robokassa domain:", robokassaDomain);
     console.log("[robokassa/create] Robokassa action URL:", robokassaActionUrl);
-    // DEBUG: Выводим детальную информацию
-    console.log("[robokassa/create] ========== DEBUG INFO ==========");
-    console.log("[robokassa/create] Signature base (БЕЗ пароля):", signatureBaseForLog);
-    console.log("[robokassa/create] Signature value:", signatureValue);
+    // DEBUG: Выводим детальную информацию о форме
+    console.log("[robokassa/create] ========== FORM DATA DEBUG ==========");
     console.log("[robokassa/create] Form data (POST):", {
       MerchantLogin: formData.MerchantLogin,
       InvoiceID: formData.InvoiceID,
@@ -253,7 +260,7 @@ export async function POST(req: Request) {
       Shp_userId: formData.Shp_userId,
       SignatureValue: formData.SignatureValue,
     });
-    console.log("[robokassa/create] ===============================");
+    console.log("[robokassa/create] =====================================");
     
     // Проверяем, что все обязательные поля присутствуют
     const requiredFields = ["MerchantLogin", "InvoiceID", "Description", "SignatureValue", "OutSum", "Recurring", "Receipt"];
