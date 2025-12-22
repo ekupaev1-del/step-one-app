@@ -222,7 +222,8 @@ export async function POST(req: Request) {
     // ВАЖНО: Receipt НЕ используется в примере для первого платежа
     // ТЕСТОВО: Пробуем без Recurring, чтобы проверить, работает ли вообще платеж
     // Если обычный платеж работает, значит проблема в настройках рекуррентных платежей
-    const testMode = process.env.ROBOKASSA_TEST_MODE === "true"; // Включить через переменную окружения
+    // ВРЕМЕННО ВКЛЮЧЕНО для тестирования - по умолчанию тестовый режим
+    const testMode = process.env.ROBOKASSA_TEST_MODE !== "false"; // По умолчанию true (тестовый режим)
     
     const formData: Record<string, string> = {
       MerchantLogin: merchantLogin,
