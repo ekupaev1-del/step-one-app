@@ -205,19 +205,18 @@ Stack: ${e.stack || "N/A"}
     
     // ВАЖНО: Порядок полей должен быть ТОЧНО как в документации Robokassa:
     // 1. MerchantLogin
-    // 2. InvoiceID
-    // 3. Description
+    // 2. OutSum
+    // 3. InvoiceID
     // 4. SignatureValue
-    // 5. OutSum
-    // 6. Recurring (может отсутствовать в тестовом режиме)
-    // 7. Shp_ параметры (если есть)
+    // 5. Recurring
+    // 6. Shp_ параметры (если есть)
+    // КРИТИЧНО: Description НЕ включаем в форму!
     const fieldOrder = [
       "MerchantLogin",
-      "InvoiceID",
-      "Description",
-      "SignatureValue",
       "OutSum",
-      "Recurring", // Может отсутствовать в тестовом режиме
+      "InvoiceID",
+      "SignatureValue",
+      "Recurring",
       "Shp_userId"
     ];
     
@@ -255,8 +254,9 @@ Stack: ${e.stack || "N/A"}
     });
     
     // ВАЖНО: Проверяем, что все обязательные поля добавлены
-    // Recurring НЕ обязателен - может отсутствовать в тестовом режиме
-    const requiredFields = ["MerchantLogin", "InvoiceID", "Description", "SignatureValue", "OutSum"];
+    // КРИТИЧНО: Description НЕ обязателен - убран по требованиям Robokassa
+    // Recurring обязателен для recurring-платежей
+    const requiredFields = ["MerchantLogin", "OutSum", "InvoiceID", "SignatureValue", "Recurring", "Shp_userId"];
     const missingFields = requiredFields.filter(field => !formFields.find(f => f.name === field));
     if (missingFields.length > 0) {
       console.error("[payment] ❌ MISSING REQUIRED FIELDS:", missingFields);
