@@ -174,7 +174,7 @@ export async function POST(req: Request) {
     
     const amountStr = FIRST_PAYMENT_AMOUNT.toFixed(2); // "1.00"
     
-    // Проверяем, что OutSum = "1.00"
+    // КРИТИЧНО: Проверяем, что OutSum = "1.00" (строка, не число)
     if (amountStr !== "1.00") {
       throw new Error(`Invalid OutSum: expected "1.00", got "${amountStr}"`);
     }
@@ -183,12 +183,14 @@ export async function POST(req: Request) {
     const receiptJson = buildFirstPaymentReceipt(FIRST_PAYMENT_AMOUNT);
     const receiptEncoded = encodeURIComponent(receiptJson);
     
-    // ВАЖНО: Используем urlencoded Receipt в строке подписи
-    // Порядок параметров в подписи:
-    // MerchantLogin:OutSum:InvoiceID:Receipt:Shp_userId:Password1
-    // Где Receipt - это urlencoded версия
+    // КРИТИЧНО: Shp_userId в подписи должен быть в формате "Shp_userId=322", а не просто "322"
     const shpUserId = String(numericUserId);
-    const signatureBase = `${merchantLogin}:${amountStr}:${invoiceId}:${receiptEncoded}:${shpUserId}:${password1}`;
+    const shpUserIdInSignature = `Shp_userId=${shpUserId}`;
+    
+    // КРИТИЧНО: Порядок строки подписи (EXACTLY как требуется):
+    // MerchantLogin:OutSum:InvoiceID:Receipt:Shp_userId=<value>:ROBOKASSA_PASSWORD1
+    // Receipt - это urlencoded версия (EXACTLY тот, который уходит в POST)
+    const signatureBase = `${merchantLogin}:${amountStr}:${invoiceId}:${receiptEncoded}:${shpUserIdInSignature}:${password1}`;
     const signatureValue = md5(signatureBase).toLowerCase();
     
     // Проверка подписи
@@ -197,14 +199,14 @@ export async function POST(req: Request) {
     }
 
     // DEBUG: Логируем строку подписи БЕЗ пароля
-    const signatureBaseForLog = `${merchantLogin}:${amountStr}:${invoiceId}:${receiptEncoded}:${shpUserId}:[PASSWORD_HIDDEN]`;
+    const signatureBaseForLog = `${merchantLogin}:${amountStr}:${invoiceId}:${receiptEncoded}:${shpUserIdInSignature}:[PASSWORD_HIDDEN]`;
     
     console.log("[robokassa/create] ========== SIGNATURE DEBUG ==========");
     console.log("[robokassa/create] OutSum:", amountStr, "(must be '1.00')");
     console.log("[robokassa/create] InvoiceID:", invoiceId);
-    console.log("[robokassa/create] Receipt JSON:", receiptJson);
-    console.log("[robokassa/create] Receipt encoded:", receiptEncoded.substring(0, 100) + "...");
-    console.log("[robokassa/create] Shp_userId:", shpUserId);
+    console.log("[robokassa/create] Receipt JSON (до encode):", receiptJson);
+    console.log("[robokassa/create] Receipt encoded (после encode):", receiptEncoded);
+    console.log("[robokassa/create] Shp_userId в подписи:", shpUserIdInSignature);
     console.log("[robokassa/create] Signature base (БЕЗ пароля):", signatureBaseForLog);
     console.log("[robokassa/create] Signature value (md5):", signatureValue);
     console.log("[robokassa/create] =====================================");
@@ -230,18 +232,23 @@ export async function POST(req: Request) {
     // ВАЖНО: Порядок параметров должен быть ТОЧНО как в примере
     // ВАЖНО: Receipt НЕ используется в примере для первого платежа
     // Формируем данные для POST формы
+    // ВАЖНО: Порядок параметров в formData не влияет на подпись
+    // Но для ясности сохраняем логичный порядок
     const formData: Record<string, string> = {
       MerchantLogin: merchantLogin,
       InvoiceID: invoiceId,
       Description: description,
       SignatureValue: signatureValue,
-      OutSum: amountStr,
-      Recurring: "true", // Recurring=true для рекуррентных платежей
-      Receipt: receiptEncoded, // Receipt для фискализации
+      OutSum: amountStr, // КРИТИЧНО: "1.00" (строка)
+      Recurring: "true", // Recurring=true для рекуррентных платежей (НЕ участвует в подписи!)
+      Receipt: receiptEncoded, // КРИТИЧНО: urlencoded Receipt (EXACTLY тот, что в подписи)
     };
     
-    console.log("[robokassa/create] Recurring = 'true'");
-    console.log("[robokassa/create] Receipt added to formData");
+    // Добавляем Shp_ параметры (в конце, после основных параметров)
+    formData.Shp_userId = shpUserId;
+    
+    console.log("[robokassa/create] Recurring = 'true' (НЕ участвует в подписи)");
+    console.log("[robokassa/create] Receipt added to formData (urlencoded):", receiptEncoded.substring(0, 100) + "...");
     
     // Добавляем Shp_ параметры (в конце, после основных параметров)
     formData.Shp_userId = shpUserId;
@@ -282,7 +289,8 @@ export async function POST(req: Request) {
     }
     console.log("[robokassa/create] ==========================================");
 
-    // Сохраняем платеж в БД (опционально, для отслеживания)
+    // Сохраняем платеж в БД для отслеживания
+    // ВАЖНО: Этот InvoiceID будет сохранен как parent_invoice_id после успешной оплаты
     try {
       const { error: paymentInsertError } = await supabase
         .from("payments")
@@ -299,7 +307,8 @@ export async function POST(req: Request) {
         // Не блокируем создание платежа, если БД недоступна
         console.warn("[robokassa/create] Warning: Failed to save payment to DB:", paymentInsertError.message);
       } else {
-        console.log("[robokassa/create] Payment saved to DB");
+        console.log("[robokassa/create] Payment saved to DB, invoice_id:", invoiceId);
+        console.log("[robokassa/create] Этот InvoiceID будет сохранен как parent_invoice_id после успешной оплаты");
       }
     } catch (paymentErr: any) {
       // Игнорируем ошибки БД - платеж уже создан
