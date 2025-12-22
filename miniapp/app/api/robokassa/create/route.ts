@@ -177,23 +177,37 @@ export async function POST(req: Request) {
     }
 
     // STEP 1: FIRST (PARENT) PAYMENT (199 RUB with Recurring=true)
-    // КРИТИЧНО: Подпись для первого платежа С Receipt:
-    // md5(MerchantLogin:OutSum:InvoiceID:Receipt:Password1)
+    // КРИТИЧНО: Подпись для первого платежа С Receipt и Shp_userId:
+    // md5(MerchantLogin:OutSum:InvoiceID:Receipt:Shp_userId:Password1)
     // 
     // ВАЖНО:
-    // - Shp_* параметры НЕ включаются в подпись
+    // - Receipt ОБЯЗАТЕЛЕН для самозанятого (фискализация ФЗ-54)
+    // - Shp_userId ОБЯЗАТЕЛЕН в подписи, если отправляется в POST
+    // - Формат Shp_userId в подписи: Shp_userId=322 (не просто значение!)
     // - Recurring НЕ участвует в подписи (но отправляется в POST)
     // - Description НЕ участвует в подписи (но отправляется в POST)
-    // - Receipt ОБЯЗАТЕЛЕН для самозанятого (фискализация ФЗ-54)
     // - OutSum = строка "199.00"
+    // - Receipt в подписи - это JSON строка (НЕ URL-encoded)
     
     // STEP 2: Строим Receipt для фискализации
     const receiptJson = buildSubscriptionReceipt(SUBSCRIPTION_AMOUNT);
     const receiptEncoded = encodeURIComponent(receiptJson);
     
-    // Формируем подпись С Receipt: MerchantLogin:OutSum:InvoiceID:Receipt:Password1
-    // Receipt в подписи - это JSON строка (НЕ encoded)
-    const signatureBase = `${merchantLogin}:${amountStr}:${invoiceIdStr}:${receiptJson}:${password1}`;
+    // КРИТИЧНО: Формируем подпись в правильном порядке
+    // 1. Сначала базовые параметры: MerchantLogin:OutSum:InvoiceID
+    let signatureBase = `${merchantLogin}:${amountStr}:${invoiceIdStr}`;
+    
+    // 2. Добавляем Receipt (JSON строка, НЕ encoded)
+    signatureBase += `:${receiptJson}`;
+    
+    // 3. Добавляем Shp_userId в формате Shp_userId=322 (если есть)
+    if (numericUserId) {
+      signatureBase += `:Shp_userId=${numericUserId}`;
+    }
+    
+    // 4. Добавляем Password1 в конце
+    signatureBase += `:${password1}`;
+    
     const signatureValue = md5(signatureBase).toLowerCase();
     
     // Проверка подписи
@@ -202,12 +216,17 @@ export async function POST(req: Request) {
     }
 
     // DEBUG: Логируем строку подписи БЕЗ пароля
-    const signatureBaseForLog = `${merchantLogin}:${amountStr}:${invoiceIdStr}:[PASSWORD_HIDDEN]`;
+    let signatureBaseForLog = `${merchantLogin}:${amountStr}:${invoiceIdStr}`;
+    signatureBaseForLog += `:${receiptJson}`;
+    if (numericUserId) {
+      signatureBaseForLog += `:Shp_userId=${numericUserId}`;
+    }
+    signatureBaseForLog += `:[PASSWORD_HIDDEN]`;
     
-    console.log("[robokassa/create] ========== STEP 1: CARD BINDING PAYMENT ==========");
-    console.log("[robokassa/create] Purpose: Bind card and get parent InvoiceID");
+    console.log("[robokassa/create] ========== STEP 1: FIRST (PARENT) PAYMENT ==========");
+    console.log("[robokassa/create] Purpose: First payment 199 RUB with Recurring=true");
     console.log("[robokassa/create] ========== SIGNATURE DEBUG ==========");
-    console.log("[robokassa/create] Signature base (БЕЗ пароля):", signatureBaseForLog);
+    console.log("[robokassa/create] Signature base (BEFORE md5, WITHOUT password):", signatureBaseForLog);
     console.log("[robokassa/create] Signature base (ПОЛНАЯ):", `${merchantLogin}:${amountStr}:${invoiceIdStr}:${password1.substring(0, 4)}...`);
     console.log("[robokassa/create] Signature value (md5):", signatureValue);
     console.log("[robokassa/create] ========== PARAMETERS ==========");
@@ -294,8 +313,12 @@ export async function POST(req: Request) {
     console.log("[robokassa/create] Exact signature string BEFORE md5:", signatureBaseForLog);
     console.log("[robokassa/create] Full signature string (with password):", signatureBase);
     console.log("[robokassa/create] Final SignatureValue (md5):", signatureValue);
+    console.log("[robokassa/create] Signature formula:", numericUserId 
+      ? `MerchantLogin:OutSum:InvoiceID:Receipt:Shp_userId=${numericUserId}:Password1`
+      : `MerchantLogin:OutSum:InvoiceID:Receipt:Password1`);
     console.log("[robokassa/create] If Robokassa returns error 26:");
-    console.log("[robokassa/create]   - Check signature formula: MerchantLogin:OutSum:InvoiceID:Receipt:Password1");
+    console.log("[robokassa/create]   - Check signature formula includes Receipt (JSON, not encoded)");
+    console.log("[robokassa/create]   - Check signature formula includes Shp_userId=XXX if userId provided");
     console.log("[robokassa/create]   - Verify Password1 is correct");
     console.log("[robokassa/create]   - Verify Recurring is approved on merchant side");
     console.log("[robokassa/create]   - Verify Receipt JSON is valid");
