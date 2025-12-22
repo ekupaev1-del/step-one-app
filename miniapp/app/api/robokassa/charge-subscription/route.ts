@@ -208,7 +208,7 @@ export async function POST(req: Request) {
     console.log("[robokassa/charge-subscription] Purpose: Recurring payment 199 RUB with fiscalization");
     console.log("[robokassa/charge-subscription] ========== SIGNATURE DEBUG ==========");
     console.log("[robokassa/charge-subscription] Signature base (БЕЗ пароля):", signatureBaseForLog);
-    console.log("[robokassa/charge-subscription] Signature base (ПОЛНАЯ):", `${merchantLogin}:${amountStr}:${invoiceIdStr}:${password2.substring(0, 4)}...`);
+    console.log("[robokassa/charge-subscription] Signature base (ПОЛНАЯ):", `${merchantLogin}:${amountStr}:${invoiceIdStr}:${password1.substring(0, 4)}...`);
     console.log("[robokassa/charge-subscription] Signature value (md5):", signatureValue);
     console.log("[robokassa/charge-subscription] ========== PARAMETERS ==========");
     console.log("[robokassa/charge-subscription] MerchantLogin:", merchantLogin);

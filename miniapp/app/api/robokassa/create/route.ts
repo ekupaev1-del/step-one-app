@@ -212,7 +212,7 @@ export async function POST(req: Request) {
     console.log("[robokassa/create] Signature value (md5):", signatureValue);
     console.log("[robokassa/create] ========== PARAMETERS ==========");
     console.log("[robokassa/create] MerchantLogin:", merchantLogin);
-    console.log("[robokassa/create] OutSum:", amountStr, "(must be '1.00', type:", typeof amountStr, ")");
+    console.log("[robokassa/create] OutSum:", amountStr, "(must be '199.00', type:", typeof amountStr, ")");
     console.log("[robokassa/create] InvoiceID:", invoiceId, "(type:", typeof invoiceId, ")");
     console.log("[robokassa/create] InvoiceID as string:", invoiceIdStr);
     console.log("[robokassa/create] InvoiceID <= 2147483647:", invoiceId <= 2147483647);
