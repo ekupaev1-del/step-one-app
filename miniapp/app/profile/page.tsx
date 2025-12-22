@@ -45,6 +45,7 @@ function ProfilePageContent() {
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const [basicInfoExpanded, setBasicInfoExpanded] = useState(false);
   const [cancellingSubscription, setCancellingSubscription] = useState(false);
+  const [subscriptionCanceled, setSubscriptionCanceled] = useState(false);
 
   // Редактируемые поля
   const [editName, setEditName] = useState<string>("");
@@ -396,6 +397,8 @@ function ProfilePageContent() {
       if (!response.ok || !data.ok) {
         throw new Error(data.error || "Не удалось отменить подписку");
       }
+      // Показываем сообщение об отмене
+      setSubscriptionCanceled(true);
       // Обновляем профиль
       const profileResponse = await fetch(`/api/user?userId=${userId}`);
       const profileData = await profileResponse.json();
@@ -795,34 +798,41 @@ function ProfilePageContent() {
         <div className="bg-white rounded-2xl shadow-soft p-6 mb-4">
           <h2 className="text-lg font-semibold text-textPrimary mb-4">Подписка</h2>
           
-          <div className="space-y-3">
-            <div className="flex justify-between items-center py-2 border-b border-gray-100">
-              <span className="text-textSecondary">Тип подписки</span>
-              <span className="font-medium text-textPrimary">Подписка на 1 месяц</span>
+          {subscriptionCanceled ? (
+            <div className="text-center py-4">
+              <p className="text-lg font-semibold text-red-600 mb-2">Отменена подписка</p>
+              <p className="text-sm text-textSecondary">Подписка была успешно отменена</p>
             </div>
-            
-            <div className="flex justify-between items-center py-2 border-b border-gray-100">
-              <span className="text-textSecondary">Действует до</span>
-              <span className="font-medium text-textPrimary">22 января 2026 года</span>
+          ) : (
+            <div className="space-y-3">
+              <div className="flex justify-between items-center py-2 border-b border-gray-100">
+                <span className="text-textSecondary">Тип подписки</span>
+                <span className="font-medium text-textPrimary">Подписка на 1 месяц</span>
+              </div>
+              
+              <div className="flex justify-between items-center py-2 border-b border-gray-100">
+                <span className="text-textSecondary">Действует до</span>
+                <span className="font-medium text-textPrimary">22 января 2026 года</span>
+              </div>
+              
+              <div className="flex justify-between items-center py-2">
+                <span className="text-textSecondary">Цена</span>
+                <span className="font-medium text-textPrimary">199 ₽ в месяц</span>
+              </div>
+              
+              {/* Кнопки действий */}
+              <div className="pt-4 mt-4 border-t border-gray-100 space-y-3">
+                {/* Кнопка отмены подписки - всегда видна для теста */}
+                <button
+                  onClick={handleCancelSubscription}
+                  disabled={cancellingSubscription}
+                  className="w-full px-4 py-2 bg-red-600 text-white font-medium rounded-lg hover:bg-red-700 transition-colors disabled:opacity-50"
+                >
+                  {cancellingSubscription ? "Отмена..." : "Отменить подписку"}
+                </button>
+              </div>
             </div>
-            
-            <div className="flex justify-between items-center py-2">
-              <span className="text-textSecondary">Цена</span>
-              <span className="font-medium text-textPrimary">199 ₽ в месяц</span>
-            </div>
-            
-            {/* Кнопки действий */}
-            <div className="pt-4 mt-4 border-t border-gray-100 space-y-3">
-              {/* Кнопка отмены подписки - всегда видна для теста */}
-              <button
-                onClick={handleCancelSubscription}
-                disabled={cancellingSubscription}
-                className="w-full px-4 py-2 bg-red-600 text-white font-medium rounded-lg hover:bg-red-700 transition-colors disabled:opacity-50"
-              >
-                {cancellingSubscription ? "Отмена..." : "Отменить подписку"}
-              </button>
-            </div>
-          </div>
+          )}
         </div>
 
         {/* Дисклеймер про здоровье */}
