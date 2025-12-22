@@ -220,10 +220,9 @@ export async function POST(req: Request) {
     // 
     // ВАЖНО: Порядок параметров должен быть ТОЧНО как в примере
     // ВАЖНО: Receipt НЕ используется в примере для первого платежа
-    // ВАЖНО: Robokassa требует Recurring = "1" (не "true"!)
-    // По документации Robokassa и по сообщению поддержки, нужно использовать "1"
-    // Принудительно устанавливаем "1", игнорируя переменную окружения
-    const recurringValue = "1"; // ВСЕГДА "1" для рекуррентных платежей
+    // ТЕСТОВО: Пробуем без Recurring, чтобы проверить, работает ли вообще платеж
+    // Если обычный платеж работает, значит проблема в настройках рекуррентных платежей
+    const testMode = process.env.ROBOKASSA_TEST_MODE === "true"; // Включить через переменную окружения
     
     const formData: Record<string, string> = {
       MerchantLogin: merchantLogin,
@@ -231,11 +230,17 @@ export async function POST(req: Request) {
       Description: description,
       SignatureValue: signatureValue,
       OutSum: amountStr,
-      Recurring: recurringValue, // ВСЕГДА "1" для рекуррентных платежей
     };
     
-    console.log("[robokassa/create] Recurring value:", formData.Recurring, "type:", typeof formData.Recurring);
-    console.log("[robokassa/create] Recurring is FORCED to '1' (required by Robokassa for recurring payments)");
+    // Добавляем Recurring только если не тестовый режим
+    if (!testMode) {
+      formData.Recurring = "1"; // ВСЕГДА "1" для рекуррентных платежей
+      console.log("[robokassa/create] Recurring = '1' (recurring payment mode)");
+    } else {
+      console.log("[robokassa/create] ⚠️ TEST MODE: Recurring parameter NOT included (testing regular payment)");
+    }
+    
+    console.log("[robokassa/create] Test mode:", testMode);
     
     // Добавляем Shp_ параметры (в конце, после основных параметров)
     formData.Shp_userId = String(numericUserId);
@@ -261,14 +266,18 @@ export async function POST(req: Request) {
     });
     
     // Проверяем, что все обязательные поля присутствуют
-    const requiredFields = ["MerchantLogin", "InvoiceID", "Description", "SignatureValue", "OutSum", "Recurring"];
+    const requiredFields = ["MerchantLogin", "InvoiceID", "Description", "SignatureValue", "OutSum"];
+    // Recurring не обязателен в тестовом режиме
+    if (!testMode) {
+      requiredFields.push("Recurring");
+    }
     const missingFields = requiredFields.filter(field => !formData[field]);
     if (missingFields.length > 0) {
       throw new Error(`Missing required fields: ${missingFields.join(", ")}`);
     }
     
-    // ВАЖНО: Проверяем, что Recurring имеет правильное значение
-    if (formData.Recurring !== "1" && formData.Recurring !== "true") {
+    // ВАЖНО: Проверяем, что Recurring имеет правильное значение (если присутствует)
+    if (formData.Recurring && formData.Recurring !== "1" && formData.Recurring !== "true") {
       console.warn(`[robokassa/create] ⚠️ Recurring has unexpected value: "${formData.Recurring}". Expected "1" or "true"`);
     }
     

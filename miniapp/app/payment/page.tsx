@@ -209,7 +209,7 @@ Stack: ${e.stack || "N/A"}
     // 3. Description
     // 4. SignatureValue
     // 5. OutSum
-    // 6. Recurring
+    // 6. Recurring (может отсутствовать в тестовом режиме)
     // 7. Shp_ параметры (если есть)
     const fieldOrder = [
       "MerchantLogin",
@@ -217,7 +217,7 @@ Stack: ${e.stack || "N/A"}
       "Description",
       "SignatureValue",
       "OutSum",
-      "Recurring",
+      "Recurring", // Может отсутствовать в тестовом режиме
       "Shp_userId"
     ];
     
