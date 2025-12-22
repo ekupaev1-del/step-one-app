@@ -135,44 +135,14 @@ export async function POST(req: Request) {
     // ВАЖНО: По документации Robokassa для первого платежа с Recurring
     // подпись БЕЗ Receipt: MerchantLogin:OutSum:InvoiceID:Password1
     // В примере из документации Receipt НЕ показан для первого платежа
-    // Receipt нужен только для фискализации (54-ФЗ), но может вызывать ошибки
+    // Используем ТОЛЬКО минимальный вариант БЕЗ Receipt (как в примере)
     
-    // Проверяем, нужен ли Receipt (можно отключить через переменную окружения)
-    const skipReceipt = process.env.ROBOKASSA_SKIP_RECEIPT === "true";
+    // Подпись БЕЗ Receipt: MerchantLogin:OutSum:InvoiceID:ROBOKASSA_PASSWORD1
+    // ТОЧНО как в примере из документации Robokassa
+    const signatureBase = `${merchantLogin}:${amountStr}:${invoiceId}:${password1}`;
+    const signatureValue = md5(signatureBase).toLowerCase();
     
-    let receiptJson: string | null = null;
-    let receiptEncoded: string | null = null;
-    let signatureBase: string;
-    let signatureValue: string;
-
-    // По умолчанию используем подпись БЕЗ Receipt (как в примере документации)
-    // Если нужна фискализация - можно включить Receipt
-    if (skipReceipt) {
-      // Подпись БЕЗ Receipt: MerchantLogin:OutSum:InvoiceID:ROBOKASSA_PASSWORD1
-      signatureBase = `${merchantLogin}:${amountStr}:${invoiceId}:${password1}`;
-      signatureValue = md5(signatureBase).toLowerCase();
-      console.log("[robokassa/create] Receipt отключен - используем подпись БЕЗ Receipt (как в примере)");
-    } else {
-      // Пробуем с Receipt для фискализации
-      try {
-        receiptJson = buildFirstPaymentReceipt(FIRST_PAYMENT_AMOUNT);
-        receiptEncoded = encodeURIComponent(receiptJson);
-        
-        // Подпись С Receipt: MerchantLogin:OutSum:InvoiceID:Receipt:ROBOKASSA_PASSWORD1
-        // ВАЖНО: Receipt в подписи - это JSON строка (НЕ encoded)
-        signatureBase = `${merchantLogin}:${amountStr}:${invoiceId}:${receiptJson}:${password1}`;
-        signatureValue = md5(signatureBase).toLowerCase();
-        console.log("[robokassa/create] Receipt включен для фискализации");
-      } catch (receiptError: any) {
-        console.error("[robokassa/create] ❌ Error building Receipt:", receiptError);
-        console.log("[robokassa/create] ⚠️ Falling back to payment WITHOUT Receipt");
-        // Если Receipt не удалось создать, используем подпись без него
-        receiptJson = null;
-        receiptEncoded = null;
-        signatureBase = `${merchantLogin}:${amountStr}:${invoiceId}:${password1}`;
-        signatureValue = md5(signatureBase).toLowerCase();
-      }
-    }
+    console.log("[robokassa/create] Используем подпись БЕЗ Receipt (как в примере документации)");
     
     // Проверка подписи
     if (!signatureValue || signatureValue.length !== 32) {
@@ -180,19 +150,11 @@ export async function POST(req: Request) {
     }
 
     // DEBUG: Логируем строку подписи БЕЗ пароля
-    const signatureBaseForLog = receiptJson
-      ? `${merchantLogin}:${amountStr}:${invoiceId}:${receiptJson}:[PASSWORD_HIDDEN]`
-      : `${merchantLogin}:${amountStr}:${invoiceId}:[PASSWORD_HIDDEN]`;
+    const signatureBaseForLog = `${merchantLogin}:${amountStr}:${invoiceId}:[PASSWORD_HIDDEN]`;
     
     console.log("[robokassa/create] InvoiceID:", invoiceId);
     console.log("[robokassa/create] OutSum:", amountStr);
-    console.log("[robokassa/create] Receipt enabled:", !!receiptJson);
-    if (receiptJson) {
-      console.log("[robokassa/create] Receipt JSON:", receiptJson);
-      console.log("[robokassa/create] Receipt JSON length:", receiptJson.length);
-    } else {
-      console.log("[robokassa/create] Receipt NOT used (as in Robokassa documentation example)");
-    }
+    console.log("[robokassa/create] Receipt: NOT USED (as in Robokassa documentation example)");
     console.log("[robokassa/create] Signature base (без пароля):", signatureBaseForLog);
     console.log("[robokassa/create] Signature value:", signatureValue);
 
@@ -204,14 +166,18 @@ export async function POST(req: Request) {
     
     // Формируем объект с параметрами для POST формы
     // СТРОГО по примеру из документации Robokassa:
-    // 1. MerchantLogin
-    // 2. InvoiceID
-    // 3. Description
-    // 4. SignatureValue
-    // 5. OutSum
-    // 6. Recurring
-    // 7. Shp_ параметры (если есть)
-    // 8. Receipt (если нужен для фискализации)
+    // <form method = "POST" action = "https://auth.robokassa.ru/Merchant/Index.aspx">
+    //   <input type = "hidden" name = "MerchantLogin" value = "demo">
+    //   <input type = "hidden" name = "InvoiceID" value = "154">
+    //   <input type = "hidden" name = "Description" value = "Оплата подписки">
+    //   <input type = "hidden" name = "SignatureValue" value = "9ada9c4f842cdc1163e5e97d0461a1de">
+    //   <input type = "hidden" name = "OutSum" value = "100">
+    //   <input type = "hidden" name = "Recurring" value = "true">
+    //   <input type = "submit" value = "Оплатить">
+    // </form>
+    // 
+    // ВАЖНО: Порядок параметров должен быть ТОЧНО как в примере
+    // ВАЖНО: Receipt НЕ используется в примере для первого платежа
     const formData: Record<string, string> = {
       MerchantLogin: merchantLogin,
       InvoiceID: invoiceId,
@@ -221,18 +187,10 @@ export async function POST(req: Request) {
       Recurring: "true", // ВАЖНО: "true", а не "1"!
     };
     
-    // Добавляем Shp_ параметры (в конце, как в документации)
+    // Добавляем Shp_ параметры (в конце, после основных параметров)
     formData.Shp_userId = String(numericUserId);
     
-    // ВАЖНО: Receipt добавляем только если он был создан
-    // В примере из документации Receipt НЕ показан для первого платежа
-    // Если нужна фискализация - можно включить через переменную окружения
-    if (receiptEncoded) {
-      formData.Receipt = receiptEncoded;
-      console.log("[robokassa/create] Receipt added to formData for fiscalization");
-    } else {
-      console.log("[robokassa/create] Receipt NOT added (as in Robokassa documentation example)");
-    }
+    console.log("[robokassa/create] Receipt NOT added (as in Robokassa documentation example)");
     
     console.log("[robokassa/create] Using Robokassa domain:", robokassaDomain);
     console.log("[robokassa/create] Robokassa action URL:", robokassaActionUrl);
@@ -241,9 +199,10 @@ export async function POST(req: Request) {
       InvoiceID: formData.InvoiceID,
       OutSum: formData.OutSum,
       Description: formData.Description,
-      Receipt: formData.Receipt ? formData.Receipt.substring(0, 50) + "..." : "NOT SET",
       Recurring: formData.Recurring,
+      Shp_userId: formData.Shp_userId,
       SignatureValue: formData.SignatureValue.substring(0, 10) + "...",
+      Receipt: "NOT SET (as in documentation example)",
     });
     console.log("[robokassa/create] ==========================================");
 

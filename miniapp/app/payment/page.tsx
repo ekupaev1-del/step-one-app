@@ -172,13 +172,44 @@ function PaymentContent() {
     form.style.display = "none";
     form.target = "_self";
     
-    // Добавляем все поля формы
+    // ВАЖНО: Порядок полей должен быть ТОЧНО как в документации Robokassa:
+    // 1. MerchantLogin
+    // 2. InvoiceID
+    // 3. Description
+    // 4. SignatureValue
+    // 5. OutSum
+    // 6. Recurring
+    // 7. Shp_ параметры (если есть)
+    const fieldOrder = [
+      "MerchantLogin",
+      "InvoiceID",
+      "Description",
+      "SignatureValue",
+      "OutSum",
+      "Recurring",
+      "Shp_userId"
+    ];
+    
+    // Добавляем поля в правильном порядке
+    fieldOrder.forEach((key) => {
+      if (paymentData.formData[key]) {
+        const input = document.createElement("input");
+        input.type = "hidden";
+        input.name = key;
+        input.value = String(paymentData.formData[key]);
+        form.appendChild(input);
+      }
+    });
+    
+    // Добавляем любые другие поля, которые не в списке (на всякий случай)
     Object.entries(paymentData.formData).forEach(([key, value]) => {
-      const input = document.createElement("input");
-      input.type = "hidden";
-      input.name = key;
-      input.value = String(value);
-      form.appendChild(input);
+      if (!fieldOrder.includes(key)) {
+        const input = document.createElement("input");
+        input.type = "hidden";
+        input.name = key;
+        input.value = String(value);
+        form.appendChild(input);
+      }
     });
     
     // Добавляем форму в DOM
