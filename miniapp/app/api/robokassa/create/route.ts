@@ -115,12 +115,19 @@ export async function POST(req: Request) {
     // Генерируем уникальный InvoiceID
     // ВАЖНО: Robokassa требует числовой InvoiceID для рекуррентных платежей
     // Используем только цифры, без букв
+    // Добавляем случайное число для гарантии уникальности
     const timestamp = Date.now();
-    const invoiceId = `${numericUserId}${timestamp}`;
+    const random = Math.floor(Math.random() * 1000);
+    const invoiceId = `${numericUserId}${timestamp}${random}`;
     
     // Проверяем, что InvoiceID состоит только из цифр
     if (!/^\d+$/.test(invoiceId)) {
       throw new Error(`Invalid InvoiceID format: ${invoiceId}. Must contain only digits.`);
+    }
+    
+    // Проверяем длину InvoiceID (Robokassa может иметь ограничения)
+    if (invoiceId.length > 50) {
+      throw new Error(`InvoiceID too long: ${invoiceId.length} characters`);
     }
     
     const amountStr = FIRST_PAYMENT_AMOUNT.toFixed(2); // "1.00"
@@ -184,6 +191,7 @@ export async function POST(req: Request) {
     const robokassaActionUrl = `https://${robokassaDomain}/Merchant/Index.aspx`;
     
     // Формируем объект с параметрами для POST формы
+    // ВАЖНО: Порядок параметров может иметь значение для некоторых систем
     const formData: Record<string, string> = {
       MerchantLogin: merchantLogin,
       InvoiceID: invoiceId, // ВАЖНО: в POST форме используется InvoiceID, а не InvId!
@@ -192,12 +200,17 @@ export async function POST(req: Request) {
       SignatureValue: signatureValue,
       Recurring: "true", // ВАЖНО: "true", а не "1"!
       Culture: "ru",
-      Shp_userId: String(numericUserId),
     };
     
-    // Добавляем Receipt только если он включен
+    // Добавляем Shp_ параметры в конце (Robokassa требует их в определенном порядке)
+    formData.Shp_userId = String(numericUserId);
+    
+    // Добавляем Receipt только если он включен (в конце, после всех параметров)
     if (!skipReceipt && receiptEncoded) {
       formData.Receipt = receiptEncoded;
+      console.log("[robokassa/create] Receipt added to formData, length:", receiptEncoded.length);
+    } else {
+      console.log("[robokassa/create] Receipt NOT added (skipReceipt:", skipReceipt, ")");
     }
     
     console.log("[robokassa/create] Using Robokassa domain:", robokassaDomain);
