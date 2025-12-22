@@ -108,12 +108,18 @@ function PaymentContent() {
       
       // Сохраняем данные платежа - НЕ отправляем форму автоматически!
       // Пользователь останется на странице и сам решит, когда переходить к оплате
+      console.log("[payment] ✅ Payment data saved, NOT submitting form automatically");
+      console.log("[payment] User must click 'Перейти к оплате' button to proceed");
+      
       setPaymentData({
         actionUrl: data.actionUrl,
         formData: data.formData,
       });
       setLoading(false);
       setError(null);
+      
+      // ВАЖНО: НЕ вызываем submitPaymentForm() здесь!
+      // Форма должна отправляться ТОЛЬКО при нажатии кнопки пользователем
     } catch (e: any) {
       console.error("[payment] Error:", e);
       setError(e.message || "Ошибка создания платежа");
@@ -162,13 +168,16 @@ function PaymentContent() {
       form.appendChild(input);
     });
     
-    // Добавляем форму в DOM и отправляем
+    // Добавляем форму в DOM
     document.body.appendChild(form);
+    
+    console.log("[payment] Form created and added to DOM, submitting in 200ms...");
     
     // Небольшая задержка перед отправкой, чтобы пользователь увидел изменение состояния
     setTimeout(() => {
+      console.log("[payment] Submitting form now...");
       form.submit();
-    }, 100);
+    }, 200);
   };
 
   return (
