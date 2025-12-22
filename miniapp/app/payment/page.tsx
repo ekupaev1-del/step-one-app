@@ -255,7 +255,8 @@ Stack: ${e.stack || "N/A"}
     });
     
     // ВАЖНО: Проверяем, что все обязательные поля добавлены
-    const requiredFields = ["MerchantLogin", "InvoiceID", "Description", "SignatureValue", "OutSum", "Recurring"];
+    // Recurring НЕ обязателен - может отсутствовать в тестовом режиме
+    const requiredFields = ["MerchantLogin", "InvoiceID", "Description", "SignatureValue", "OutSum"];
     const missingFields = requiredFields.filter(field => !formFields.find(f => f.name === field));
     if (missingFields.length > 0) {
       console.error("[payment] ❌ MISSING REQUIRED FIELDS:", missingFields);
@@ -266,6 +267,11 @@ Stack: ${e.stack || "N/A"}
     }
     
     console.log("[payment] ✅ All required fields present:", requiredFields);
+    if (formFields.find(f => f.name === "Recurring")) {
+      console.log("[payment] ✅ Recurring field is present (recurring payment mode)");
+    } else {
+      console.log("[payment] ⚠️ Recurring field is NOT present (test mode - regular payment)");
+    }
     
     console.log("[payment] Form created with fields:", formFields);
     console.log("[payment] Form action URL:", form.action);
