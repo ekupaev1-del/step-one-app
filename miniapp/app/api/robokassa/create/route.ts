@@ -174,17 +174,14 @@ export async function POST(req: Request) {
     
     const amountStr = FIRST_PAYMENT_AMOUNT.toFixed(2); // "1.00"
 
-    // ВАЖНО: По документации Robokassa для первого платежа с Recurring
-    // подпись БЕЗ Receipt: MerchantLogin:OutSum:InvoiceID:Password1
-    // В примере из документации Receipt НЕ показан для первого платежа
-    // Используем ТОЛЬКО минимальный вариант БЕЗ Receipt (как в примере)
+    // Строим минимальный Receipt для фискализации
+    const receiptJson = buildFirstPaymentReceipt(FIRST_PAYMENT_AMOUNT);
+    const receiptEncoded = encodeURIComponent(receiptJson);
     
-    // Подпись БЕЗ Receipt: MerchantLogin:OutSum:InvoiceID:ROBOKASSA_PASSWORD1
-    // ТОЧНО как в примере из документации Robokassa
-    const signatureBase = `${merchantLogin}:${amountStr}:${invoiceId}:${password1}`;
+    // Подпись С Receipt: MerchantLogin:OutSum:InvoiceID:Receipt:ROBOKASSA_PASSWORD1
+    // ВАЖНО: Receipt в подписи - это JSON строка (НЕ encoded)
+    const signatureBase = `${merchantLogin}:${amountStr}:${invoiceId}:${receiptJson}:${password1}`;
     const signatureValue = md5(signatureBase).toLowerCase();
-    
-    console.log("[robokassa/create] Используем подпись БЕЗ Receipt (как в примере документации)");
     
     // Проверка подписи
     if (!signatureValue || signatureValue.length !== 32) {
@@ -192,24 +189,14 @@ export async function POST(req: Request) {
     }
 
     // DEBUG: Логируем строку подписи БЕЗ пароля
-    const signatureBaseForLog = `${merchantLogin}:${amountStr}:${invoiceId}:[PASSWORD_HIDDEN]`;
+    const signatureBaseForLog = `${merchantLogin}:${amountStr}:${invoiceId}:${receiptJson}:[PASSWORD_HIDDEN]`;
     
     console.log("[robokassa/create] InvoiceID:", invoiceId);
     console.log("[robokassa/create] OutSum:", amountStr);
-    console.log("[robokassa/create] Receipt: NOT USED (as in Robokassa documentation example)");
+    console.log("[robokassa/create] Receipt JSON:", receiptJson);
+    console.log("[robokassa/create] Receipt encoded length:", receiptEncoded.length);
     console.log("[robokassa/create] Signature base (без пароля):", signatureBaseForLog);
     console.log("[robokassa/create] Signature value:", signatureValue);
-    
-    // ВАЖНО: Проверяем подпись еще раз для отладки
-    const testSignatureBase = `${merchantLogin}:${amountStr}:${invoiceId}:${password1}`;
-    const testSignature = md5(testSignatureBase).toLowerCase();
-    if (testSignature !== signatureValue) {
-      console.error("[robokassa/create] ❌ SIGNATURE MISMATCH!");
-      console.error("[robokassa/create] Expected:", signatureValue);
-      console.error("[robokassa/create] Calculated:", testSignature);
-    } else {
-      console.log("[robokassa/create] ✅ Signature verification passed");
-    }
 
     // ВАЖНО: Robokassa требует POST форму, а не GET URL!
     // Формируем данные для POST формы
@@ -231,67 +218,51 @@ export async function POST(req: Request) {
     // 
     // ВАЖНО: Порядок параметров должен быть ТОЧНО как в примере
     // ВАЖНО: Receipt НЕ используется в примере для первого платежа
-    // ТЕСТОВО: Пробуем без Recurring, чтобы проверить, работает ли вообще платеж
-    // Если обычный платеж работает, значит проблема в настройках рекуррентных платежей
-    // ВРЕМЕННО ВКЛЮЧЕНО для тестирования - по умолчанию тестовый режим
-    const testMode = process.env.ROBOKASSA_TEST_MODE !== "false"; // По умолчанию true (тестовый режим)
-    
+    // Формируем данные для POST формы
     const formData: Record<string, string> = {
       MerchantLogin: merchantLogin,
       InvoiceID: invoiceId,
       Description: description,
       SignatureValue: signatureValue,
       OutSum: amountStr,
+      Recurring: "true", // Recurring=true для рекуррентных платежей
+      Receipt: receiptEncoded, // Receipt для фискализации
     };
     
-    // Добавляем Recurring только если не тестовый режим
-    if (!testMode) {
-      formData.Recurring = "1"; // ВСЕГДА "1" для рекуррентных платежей
-      console.log("[robokassa/create] Recurring = '1' (recurring payment mode)");
-    } else {
-      console.log("[robokassa/create] ⚠️ TEST MODE: Recurring parameter NOT included (testing regular payment)");
-    }
-    
-    console.log("[robokassa/create] Test mode:", testMode);
+    console.log("[robokassa/create] Recurring = 'true'");
+    console.log("[robokassa/create] Receipt added to formData");
     
     // Добавляем Shp_ параметры (в конце, после основных параметров)
     formData.Shp_userId = String(numericUserId);
     
-    console.log("[robokassa/create] Receipt NOT added (as in Robokassa documentation example)");
+    console.log("[robokassa/create] Shp_userId:", formData.Shp_userId);
     
     console.log("[robokassa/create] Using Robokassa domain:", robokassaDomain);
     console.log("[robokassa/create] Robokassa action URL:", robokassaActionUrl);
-    // Логируем все параметры для отладки
+    // DEBUG: Выводим детальную информацию
+    console.log("[robokassa/create] ========== DEBUG INFO ==========");
+    console.log("[robokassa/create] Signature base (БЕЗ пароля):", signatureBaseForLog);
+    console.log("[robokassa/create] Signature value:", signatureValue);
     console.log("[robokassa/create] Form data (POST):", {
       MerchantLogin: formData.MerchantLogin,
       InvoiceID: formData.InvoiceID,
-      InvoiceID_length: formData.InvoiceID.length,
       OutSum: formData.OutSum,
       Description: formData.Description,
-      Description_length: formData.Description.length,
       Recurring: formData.Recurring,
-      Recurring_type: typeof formData.Recurring,
+      Receipt: formData.Receipt.substring(0, 50) + "...",
       Shp_userId: formData.Shp_userId,
-      SignatureValue: formData.SignatureValue.substring(0, 10) + "...",
-      SignatureValue_length: formData.SignatureValue.length,
-      Receipt: "NOT SET (as in documentation example)",
+      SignatureValue: formData.SignatureValue,
     });
+    console.log("[robokassa/create] ===============================");
     
     // Проверяем, что все обязательные поля присутствуют
-    const requiredFields = ["MerchantLogin", "InvoiceID", "Description", "SignatureValue", "OutSum"];
-    // Recurring не обязателен в тестовом режиме
-    if (!testMode) {
-      requiredFields.push("Recurring");
-    }
+    const requiredFields = ["MerchantLogin", "InvoiceID", "Description", "SignatureValue", "OutSum", "Recurring", "Receipt"];
     const missingFields = requiredFields.filter(field => !formData[field]);
     if (missingFields.length > 0) {
       throw new Error(`Missing required fields: ${missingFields.join(", ")}`);
     }
     
-    // ВАЖНО: Проверяем, что Recurring имеет правильное значение (если присутствует)
-    if (formData.Recurring && formData.Recurring !== "1" && formData.Recurring !== "true") {
-      console.warn(`[robokassa/create] ⚠️ Recurring has unexpected value: "${formData.Recurring}". Expected "1" or "true"`);
-    }
+    console.log("[robokassa/create] ✅ All required fields present");
     
     // ВАЖНО: Проверяем, что InvoiceID состоит только из цифр
     if (!/^\d+$/.test(formData.InvoiceID)) {
