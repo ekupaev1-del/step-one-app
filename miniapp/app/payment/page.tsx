@@ -220,56 +220,71 @@ Stack: ${e.stack || "N/A"}
       // Shp_userId - ОПЦИОНАЛЬНО, включается только если есть в formData
     ];
     
-    // Добавляем поля в правильном порядке
-    const formFields: Array<{ name: string; value: string }> = [];
+    // КРИТИЧНО: Сначала строим объект с уникальными ключами, чтобы избежать дублирования
+    // Это гарантирует, что каждый ключ появляется только один раз
+    const uniqueFormData: Record<string, string> = {};
+    
+    // Добавляем поля в правильном порядке (fieldOrder)
     fieldOrder.forEach((key) => {
       if (paymentData.formData[key]) {
-        const value = String(paymentData.formData[key]);
+        uniqueFormData[key] = String(paymentData.formData[key]);
+      }
+    });
+    
+    // Добавляем остальные поля (включая Shp_userId, если есть)
+    // КРИТИЧНО: Проверяем, что поле еще не добавлено (избегаем дублирования)
+    Object.entries(paymentData.formData).forEach(([key, value]) => {
+      if (!uniqueFormData.hasOwnProperty(key)) {
+        uniqueFormData[key] = String(value);
+      } else {
+        console.warn(`[payment] ⚠️ Duplicate field detected: ${key} - skipping to avoid duplication`);
+      }
+    });
+    
+    // Теперь создаем форму из уникальных полей
+    const formFields: Array<{ name: string; value: string }> = [];
+    
+    // Сначала добавляем поля в порядке fieldOrder
+    fieldOrder.forEach((key) => {
+      if (uniqueFormData[key]) {
+        const value = uniqueFormData[key];
         const input = document.createElement("input");
         input.type = "hidden";
         input.name = key;
-        // ВАЖНО: Не кодируем значение - браузер сам закодирует при отправке формы
-        // Но убеждаемся, что это строка
         input.value = value;
         form.appendChild(input);
         formFields.push({ name: key, value: value });
         console.log(`[payment] Added form field: ${key} = ${value} (length: ${value.length})`);
       } else {
-        // ВАЖНО: Не логируем предупреждение для опциональных полей
-        // Shp_userId опционален, поэтому не показываем warning
         if (key !== "Shp_userId") {
           console.warn(`[payment] Missing form field: ${key}`);
         }
       }
     });
     
-    // Добавляем Shp_userId ТОЛЬКО если он есть в formData (опционально)
-    if (paymentData.formData["Shp_userId"]) {
-      const shpValue = String(paymentData.formData["Shp_userId"]);
-      const shpInput = document.createElement("input");
-      shpInput.type = "hidden";
-      shpInput.name = "Shp_userId";
-      shpInput.value = shpValue;
-      form.appendChild(shpInput);
-      formFields.push({ name: "Shp_userId", value: shpValue });
-      console.log(`[payment] Added optional Shp_userId: ${shpValue}`);
-    } else {
-      console.log(`[payment] Shp_userId not provided - skipping (optional field)`);
-    }
-    
-    // Добавляем любые другие поля, которые не в списке (на всякий случай)
-    Object.entries(paymentData.formData).forEach(([key, value]) => {
+    // Затем добавляем остальные поля (включая Shp_userId, если он не в fieldOrder)
+    Object.entries(uniqueFormData).forEach(([key, value]) => {
       if (!fieldOrder.includes(key)) {
-        const valueStr = String(value);
         const input = document.createElement("input");
         input.type = "hidden";
         input.name = key;
-        input.value = valueStr;
+        input.value = value;
         form.appendChild(input);
-        formFields.push({ name: key, value: valueStr });
-        console.log(`[payment] Added additional form field: ${key} = ${valueStr}`);
+        formFields.push({ name: key, value: value });
+        console.log(`[payment] Added additional form field: ${key} = ${value}`);
       }
     });
+    
+    // КРИТИЧНО: Проверяем на дублирование полей перед отправкой
+    const fieldNames = formFields.map(f => f.name);
+    const duplicates = fieldNames.filter((name, index) => fieldNames.indexOf(name) !== index);
+    if (duplicates.length > 0) {
+      console.error("[payment] ❌ DUPLICATE FIELDS DETECTED:", duplicates);
+      console.error("[payment] This will cause SignatureValue mismatch and error 26!");
+      setError(`Критическая ошибка: дублирование полей: ${[...new Set(duplicates)].join(", ")}`);
+      setLoading(false);
+      return;
+    }
     
     // ВАЖНО: Проверяем, что все обязательные поля добавлены
     // КРИТИЧНО: Description НЕ обязателен - убран по требованиям Robokassa
@@ -283,6 +298,17 @@ Stack: ${e.stack || "N/A"}
       setError(`Ошибка: отсутствуют обязательные поля: ${missingFields.join(", ")}`);
       setLoading(false);
       return;
+    }
+    
+    // КРИТИЧНО: Логируем финальный список полей для отладки
+    console.log("[payment] ✅ Final form fields (unique):", formFields.map(f => f.name));
+    const shpCount = formFields.filter(f => f.name === "Shp_userId").length;
+    if (shpCount > 1) {
+      console.error("[payment] ❌ CRITICAL: Shp_userId appears", shpCount, "times!");
+    } else if (shpCount === 1) {
+      console.log("[payment] ✅ Shp_userId appears exactly once");
+    } else {
+      console.log("[payment] ℹ️ Shp_userId not included (optional)");
     }
     
     console.log("[payment] ✅ All required fields present:", requiredFields);
