@@ -430,6 +430,8 @@ function ProfilePageContent() {
         return "Истекла";
       case "payment_failed":
         return "Ошибка оплаты";
+      case "canceled":
+        return "Отменена";
       case "none":
         return "Не активирована";
       default:
@@ -789,30 +791,41 @@ function ProfilePageContent() {
           )}
         </div>
 
-        {/* Подписка */}
-        {(profile.subscriptionStatus === "trial" || profile.subscriptionStatus === "active") && (
-          <div className="bg-white rounded-2xl shadow-soft p-6 mb-4">
-            <h2 className="text-lg font-semibold text-textPrimary mb-4">Подписка</h2>
+        {/* Подписка - всегда видима */}
+        <div className="bg-white rounded-2xl shadow-soft p-6 mb-4">
+          <h2 className="text-lg font-semibold text-textPrimary mb-4">Подписка</h2>
+          
+          <div className="space-y-3">
+            <div className="flex justify-between items-center py-2 border-b border-gray-100">
+              <span className="text-textSecondary">Статус</span>
+              <span className={`font-medium ${
+                profile.subscriptionStatus === "active" ? "text-green-600" :
+                profile.subscriptionStatus === "trial" ? "text-blue-600" :
+                profile.subscriptionStatus === "payment_failed" ? "text-red-600" :
+                "text-textPrimary"
+              }`}>
+                {formatSubscriptionStatus(profile.subscriptionStatus)}
+              </span>
+            </div>
             
-            <div className="space-y-3">
+            {getNextBillingDate() && (
               <div className="flex justify-between items-center py-2 border-b border-gray-100">
-                <span className="text-textSecondary">Статус</span>
-                <span className="font-medium text-textPrimary">{formatSubscriptionStatus(profile.subscriptionStatus)}</span>
+                <span className="text-textSecondary">
+                  {profile.subscriptionStatus === "trial" ? "Триал заканчивается" : "Следующее списание"}
+                </span>
+                <span className="font-medium text-textPrimary">{getNextBillingDate()}</span>
               </div>
-              
-              {getNextBillingDate() && (
-                <div className="flex justify-between items-center py-2 border-b border-gray-100">
-                  <span className="text-textSecondary">Следующее списание</span>
-                  <span className="font-medium text-textPrimary">{getNextBillingDate()}</span>
-                </div>
-              )}
-              
-              <div className="flex justify-between items-center py-2">
-                <span className="text-textSecondary">Цена</span>
-                <span className="font-medium text-textPrimary">199 ₽</span>
-              </div>
-              
-              <div className="pt-4 mt-4 border-t border-gray-100">
+            )}
+            
+            <div className="flex justify-between items-center py-2">
+              <span className="text-textSecondary">Цена</span>
+              <span className="font-medium text-textPrimary">199 ₽ в месяц</span>
+            </div>
+            
+            {/* Кнопки действий */}
+            <div className="pt-4 mt-4 border-t border-gray-100 space-y-3">
+              {/* Кнопка отмены подписки - только для active или trial */}
+              {(profile.subscriptionStatus === "trial" || profile.subscriptionStatus === "active") && (
                 <button
                   onClick={handleCancelSubscription}
                   disabled={cancellingSubscription}
@@ -820,10 +833,20 @@ function ProfilePageContent() {
                 >
                   {cancellingSubscription ? "Отмена..." : "Отменить подписку"}
                 </button>
-              </div>
+              )}
+              
+              {/* Кнопка оформления подписки - если подписки нет или истекла */}
+              {(!profile.subscriptionStatus || profile.subscriptionStatus === "none" || profile.subscriptionStatus === "expired" || profile.subscriptionStatus === "payment_failed") && (
+                <Link
+                  href={`/payment?id=${userId}`}
+                  className="block w-full px-4 py-2 bg-accent text-white font-medium rounded-lg hover:opacity-90 transition-opacity text-center"
+                >
+                  Оформить подписку
+                </Link>
+              )}
             </div>
           </div>
-        )}
+        </div>
 
         {/* Дисклеймер про здоровье */}
         <div className="mb-4 p-4 bg-yellow-50 border border-yellow-200 rounded-2xl">
