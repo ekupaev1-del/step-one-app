@@ -110,8 +110,8 @@ function PaymentContent() {
       setError(null);
       setLoading("redirecting");
       
-      // Небольшая задержка, чтобы пользователь увидел состояние загрузки
-      await new Promise(resolve => setTimeout(resolve, 800));
+      // Увеличиваем задержку, чтобы пользователь точно увидел сообщение
+      await new Promise(resolve => setTimeout(resolve, 1500));
       
       // ВАЖНО: Robokassa требует POST форму, а не GET редирект!
       // Создаем скрытую форму и отправляем её
@@ -119,7 +119,7 @@ function PaymentContent() {
       form.method = "POST";
       form.action = data.actionUrl;
       form.style.display = "none";
-      form.target = "_self"; // Открываем в том же окне
+      form.target = "_blank"; // Открываем в новом окне, чтобы не терять текущую страницу
       
       // Добавляем все поля формы
       Object.entries(data.formData).forEach(([key, value]) => {
@@ -130,13 +130,22 @@ function PaymentContent() {
         form.appendChild(input);
       });
       
-      // Добавляем форму в DOM и отправляем
+      // Добавляем форму в DOM
       document.body.appendChild(form);
       
-      // Еще одна небольшая задержка перед отправкой
-      await new Promise(resolve => setTimeout(resolve, 300));
+      // Еще одна задержка перед отправкой
+      await new Promise(resolve => setTimeout(resolve, 500));
       
+      // Открываем форму в новом окне
       form.submit();
+      
+      // После отправки формы показываем сообщение
+      setLoading("opened");
+      
+      // Через 2 секунды можно закрыть сообщение или оставить как есть
+      setTimeout(() => {
+        setLoading(false);
+      }, 2000);
       
       // Форма отправится, и произойдет редирект на Robokassa
     } catch (e: any) {
@@ -238,16 +247,29 @@ function PaymentContent() {
               {loading === "creating" 
                 ? "Создаём оплату..." 
                 : loading === "redirecting"
-                ? "Перенаправление на страницу оплаты..."
+                ? "Открываем страницу оплаты..."
+                : loading === "opened"
+                ? "Страница оплаты открыта"
                 : "Начать пробный период"}
             </button>
             
             {loading && (
-              <p className="text-xs text-textSecondary text-center mt-2">
-                {loading === "creating" 
-                  ? "Подготовка платежа... Пожалуйста, подождите"
-                  : "Открываем страницу оплаты Robokassa..."}
-              </p>
+              <div className="mt-3 space-y-2">
+                <p className="text-sm text-textSecondary text-center">
+                  {loading === "creating" 
+                    ? "Подготовка платежа... Пожалуйста, подождите"
+                    : loading === "redirecting"
+                    ? "Открываем страницу оплаты Robokassa в новом окне..."
+                    : loading === "opened"
+                    ? "✅ Страница оплаты открыта в новом окне. Завершите оплату там."
+                    : ""}
+                </p>
+                {loading === "opened" && (
+                  <p className="text-xs text-textSecondary text-center">
+                    Если страница не открылась, проверьте блокировку всплывающих окон
+                  </p>
+                )}
+              </div>
             )}
           </div>
             </>
