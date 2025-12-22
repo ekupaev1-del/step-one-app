@@ -36,6 +36,20 @@ function PaymentContent() {
     setPaymentData(null);
     setLoading(false);
     setAgreedToTerms(false);
+    
+    // Проверяем, есть ли сохраненная debug информация в localStorage
+    // (на случай, если пользователь вернулся после ошибки)
+    try {
+      const savedDebug = localStorage.getItem('robokassa_debug_info');
+      const savedTime = localStorage.getItem('robokassa_debug_time');
+      if (savedDebug) {
+        console.log("[payment] Found saved debug info from:", savedTime);
+        setDebugInfo(savedDebug);
+        setShowDebug(true);
+      }
+    } catch (e) {
+      console.warn("[payment] Failed to read debug info from localStorage:", e);
+    }
   }, [searchParams]);
 
   const loadSubscriptionStatus = async (id: number) => {
@@ -268,12 +282,24 @@ Stack: ${e.stack || "N/A"}
     });
     
     const debugText = `=== DEBUG INFO ===
+Time: ${new Date().toISOString()}
 Action URL: ${form.action}
 Method: ${form.method}
 Total fields: ${allFormFields.length}
 Fields:
-${allFormFields.map(f => `  ${f.name} = ${f.value.substring(0, 100)}${f.value.length > 100 ? '...' : ''}`).join('\n')}
+${allFormFields.map(f => `  ${f.name} = ${f.value}`).join('\n')}
 ==================`;
+    
+    // ВАЖНО: Сохраняем debug информацию в localStorage ПЕРЕД отправкой формы
+    // Это позволит посмотреть её даже после редиректа на страницу ошибки
+    try {
+      localStorage.setItem('robokassa_debug_info', debugText);
+      localStorage.setItem('robokassa_debug_time', new Date().toISOString());
+      console.log("[payment] Debug info saved to localStorage");
+    } catch (e) {
+      console.warn("[payment] Failed to save debug info to localStorage:", e);
+    }
+    
     setDebugInfo(debugText);
     console.log("[payment] Debug info:", debugText);
     console.log("[payment] All form fields count:", allFormFields.length);
@@ -348,35 +374,66 @@ ${allFormFields.map(f => `  ${f.name} = ${f.value.substring(0, 100)}${f.value.le
             </div>
           )}
           
-          {paymentData && debugInfo && (
+          {(paymentData || debugInfo) && (
             <div className="bg-yellow-50 border border-yellow-200 rounded-xl p-4">
               <div className="flex items-center justify-between mb-2">
-                <p className="text-sm font-semibold text-yellow-800">🔍 Debug информация</p>
-                <button
-                  onClick={() => setShowDebug(!showDebug)}
-                  className="text-xs text-yellow-700 underline"
-                >
-                  {showDebug ? "Скрыть" : "Показать"}
-                </button>
+                <p className="text-sm font-semibold text-yellow-800">
+                  🔍 Debug информация
+                  {!paymentData && <span className="text-xs text-yellow-600 ml-2">(сохранено)</span>}
+                </p>
+                <div className="flex gap-2">
+                  <button
+                    onClick={() => {
+                      if (debugInfo) {
+                        navigator.clipboard.writeText(debugInfo);
+                        alert("Скопировано в буфер обмена!");
+                      }
+                    }}
+                    className="text-xs text-yellow-700 underline"
+                  >
+                    📋 Копировать
+                  </button>
+                  <button
+                    onClick={() => setShowDebug(!showDebug)}
+                    className="text-xs text-yellow-700 underline"
+                  >
+                    {showDebug ? "Скрыть" : "Показать"}
+                  </button>
+                </div>
               </div>
-              {showDebug && (
+              {showDebug && debugInfo && (
                 <div className="mt-2">
                   <textarea
                     readOnly
                     value={debugInfo}
                     className="w-full p-2 text-xs font-mono bg-white border border-yellow-300 rounded resize-none"
-                    rows={10}
+                    rows={15}
                     onClick={(e) => (e.target as HTMLTextAreaElement).select()}
                   />
-                  <button
-                    onClick={() => {
-                      navigator.clipboard.writeText(debugInfo);
-                      alert("Скопировано в буфер обмена!");
-                    }}
-                    className="mt-2 text-xs text-yellow-700 underline"
-                  >
-                    📋 Копировать debug информацию
-                  </button>
+                  <div className="mt-2 flex gap-2">
+                    <button
+                      onClick={() => {
+                        if (debugInfo) {
+                          navigator.clipboard.writeText(debugInfo);
+                          alert("✅ Скопировано в буфер обмена!");
+                        }
+                      }}
+                      className="px-3 py-1 text-xs bg-yellow-200 text-yellow-800 rounded hover:bg-yellow-300"
+                    >
+                      📋 Копировать всё
+                    </button>
+                    <button
+                      onClick={() => {
+                        localStorage.removeItem('robokassa_debug_info');
+                        localStorage.removeItem('robokassa_debug_time');
+                        setDebugInfo(null);
+                        setShowDebug(false);
+                      }}
+                      className="px-3 py-1 text-xs bg-gray-200 text-gray-700 rounded hover:bg-gray-300"
+                    >
+                      🗑️ Очистить
+                    </button>
+                  </div>
                 </div>
               )}
             </div>
