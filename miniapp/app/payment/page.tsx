@@ -28,6 +28,12 @@ function PaymentContent() {
     } else {
       setError("ID не передан");
     }
+    
+    // ВАЖНО: При загрузке страницы ОБЯЗАТЕЛЬНО сбрасываем paymentData
+    // чтобы не было автоматических редиректов
+    setPaymentData(null);
+    setLoading(false);
+    setAgreedToTerms(false);
   }, [searchParams]);
 
   const loadSubscriptionStatus = async (id: number) => {
@@ -142,13 +148,20 @@ function PaymentContent() {
   const canStartTrial = !subscriptionStatus || subscriptionStatus === "none" || subscriptionStatus === "expired";
 
   // Функция для отправки формы оплаты - вызывается ТОЛЬКО при нажатии кнопки
-  const submitPaymentForm = () => {
+  const submitPaymentForm = (e?: React.MouseEvent) => {
+    // Предотвращаем любые автоматические вызовы
+    if (e) {
+      e.preventDefault();
+      e.stopPropagation();
+    }
+    
     if (!paymentData) {
       console.error("[payment] No payment data to submit");
       return;
     }
     
-    console.log("[payment] User clicked 'Перейти к оплате' - submitting form");
+    console.log("[payment] ========== USER CLICKED 'Перейти к оплате' ==========");
+    console.log("[payment] This is the ONLY way form should be submitted!");
     setLoading("redirecting");
     
     // ВАЖНО: Robokassa требует POST форму, а не GET редирект!
@@ -171,13 +184,13 @@ function PaymentContent() {
     // Добавляем форму в DOM
     document.body.appendChild(form);
     
-    console.log("[payment] Form created and added to DOM, submitting in 200ms...");
+    console.log("[payment] Form created, will submit in 500ms...");
     
-    // Небольшая задержка перед отправкой, чтобы пользователь увидел изменение состояния
+    // Задержка перед отправкой
     setTimeout(() => {
-      console.log("[payment] Submitting form now...");
+      console.log("[payment] Submitting form NOW - this should ONLY happen after user click!");
       form.submit();
-    }, 200);
+    }, 500);
   };
 
   return (
