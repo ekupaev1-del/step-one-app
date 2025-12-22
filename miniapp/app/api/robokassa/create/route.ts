@@ -229,6 +229,21 @@ export async function POST(req: Request) {
     if (missingFields.length > 0) {
       throw new Error(`Missing required fields: ${missingFields.join(", ")}`);
     }
+    
+    // ВАЖНО: Проверяем, что Recurring имеет правильное значение
+    if (formData.Recurring !== "1" && formData.Recurring !== "true") {
+      console.warn(`[robokassa/create] ⚠️ Recurring has unexpected value: "${formData.Recurring}". Expected "1" or "true"`);
+    }
+    
+    // ВАЖНО: Проверяем, что InvoiceID состоит только из цифр
+    if (!/^\d+$/.test(formData.InvoiceID)) {
+      throw new Error(`Invalid InvoiceID format: ${formData.InvoiceID}. Must contain only digits.`);
+    }
+    
+    // ВАЖНО: Проверяем, что OutSum имеет правильный формат (число с 2 знаками после запятой)
+    if (!/^\d+\.\d{2}$/.test(formData.OutSum)) {
+      throw new Error(`Invalid OutSum format: ${formData.OutSum}. Expected format: "1.00"`);
+    }
     console.log("[robokassa/create] ==========================================");
 
     // Сохраняем платеж в БД (опционально, для отслеживания)
