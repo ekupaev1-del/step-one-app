@@ -205,20 +205,16 @@ Stack: ${e.stack || "N/A"}
     form.style.display = "none";
     form.target = "_self";
     
-    // ВАЖНО: Порядок полей:
+    // MINIMAL: Only required fields (NO Recurring, NO Receipt, NO Shp_*, NO Description)
     // 1. MerchantLogin
     // 2. OutSum
-    // 3. InvId (КРИТИЧНО: Robokassa использует InvId, не InvoiceID)
+    // 3. InvId
     // 4. SignatureValue
-    // 5. Shp_ параметры (если есть) - ОПЦИОНАЛЬНО
-    // КРИТИЧНО: Description НЕ включаем в форму (она в POST уже есть)
     const fieldOrder = [
       "MerchantLogin",
       "OutSum",
-      "InvId", // КРИТИЧНО: Robokassa использует InvId, не InvoiceID
+      "InvId",
       "SignatureValue",
-      // Recurring не отправляем на первом платеже
-      // Shp_userId - ОПЦИОНАЛЬНО, включается только если есть в formData
     ];
     
     // КРИТИЧНО: Сначала строим объект с уникальными ключами, чтобы избежать дублирования
@@ -287,10 +283,7 @@ Stack: ${e.stack || "N/A"}
       return;
     }
     
-    // ВАЖНО: Проверяем, что все обязательные поля добавлены
-    // КРИТИЧНО: Description НЕ обязателен - убран по требованиям Robokassa
-    // Recurring НЕ отправляем на первом платеже
-    // Shp_userId ОПЦИОНАЛЕН - НЕ включаем в requiredFields
+    // MINIMAL: Only required fields (NO optional fields)
     const requiredFields = ["MerchantLogin", "OutSum", "InvId", "SignatureValue"];
     const missingFields = requiredFields.filter(field => !formFields.find(f => f.name === field));
     if (missingFields.length > 0) {

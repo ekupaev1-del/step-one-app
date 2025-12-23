@@ -10,13 +10,15 @@ function md5(input: string): string {
 }
 
 /**
- * Clean production-ready subscription payment endpoint
+ * SIMPLE one-time payment endpoint (199 RUB)
  * 
- * STRICT RULES:
- * 1. One initial payment: 199 RUB
- * 2. Recurring=true on FIRST payment (card binding)
- * 3. Signature: MerchantLogin:OutSum:InvId:Password1 (NO Receipt, NO Shp_*, NO Recurring)
+ * STRICT RULES (NO GUESSING):
+ * 1. One-time payment: 199 RUB (NO recurring, NO trial)
+ * 2. Signature: MerchantLogin:OutSum:InvId:Password1
+ * 3. OutSum: "199" (plain integer string, NOT "199.00")
  * 4. InvId: Math.floor(Date.now() / 1000) - seconds timestamp, digits only
+ * 5. Form fields: ONLY MerchantLogin, OutSum, InvId, SignatureValue
+ * 6. NO Recurring, NO Receipt, NO Shp_*, NO Description in form
  */
 export async function POST(req: Request) {
   try {
@@ -90,16 +92,12 @@ export async function POST(req: Request) {
     console.log("[pay/subscribe] InvId type:", typeof InvId);
     console.log("[pay/subscribe] InvId is numeric:", /^\d+$/.test(InvId));
 
-    const amountStr = SUBSCRIPTION_AMOUNT.toFixed(2); // "199.00"
-
-    // Validate OutSum
-    if (amountStr !== "199.00") {
-      throw new Error(`Invalid OutSum: expected "199.00", got "${amountStr}"`);
-    }
+    // CRITICAL: OutSum must be plain integer string "199" (NOT "199.00")
+    const amountStr = "199";
 
     // CRITICAL: Signature formula EXACTLY as Robokassa expects:
     // MerchantLogin:OutSum:InvId:Password1
-    // NOTHING else included (no Recurring, no Receipt, no Shp_*)
+    // NOTHING else included (no Recurring, no Receipt, no Shp_*, no Description)
     const signatureBase = `${merchantLogin}:${amountStr}:${InvId}:${password1}`;
     const signatureValue = md5(signatureBase).toLowerCase();
     
@@ -122,25 +120,20 @@ export async function POST(req: Request) {
     const robokassaDomain = process.env.ROBOKASSA_DOMAIN || "auth.robokassa.ru";
     const robokassaActionUrl = `https://${robokassaDomain}/Merchant/Index.aspx`;
     
-    // Build form data
-    // IMPORTANT: Recurring=true is included in POST, but NOT in signature
+    // Build form data - MINIMAL: only required fields
+    // REMOVED: Recurring, Receipt, Shp_*, Description (optional, not in signature)
     const formData: Record<string, string> = {
       MerchantLogin: merchantLogin,
-      OutSum: amountStr, // "199.00"
+      OutSum: amountStr, // "199" (plain integer string)
       InvId: InvId, // Seconds timestamp
-      Description: "Подписка Step One — 1 месяц",
-      Recurring: "true", // Card binding on first payment
       SignatureValue: signatureValue,
     };
     
-    // NOTE: Receipt is NOT included initially (can cause errors)
-    // If needed later, add Receipt to POST but NOT to signature
+    // Description is optional - add only if needed (NOT in signature)
+    // formData.Description = "Подписка Step One — 1 месяц";
     
-    // NOTE: Shp_userId is NOT included (not in signature formula)
-    // If needed, add to POST but NOT to signature
-    
-    // Validate all required fields
-    const requiredFields = ["MerchantLogin", "OutSum", "InvId", "Description", "Recurring", "SignatureValue"];
+    // Validate all required fields (minimal set)
+    const requiredFields = ["MerchantLogin", "OutSum", "InvId", "SignatureValue"];
     const missingFields = requiredFields.filter(field => !formData[field]);
     if (missingFields.length > 0) {
       throw new Error(`Missing required fields: ${missingFields.join(", ")}`);
@@ -153,13 +146,15 @@ export async function POST(req: Request) {
     
     console.log("[pay/subscribe] ✅ All required fields present");
     
-    // DEV console.log BEFORE submit
-    console.log("[pay/subscribe] ========== DEV DEBUG BEFORE SUBMIT ==========");
+    // TEMP DEBUG LOG: Exact values before submit
+    console.log("[pay/subscribe] ========== TEMP DEBUG BEFORE SUBMIT ==========");
+    console.log("[pay/subscribe] Signature string BEFORE hashing:", signatureBase);
+    console.log("[pay/subscribe] MD5 hash result:", signatureValue);
+    console.log("[pay/subscribe] Final form fields:", Object.entries(formData).map(([k, v]) => `${k}=${v}`).join(", "));
     console.log("[pay/subscribe] InvId:", InvId);
     console.log("[pay/subscribe] OutSum:", amountStr);
     console.log("[pay/subscribe] SignatureValue:", signatureValue);
-    console.log("[pay/subscribe] Recurring:", formData.Recurring);
-    console.log("[pay/subscribe] =============================================");
+    console.log("[pay/subscribe] ==============================================");
 
     // Save payment to DB for tracking
     try {
@@ -171,7 +166,7 @@ export async function POST(req: Request) {
           previous_invoice_id: null, // First payment (parent)
           amount: SUBSCRIPTION_AMOUNT,
           status: "pending",
-          is_recurring: true, // First payment with Recurring=true
+          is_recurring: false, // Simple one-time payment (no recurring yet)
         });
       
       if (paymentInsertError) {
