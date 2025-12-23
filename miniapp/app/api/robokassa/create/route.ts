@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { createServerSupabaseClient } from "../../../../lib/supabaseAdmin";
 import crypto from "crypto";
 
-// Единственный платеж = 199 RUB (с Recurring=true для подписки)
+// Единственный платеж = 199 RUB (первый платеж без Recurring)
 const SUBSCRIPTION_AMOUNT = 199.0;
 
 function md5(input: string): string {
@@ -274,7 +274,7 @@ export async function POST(req: Request) {
     console.log("[robokassa/create] ==============================================");
     
     // Проверяем, что все обязательные поля присутствуют
-    const requiredFields = ["MerchantLogin", "OutSum", "InvoiceID", "Description", "Recurring", "Receipt", "SignatureValue"];
+    const requiredFields = ["MerchantLogin", "OutSum", "InvoiceID", "Description", "Receipt", "SignatureValue"];
     const missingFields = requiredFields.filter(field => !formData[field]);
     if (missingFields.length > 0) {
       throw new Error(`Missing required fields: ${missingFields.join(", ")}`);

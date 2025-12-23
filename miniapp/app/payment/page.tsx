@@ -203,14 +203,13 @@ Stack: ${e.stack || "N/A"}
     form.style.display = "none";
     form.target = "_self";
     
-    // ВАЖНО: Порядок полей должен быть ТОЧНО как в документации Robokassa:
+    // ВАЖНО: Порядок полей:
     // 1. MerchantLogin
     // 2. OutSum
     // 3. InvoiceID
     // 4. SignatureValue
-    // 5. Recurring
-    // 6. Shp_ параметры (если есть) - ОПЦИОНАЛЬНО
-    // КРИТИЧНО: Description НЕ включаем в форму!
+    // 5. Shp_ параметры (если есть) - ОПЦИОНАЛЬНО
+    // КРИТИЧНО: Description НЕ включаем в форму (она в POST уже есть)
     const fieldOrder = [
       "MerchantLogin",
       "OutSum",
@@ -312,11 +311,7 @@ Stack: ${e.stack || "N/A"}
     }
     
     console.log("[payment] ✅ All required fields present:", requiredFields);
-    if (formFields.find(f => f.name === "Recurring")) {
-      console.log("[payment] ✅ Recurring field is present (recurring payment mode)");
-    } else {
-      console.log("[payment] ⚠️ Recurring field is NOT present (test mode - regular payment)");
-    }
+    // Recurring отсутствует по требованию схемы первого платежа
     
     console.log("[payment] Form created with fields:", formFields);
     console.log("[payment] Form action URL:", form.action);
