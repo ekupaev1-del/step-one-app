@@ -10,15 +10,15 @@ function md5(input: string): string {
 }
 
 /**
- * SIMPLE one-time payment endpoint (199 RUB)
+ * Subscription payment endpoint (199 RUB) with Recurring
  * 
- * STRICT RULES (NO GUESSING):
- * 1. One-time payment: 199 RUB (NO recurring, NO trial)
+ * STRICT RULES:
+ * 1. First payment: 199 RUB with Recurring=true (card binding)
  * 2. Signature: MerchantLogin:OutSum:InvId:Password1
- * 3. OutSum: "199" (plain integer string, NOT "199.00")
+ * 3. OutSum: "199.00" (string with 2 decimal places)
  * 4. InvId: Math.floor(Date.now() / 1000) - seconds timestamp, digits only
- * 5. Form fields: ONLY MerchantLogin, OutSum, InvId, SignatureValue
- * 6. NO Recurring, NO Receipt, NO Shp_*, NO Description in form
+ * 5. Form fields: MerchantLogin, OutSum, InvId, Description, Recurring, SignatureValue
+ * 6. Description and Recurring are NOT included in signature
  */
 export async function POST(req: Request) {
   try {
@@ -80,24 +80,57 @@ export async function POST(req: Request) {
       );
     }
 
-    // Generate InvId: Math.floor(Date.now() / 1000) - seconds timestamp
-    const InvId = Math.floor(Date.now() / 1000).toString();
+    // Generate unique InvId: Math.floor(Date.now() / 1000) - seconds timestamp
+    // Ensure uniqueness by checking database
+    let InvId: string;
+    let attempts = 0;
+    const maxAttempts = 10;
     
-    // Validate InvId: must contain ONLY digits
-    if (!InvId || !/^\d+$/.test(InvId)) {
-      throw new Error(`InvId must be numeric and defined. Got: ${InvId}`);
+    do {
+      InvId = Math.floor(Date.now() / 1000).toString();
+      
+      // Validate InvId: must contain ONLY digits
+      if (!InvId || !/^\d+$/.test(InvId)) {
+        throw new Error(`InvId must be numeric and defined. Got: ${InvId}`);
+      }
+      
+      // Check if InvId already exists in database
+      const { data: existingPayment } = await supabase
+        .from("payments")
+        .select("id")
+        .eq("invoice_id", InvId)
+        .maybeSingle();
+      
+      if (!existingPayment) {
+        // InvId is unique, can use it
+        break;
+      }
+      
+      attempts++;
+      console.warn(`[pay/subscribe] InvId ${InvId} already exists, generating new one (attempt ${attempts}/${maxAttempts})`);
+      
+      // Small delay before next attempt
+      await new Promise(resolve => setTimeout(resolve, 100));
+    } while (attempts < maxAttempts);
+    
+    if (attempts >= maxAttempts) {
+      throw new Error(`Failed to generate unique InvId after ${maxAttempts} attempts`);
     }
     
-    console.log("[pay/subscribe] Generated InvId:", InvId);
+    console.log("[pay/subscribe] Generated unique InvId:", InvId);
     console.log("[pay/subscribe] InvId type:", typeof InvId);
     console.log("[pay/subscribe] InvId is numeric:", /^\d+$/.test(InvId));
 
-    // CRITICAL: OutSum must be plain integer string "199" (NOT "199.00")
-    const amountStr = "199";
+    // CRITICAL: OutSum must be string with 2 decimal places: "199.00"
+    const amountStr = SUBSCRIPTION_AMOUNT.toFixed(2); // "199.00"
+    
+    if (amountStr !== "199.00") {
+      throw new Error(`Invalid OutSum: expected "199.00", got "${amountStr}"`);
+    }
 
     // CRITICAL: Signature formula EXACTLY as Robokassa expects:
     // MerchantLogin:OutSum:InvId:Password1
-    // NOTHING else included (no Recurring, no Receipt, no Shp_*, no Description)
+    // Description and Recurring are NOT included in signature
     const signatureBase = `${merchantLogin}:${amountStr}:${InvId}:${password1}`;
     const signatureValue = md5(signatureBase).toLowerCase();
     
@@ -114,26 +147,26 @@ export async function POST(req: Request) {
     console.log("[pay/subscribe] Signature base (FULL):", signatureBase);
     console.log("[pay/subscribe] Signature value (md5):", signatureValue);
     console.log("[pay/subscribe] Signature formula: MerchantLogin:OutSum:InvId:Password1");
+    console.log("[pay/subscribe] NOTE: Description and Recurring are NOT in signature");
     console.log("[pay/subscribe] ======================================");
 
     // Robokassa payment URL
     const robokassaDomain = process.env.ROBOKASSA_DOMAIN || "auth.robokassa.ru";
     const robokassaActionUrl = `https://${robokassaDomain}/Merchant/Index.aspx`;
     
-    // Build form data - MINIMAL: only required fields
-    // REMOVED: Recurring, Receipt, Shp_*, Description (optional, not in signature)
+    // Build form data with required fields for subscription
+    // Description and Recurring are included in POST but NOT in signature
     const formData: Record<string, string> = {
       MerchantLogin: merchantLogin,
-      OutSum: amountStr, // "199" (plain integer string)
+      OutSum: amountStr, // "199.00" (string with 2 decimal places)
       InvId: InvId, // Seconds timestamp
+      Description: "Подписка Step One — 1 месяц",
+      Recurring: "true", // Card binding for recurring payments
       SignatureValue: signatureValue,
     };
     
-    // Description is optional - add only if needed (NOT in signature)
-    // formData.Description = "Подписка Step One — 1 месяц";
-    
-    // Validate all required fields (minimal set)
-    const requiredFields = ["MerchantLogin", "OutSum", "InvId", "SignatureValue"];
+    // Validate all required fields
+    const requiredFields = ["MerchantLogin", "OutSum", "InvId", "Description", "Recurring", "SignatureValue"];
     const missingFields = requiredFields.filter(field => !formData[field]);
     if (missingFields.length > 0) {
       throw new Error(`Missing required fields: ${missingFields.join(", ")}`);
@@ -166,7 +199,7 @@ export async function POST(req: Request) {
           previous_invoice_id: null, // First payment (parent)
           amount: SUBSCRIPTION_AMOUNT,
           status: "pending",
-          is_recurring: false, // Simple one-time payment (no recurring yet)
+          is_recurring: true, // First payment with Recurring=true (card binding)
         });
       
       if (paymentInsertError) {

@@ -205,15 +205,19 @@ Stack: ${e.stack || "N/A"}
     form.style.display = "none";
     form.target = "_self";
     
-    // MINIMAL: Only required fields (NO Recurring, NO Receipt, NO Shp_*, NO Description)
+    // Required fields for subscription payment:
     // 1. MerchantLogin
     // 2. OutSum
     // 3. InvId
-    // 4. SignatureValue
+    // 4. Description
+    // 5. Recurring
+    // 6. SignatureValue
     const fieldOrder = [
       "MerchantLogin",
       "OutSum",
       "InvId",
+      "Description",
+      "Recurring",
       "SignatureValue",
     ];
     
@@ -259,8 +263,19 @@ Stack: ${e.stack || "N/A"}
       }
     });
     
-    // MINIMAL: Do NOT add any extra fields (NO Recurring, NO Receipt, NO Shp_*, NO Description)
-    // Only fields in fieldOrder are allowed
+    // Add remaining fields (if any) that are in formData but not in fieldOrder
+    // This ensures all fields from backend are included
+    Object.entries(uniqueFormData).forEach(([key, value]) => {
+      if (!fieldOrder.includes(key)) {
+        const input = document.createElement("input");
+        input.type = "hidden";
+        input.name = key;
+        input.value = value;
+        form.appendChild(input);
+        formFields.push({ name: key, value: value });
+        console.log(`[payment] Added additional form field: ${key} = ${value}`);
+      }
+    });
     
     // КРИТИЧНО: Проверяем на дублирование полей перед отправкой
     const fieldNames = formFields.map(f => f.name);
@@ -273,8 +288,8 @@ Stack: ${e.stack || "N/A"}
       return;
     }
     
-    // MINIMAL: Only required fields (NO optional fields)
-    const requiredFields = ["MerchantLogin", "OutSum", "InvId", "SignatureValue"];
+    // Required fields for subscription payment
+    const requiredFields = ["MerchantLogin", "OutSum", "InvId", "Description", "Recurring", "SignatureValue"];
     const missingFields = requiredFields.filter(field => !formFields.find(f => f.name === field));
     if (missingFields.length > 0) {
       console.error("[payment] ❌ MISSING REQUIRED FIELDS:", missingFields);
