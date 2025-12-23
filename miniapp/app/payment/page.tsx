@@ -13,7 +13,7 @@ function PaymentContent() {
   const [subscriptionStatus, setSubscriptionStatus] = useState<string | null>(null);
   const [trialEndAt, setTrialEndAt] = useState<string | null>(null);
   const [agreedToTerms, setAgreedToTerms] = useState(false);
-  const [paymentData, setPaymentData] = useState<{ actionUrl: string; formData: Record<string, string> } | null>(null);
+  const [paymentData, setPaymentData] = useState<{ actionUrl: string; formData: Record<string, string>; debugSignature?: { base: string; md5: string; fullBase: string } } | null>(null);
   const [debugInfo, setDebugInfo] = useState<string | null>(null);
   const [showDebug, setShowDebug] = useState(false);
 
@@ -206,14 +206,14 @@ Stack: ${e.stack || "N/A"}
     // ВАЖНО: Порядок полей:
     // 1. MerchantLogin
     // 2. OutSum
-    // 3. InvoiceID
+    // 3. InvId (КРИТИЧНО: Robokassa использует InvId, не InvoiceID)
     // 4. SignatureValue
     // 5. Shp_ параметры (если есть) - ОПЦИОНАЛЬНО
     // КРИТИЧНО: Description НЕ включаем в форму (она в POST уже есть)
     const fieldOrder = [
       "MerchantLogin",
       "OutSum",
-      "InvoiceID",
+      "InvId", // КРИТИЧНО: Robokassa использует InvId, не InvoiceID
       "SignatureValue",
       // Recurring не отправляем на первом платеже
       // Shp_userId - ОПЦИОНАЛЬНО, включается только если есть в formData
@@ -289,7 +289,7 @@ Stack: ${e.stack || "N/A"}
     // КРИТИЧНО: Description НЕ обязателен - убран по требованиям Robokassa
     // Recurring НЕ отправляем на первом платеже
     // Shp_userId ОПЦИОНАЛЕН - НЕ включаем в requiredFields
-    const requiredFields = ["MerchantLogin", "OutSum", "InvoiceID", "SignatureValue"];
+    const requiredFields = ["MerchantLogin", "OutSum", "InvId", "SignatureValue"];
     const missingFields = requiredFields.filter(field => !formFields.find(f => f.name === field));
     if (missingFields.length > 0) {
       console.error("[payment] ❌ MISSING REQUIRED FIELDS:", missingFields);
@@ -327,13 +327,18 @@ Stack: ${e.stack || "N/A"}
       allFormFields.push({ name, value });
     });
     
+    // DEBUG: Добавляем информацию о подписи если доступна
+    const signatureInfo = paymentData && 'debugSignature' in paymentData && paymentData.debugSignature
+      ? `\nSignature base (without password): ${paymentData.debugSignature.base}\nSignature MD5: ${paymentData.debugSignature.md5}`
+      : '';
+    
     const debugText = `=== DEBUG INFO ===
 Time: ${new Date().toISOString()}
 Action URL: ${form.action}
 Method: ${form.method}
 Total fields: ${allFormFields.length}
 Fields:
-${allFormFields.map(f => `  ${f.name} = ${f.value}`).join('\n')}
+${allFormFields.map(f => `  ${f.name} = ${f.value}`).join('\n')}${signatureInfo}
 ==================`;
     
     // ВАЖНО: Сохраняем debug информацию в localStorage ПЕРЕД отправкой формы

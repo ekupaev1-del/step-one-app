@@ -177,8 +177,8 @@ export async function POST(req: Request) {
     }
 
     // STEP 1: PARENT PAYMENT (1 RUB, БЕЗ Recurring, с Receipt)
-    // КРИТИЧНО: Подпись для первого платежа С Receipt:
-    // md5(MerchantLogin:OutSum:InvoiceID:Receipt:Password1)
+    // КРИТИЧНО: Подпись для первого платежа С Receipt и Shp_*:
+    // md5(MerchantLogin:OutSum:InvId:Receipt:Password1:Shp_userId=XXX)
     // 
     // ВАЖНО:
     // - Receipt ОБЯЗАТЕЛЕН для самозанятого (фискализация ФЗ-54)
@@ -192,11 +192,13 @@ export async function POST(req: Request) {
     const receiptJson = buildSubscriptionReceipt(TRIAL_PAYMENT_AMOUNT, "Подписка Step One — пробный период 3 дня");
     const receiptEncoded = encodeURIComponent(receiptJson);
     
-    // КРИТИЧНО: Формируем подпись в точном порядке
-    // Order: MerchantLogin:OutSum:InvoiceID:Receipt:Password1
-    // В подписи Receipt = URL-encoded строка, Shp_* не включаем
-    let signatureBase = `${merchantLogin}:${amountStr}:${invoiceIdStr}:${receiptEncoded}`;
-    signatureBase += `:${password1}`;
+    // КРИТИЧНО: Формируем подпись в точном порядке Robokassa
+    // Order: MerchantLogin:OutSum:InvId:Receipt:Password1:Shp_userId=XXX
+    // В подписи Receipt = URL-encoded строка, Shp_* включаем в конце
+    let signatureBase = `${merchantLogin}:${amountStr}:${invoiceIdStr}:${receiptEncoded}:${password1}`;
+    if (numericUserId) {
+      signatureBase += `:Shp_userId=${numericUserId}`;
+    }
     
     const signatureValue = md5(signatureBase).toLowerCase();
     
@@ -206,8 +208,10 @@ export async function POST(req: Request) {
     }
 
     // DEBUG: Логируем строку подписи БЕЗ пароля
-    let signatureBaseForLog = `${merchantLogin}:${amountStr}:${invoiceIdStr}:${receiptEncoded}`;
-    signatureBaseForLog += `:[PASSWORD_HIDDEN]`;
+    let signatureBaseForLog = `${merchantLogin}:${amountStr}:${invoiceIdStr}:${receiptEncoded}:[PASSWORD_HIDDEN]`;
+    if (numericUserId) {
+      signatureBaseForLog += `:Shp_userId=${numericUserId}`;
+    }
     
     console.log("[robokassa/create] ========== STEP 1: FIRST (PARENT) PAYMENT ==========");
     console.log("[robokassa/create] Purpose: Trial payment 1 RUB (NO recurring, with Receipt)");
@@ -218,9 +222,9 @@ export async function POST(req: Request) {
     console.log("[robokassa/create] ========== PARAMETERS ==========");
     console.log("[robokassa/create] MerchantLogin:", merchantLogin);
     console.log("[robokassa/create] OutSum:", amountStr, "(must be '1.00', type:", typeof amountStr, ")");
-    console.log("[robokassa/create] InvoiceID:", invoiceId, "(type:", typeof invoiceId, ")");
-    console.log("[robokassa/create] InvoiceID as string:", invoiceIdStr);
-    console.log("[robokassa/create] InvoiceID <= 2147483647:", invoiceId <= 2147483647);
+    console.log("[robokassa/create] InvId:", invoiceId, "(type:", typeof invoiceId, ")");
+    console.log("[robokassa/create] InvId as string:", invoiceIdStr);
+    console.log("[robokassa/create] InvId <= 2147483647:", invoiceId <= 2147483647);
     console.log("[robokassa/create] ========== EXCLUDED FROM SIGNATURE ==========");
     console.log("[robokassa/create] Recurring: NOT SENT on first payment");
     console.log("[robokassa/create] Description: (NOT in signature, but in POST)");
@@ -235,17 +239,18 @@ export async function POST(req: Request) {
     // POST fields:
     // - MerchantLogin
     // - OutSum = "1.00"
-    // - InvoiceID (unique integer, NOT bigint, NOT timestamp in ms)
+    // - InvId (unique integer, NOT bigint, NOT timestamp in ms) - КРИТИЧНО: InvId, не InvoiceID
     // - Description = "Подписка Step One — пробный период 3 дня"
     // - Receipt (urlencoded JSON для фискализации ФЗ-54)
+    // - Shp_userId (опционально, если userId есть)
     // - SignatureValue
     
     const description = "Подписка Step One — пробный период 3 дня";
     
     const formData: Record<string, string> = {
       MerchantLogin: merchantLogin,
-      OutSum: amountStr, // "199.00"
-      InvoiceID: invoiceIdStr,
+      OutSum: amountStr, // "1.00"
+      InvId: invoiceIdStr, // КРИТИЧНО: Robokassa использует InvId, не InvoiceID
       Description: description,
       Receipt: receiptEncoded, // Receipt обязателен для самозанятого
       SignatureValue: signatureValue,
@@ -254,7 +259,9 @@ export async function POST(req: Request) {
     // Shp_userId опционален - НЕ включаем в подпись. Добавляем только в форму, если есть
     if (numericUserId) {
       formData.Shp_userId = String(numericUserId);
-      console.log("[robokassa/create] Added optional Shp_userId (NOT in signature):", numericUserId);
+      if (numericUserId) {
+      console.log("[robokassa/create] Added optional Shp_userId (IN signature as Shp_userId=XXX):", numericUserId);
+    }
     } else {
       console.log("[robokassa/create] Shp_userId not provided - skipping (optional field)");
     }
@@ -274,7 +281,7 @@ export async function POST(req: Request) {
     console.log("[robokassa/create] ==============================================");
     
     // Проверяем, что все обязательные поля присутствуют
-    const requiredFields = ["MerchantLogin", "OutSum", "InvoiceID", "Description", "Receipt", "SignatureValue"];
+    const requiredFields = ["MerchantLogin", "OutSum", "InvId", "Description", "Receipt", "SignatureValue"];
     const missingFields = requiredFields.filter(field => !formData[field]);
     if (missingFields.length > 0) {
       throw new Error(`Missing required fields: ${missingFields.join(", ")}`);
@@ -340,8 +347,14 @@ export async function POST(req: Request) {
       actionUrl: robokassaActionUrl, // URL для action формы
       formData: formData, // Данные для POST запроса
       invoiceId: invoiceIdStr,
-          amount: TRIAL_PAYMENT_AMOUNT,
+      amount: TRIAL_PAYMENT_AMOUNT,
       method: "POST",
+      // DEBUG: Добавляем информацию о подписи для dev режима
+      debugSignature: process.env.NODE_ENV !== "production" || process.env.DEBUG_ROBOKASSA === "true" ? {
+        base: signatureBaseForLog,
+        md5: signatureValue,
+        fullBase: signatureBase,
+      } : undefined,
     };
     
     console.log("[robokassa/create] ✅ Returning response:", {
