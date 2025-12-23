@@ -21,55 +21,69 @@ async function chargeUserAfterTrial(user: any) {
     return;
   }
 
-  // Генерируем новый InvoiceID (числовой формат)
-  // КРИТИЧНО: Robokassa требует InvoiceID как int32 (<= 2147483647)
-  // НЕ используем timestamp - он слишком большой!
+  // STEP 4: Генерируем новый InvoiceID
+  // КРИТИЧНО: InvoiceID = простое число (НЕ bigint, НЕ timestamp в миллисекундах)
+  // Используем: Math.floor(Date.now() / 1000) - секунды с эпохи
   const MAX_INT32 = 2147483647;
-  const base = user.id * 1000000; // userId * 1M
-  const random = Math.floor(Math.random() * 1000000); // 0-999999
-  let invoiceIdNum = base + random;
+  let invoiceIdNum = Math.floor(Date.now() / 1000);
+  
+  // Добавляем случайное число для уникальности
+  const random = Math.floor(Math.random() * 1000); // 0-999
+  invoiceIdNum = invoiceIdNum * 1000 + random;
   
   // Проверяем, что InvoiceID <= 2147483647
   if (invoiceIdNum > MAX_INT32) {
-    invoiceIdNum = Math.floor(Math.random() * MAX_INT32) + 1; // 1-2147483647
+    invoiceIdNum = Math.floor(Date.now() / 1000);
   }
   
   const invoiceId = String(invoiceIdNum);
-  const receiptJson = buildSubscriptionReceipt();
+  
+  // Строим Receipt для фискализации (отправляем в POST, но не в подпись)
+  const receiptJson = JSON.stringify({
+    sno: "usn_income",
+    items: [{
+      name: "Подписка Step One — 1 месяц",
+      quantity: 1,
+      sum: SUBSCRIPTION_AMOUNT,
+      payment_method: "full_payment",
+      payment_object: "service",
+      tax: "none",
+    }],
+  });
   const receiptEncoded = encodeURIComponent(receiptJson);
 
   // PART 2: ВАЖНО: OutSum должен быть строкой с двумя знаками после запятой
   const outSumStr = SUBSCRIPTION_AMOUNT.toFixed(2); // "199.00"
 
-  // PART 2: SignatureValue для recurring-платежа:
-  // md5(MerchantLogin:OutSum:InvoiceID:Password2)
+  // STEP 4: SignatureValue для recurring-платежа:
+  // md5(MerchantLogin:OutSum:InvoiceID:Password1)
   //
   // ВАЖНО:
   // - PreviousInvoiceID НЕ включается в подпись
-  // - Receipt НЕ отправляется для recurring
+  // - Receipt отправляется в POST, но НЕ включается в подпись
   // - Recurring НЕ отправляется
-  const signatureBase = `${env.robokassaMerchantLogin}:${outSumStr}:${invoiceId}:${env.robokassaPassword2}`;
+  const signatureBase = `${env.robokassaMerchantLogin}:${outSumStr}:${invoiceId}:${env.robokassaPassword1}`;
   const signatureValue = md5(signatureBase).toLowerCase();
 
-  const description = "Подписка Step One — 1 месяц";
+  const description = "Подписка Step One — продление";
   const body = new URLSearchParams({
     MerchantLogin: env.robokassaMerchantLogin,
     InvoiceID: invoiceId,
     PreviousInvoiceID: user.robokassa_initial_invoice_id,
-    OutSum: outSumStr, // "199.00" - строка с двумя знаками
+    OutSum: outSumStr, // "199.00"
     Description: description,
+    Receipt: receiptEncoded, // Receipt обязателен для самозанятого
     SignatureValue: signatureValue,
-    // PART 2: Receipt НЕ отправляется для recurring
-    // PART 2: Recurring НЕ отправляется
+    // Recurring НЕ отправляется
   });
 
-  console.log(`[recurring] PART 2: Signature base (без пароля): ${env.robokassaMerchantLogin}:${outSumStr}:${invoiceId}:[PASSWORD_HIDDEN]`);
-  console.log(`[recurring] PART 2: Signature value: ${signatureValue}`);
+  console.log(`[recurring] STEP 4: Signature base (без пароля): ${env.robokassaMerchantLogin}:${outSumStr}:${invoiceId}:[PASSWORD_HIDDEN]`);
+  console.log(`[recurring] STEP 4: Signature value: ${signatureValue}`);
 
   console.log(`[recurring] STEP 4: Charging user ${user.id}`);
   console.log(`[recurring] STEP 4: Parent invoice: ${user.robokassa_initial_invoice_id}`);
   console.log(`[recurring] STEP 4: New invoice: ${invoiceId}`);
-  console.log(`[recurring] STEP 4: Receipt NOT sent (for recurring not needed)`);
+  console.log(`[recurring] STEP 4: Receipt sent in POST (NOT in signature)`);
 
   // Записываем платеж как pending перед запросом
   const { data: paymentRow } = await supabase
@@ -94,7 +108,7 @@ async function chargeUserAfterTrial(user: any) {
       OutSum: outSumStr,
       Description: description,
       SignatureValue: signatureValue.substring(0, 10) + "...",
-      Receipt: "NOT SENT",
+      Receipt: receiptEncoded.substring(0, 50) + "...",
       Recurring: "NOT SENT",
     });
 

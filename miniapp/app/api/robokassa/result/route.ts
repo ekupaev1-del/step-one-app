@@ -134,7 +134,7 @@ async function handle(req: Request) {
         previous_invoice_id: null,
         amount: amount,
         status: "success",
-        is_recurring: true, // первый платеж 199 с Recurring=true
+        is_recurring: false, // первый платеж 1 ₽ - не recurring
       });
       
       if (insertError) {
@@ -146,24 +146,68 @@ async function handle(req: Request) {
     // STEP 3: Логика обработки платежа
     const now = new Date();
     
-    // STEP 3: Первый оплачиваемый платеж = 199 RUB (с Recurring=true)
-    // Триал 3 дня ведётся в БД и не связан с Robokassa
-    // Если оплата 199 — активируем подписку и сохраняем parent invoice
-    if (Math.abs(amount - 199) < 0.01) {
-      const nextChargeAt = new Date(now.getTime() + 30 * 24 * 60 * 60 * 1000); // +30 дней
-
-      const updatePayload: Record<string, string> = {
-        subscription_status: "active",
-        paid_until: nextChargeAt.toISOString(),
-        next_charge_at: nextChargeAt.toISOString(),
-        last_payment_status: "success",
-      };
-      // Сохраняем parent invoice если ещё не сохранён
-      updatePayload["robokassa_initial_invoice_id"] = invId;
+    // STEP 3: Первый платёж = 1 RUB (trial)
+    // Сохраняем InvoiceID как parent_invoice_id и активируем trial на 3 дня
+    if (Math.abs(amount - 1) < 0.01) {
+      const trialStartedAt = now;
+      const trialEndsAt = new Date(now.getTime() + 3 * 24 * 60 * 60 * 1000); // +3 дня
 
       const { error: updateError } = await supabase
         .from("users")
-        .update(updatePayload)
+        .update({
+          subscription_status: "trial",
+          trial_started_at: trialStartedAt.toISOString(),
+          trial_end_at: trialEndsAt.toISOString(),
+          robokassa_initial_invoice_id: invId, // Сохраняем как parent_invoice_id
+          last_payment_status: "success",
+        })
+        .eq("id", userId);
+
+      if (updateError) {
+        console.error("[robokassa/result] Error updating user for trial:", updateError);
+        throw new Error(`Failed to activate trial: ${updateError.message}`);
+      }
+
+      console.log("[robokassa/result] ✅ Trial activated for user:", userId);
+      console.log("[robokassa/result] Parent invoice ID (saved):", invId);
+      console.log("[robokassa/result] Trial started at:", trialStartedAt.toISOString());
+      console.log("[robokassa/result] Trial ends at:", trialEndsAt.toISOString());
+
+      // Уведомляем бота об активации trial
+      try {
+        const { data: user } = await supabase
+          .from("users")
+          .select("telegram_id")
+          .eq("id", userId)
+          .maybeSingle();
+
+        if (user?.telegram_id) {
+          const notifyUrl = `${process.env.MINIAPP_BASE_URL || "https://step-one-app-git-dev-emins-projects-4717eabc.vercel.app"}/api/notify-bot`;
+          await fetch(notifyUrl, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              userId,
+              message: "Спасибо! Мы сохранили твои данные.\nТы можешь отправлять фото, текст или голос с едой — я всё проанализирую.",
+              sendMenu: true,
+            }),
+          });
+        }
+      } catch (notifyError) {
+        console.error("[robokassa/result] Error notifying bot:", notifyError);
+      }
+    } else if (Math.abs(amount - 199) < 0.01) {
+      // Recurring платёж 199 RUB (после trial)
+      const nextChargeAt = new Date(now.getTime() + 30 * 24 * 60 * 60 * 1000); // +30 дней
+
+      const { error: updateError } = await supabase
+        .from("users")
+        .update({
+          subscription_status: "active",
+          paid_until: nextChargeAt.toISOString(),
+          next_charge_at: nextChargeAt.toISOString(),
+          last_payment_status: "success",
+        })
         .eq("id", userId);
 
       if (updateError) {
@@ -172,7 +216,6 @@ async function handle(req: Request) {
       }
 
       console.log("[robokassa/result] ✅ Subscription activated for user:", userId);
-      console.log("[robokassa/result] Parent invoice ID:", invId);
       console.log("[robokassa/result] Next charge at:", nextChargeAt.toISOString());
 
       // Уведомляем бота об успешной подписке

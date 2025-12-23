@@ -188,9 +188,13 @@ export async function POST(req: Request) {
     // ВАЖНО:
     // - PreviousInvoiceID НЕ включается в подпись
     // - Recurring НЕ отправляется
-    // - Receipt НЕ отправляется (для recurring не нужен)
+    // - Receipt отправляется в POST, но НЕ включается в подпись (по документации Robokassa)
     // - Description НЕ участвует в подписи (но отправляется в POST)
     // - OutSum = строка "199.00"
+    
+    // Строим Receipt для фискализации (отправляем в POST, но не в подпись)
+    const receiptJson = buildSubscriptionReceipt(SUBSCRIPTION_AMOUNT);
+    const receiptEncoded = encodeURIComponent(receiptJson);
     
     // Формируем подпись СТРОГО по требованиям: MerchantLogin:OutSum:InvoiceID:Password1
     const signatureBase = `${merchantLogin}:${amountStr}:${invoiceIdStr}:${password1}`;
@@ -221,7 +225,7 @@ export async function POST(req: Request) {
     console.log("[robokassa/charge-subscription] PreviousInvoiceID: (NOT in signature, but in POST)");
     console.log("[robokassa/charge-subscription] Recurring: NOT sent (NOT in signature, NOT in POST)");
     console.log("[robokassa/charge-subscription] Description: (NOT in signature, but in POST)");
-    console.log("[robokassa/charge-subscription] Receipt: NOT SENT (Robokassa requirement)");
+    console.log("[robokassa/charge-subscription] Receipt: SENT in POST (NOT in signature per Robokassa spec)");
     console.log("[robokassa/charge-subscription] ========== EXCLUDED FROM SIGNATURE ==========");
     console.log("[robokassa/charge-subscription] Recurring: NOT in signature");
     console.log("[robokassa/charge-subscription] Description: NOT in signature");
@@ -232,13 +236,13 @@ export async function POST(req: Request) {
     // - MerchantLogin
     // - OutSum = "199.00"
     // - InvoiceID (new unique integer)
-    // - PreviousInvoiceID = recurring_parent_invoice_id
+    // - PreviousInvoiceID = parent_invoice_id
     // - Description = "Подписка Step One — продление"
+    // - Receipt (urlencoded JSON для фискализации)
     // - SignatureValue
     //
     // ❌ НЕ отправляем:
     // - Recurring (для recurring-платежа не нужен)
-    // - Receipt (не отправляется для recurring)
     
     const description = "Подписка Step One — продление";
     const recurringUrl = "https://auth.robokassa.ru/Merchant/Recurring";
@@ -247,8 +251,9 @@ export async function POST(req: Request) {
       MerchantLogin: merchantLogin,
       OutSum: amountStr, // "199.00"
       InvoiceID: invoiceIdStr,
-      PreviousInvoiceID: parentInvoiceId, // ВАЖНО: parent invoice ID из PART 1
-      Description: description, // ВАЖНО: Description отправляется в POST
+      PreviousInvoiceID: parentInvoiceId, // parent invoice ID из первого платежа
+      Description: description,
+      Receipt: receiptEncoded, // Receipt обязателен для самозанятого
       SignatureValue: signatureValue,
     };
     
