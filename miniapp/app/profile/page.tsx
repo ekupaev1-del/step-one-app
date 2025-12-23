@@ -746,10 +746,9 @@ function ProfilePageContent() {
                   Редактировать данные
                 </button>
               </div>
-            </div>
           </div>
-          )}
         </div>
+        )}
 
         {/* Подписка */}
         <div className="bg-white rounded-2xl shadow-soft p-6 mb-4">
