@@ -203,55 +203,6 @@ async function handle(req: Request) {
       } catch (notifyError) {
         console.error("[robokassa/result] Error notifying bot:", notifyError);
       }
-    } else if (Math.abs(amount - 199) < 0.01) {
-      // Recurring платёж 199 RUB (после trial)
-      const nextChargeAt = new Date(now.getTime() + 30 * 24 * 60 * 60 * 1000); // +30 дней
-
-      const { error: updateError } = await supabase
-        .from("users")
-        .update({
-          subscription_status: "active",
-          paid_until: nextChargeAt.toISOString(),
-          next_charge_at: nextChargeAt.toISOString(),
-          last_payment_status: "success",
-        })
-        .eq("id", userId);
-
-      if (updateError) {
-        console.error("[robokassa/result] Error updating user for subscription:", updateError);
-        throw new Error(`Failed to activate subscription: ${updateError.message}`);
-      }
-
-      console.log("[robokassa/result] ✅ Subscription activated for user:", userId);
-      console.log("[robokassa/result] Next charge at:", nextChargeAt.toISOString());
-
-      // Уведомляем бота об успешной подписке
-      try {
-        const { data: user } = await supabase
-          .from("users")
-          .select("telegram_id")
-          .eq("id", userId)
-          .maybeSingle();
-
-        if (user?.telegram_id) {
-          const notifyUrl = `${process.env.MINIAPP_BASE_URL || "https://step-one-app-git-dev-emins-projects-4717eabc.vercel.app"}/api/notify-bot`;
-          await fetch(notifyUrl, {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({
-              userId,
-              message: "✅ Подписка оформлена! Доступ активен до " + nextChargeAt.toLocaleDateString("ru-RU", {
-                day: "numeric",
-                month: "long",
-                year: "numeric",
-              }) + ".",
-              sendMenu: true,
-            }),
-          });
-        }
-      } catch (notifyError) {
-        console.error("[robokassa/result] Error notifying bot:", notifyError);
-      }
     } else {
       // Recurring платежи после первого
       const { data: payment } = await supabase
