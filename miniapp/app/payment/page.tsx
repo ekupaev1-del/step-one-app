@@ -78,7 +78,8 @@ function PaymentContent() {
     setError(null);
     
     try {
-      const res = await fetch("/api/robokassa/create", {
+      // Use clean subscription endpoint
+      const res = await fetch("/api/pay/subscribe", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ userId }),
@@ -391,6 +392,7 @@ ${allFormFields.map(f => `  ${f.name} = ${f.value}`).join('\n')}${signatureInfo}
           <div className="text-center space-y-1">
             <h1 className="text-2xl font-bold text-textPrimary">Подписка Step One</h1>
             <p className="text-sm text-textSecondary">199 ₽ в месяц</p>
+            <p className="text-xs text-textSecondary mt-1">Автоматическое продление каждый месяц</p>
           </div>
 
           {isTrialActive && (
@@ -417,12 +419,12 @@ ${allFormFields.map(f => `  ${f.name} = ${f.value}`).join('\n')}${signatureInfo}
           {canStartTrial && (
             <>
           <div className="bg-accent/5 border border-accent/20 rounded-xl p-4 text-sm text-textPrimary">
-            <p className="font-semibold mb-1">3 дня бесплатно</p>
+            <p className="font-semibold mb-1">Оформить подписку</p>
                 <p className="text-textSecondary mb-2">
-                  Для активации триала необходимо привязать карту. С карты будет списано 1 ₽ для привязки.
+                  При оплате карта будет сохранена для автоматического продления подписки каждый месяц.
                 </p>
             <p className="text-textSecondary">
-              После 3 дней бесплатного периода произойдёт автоматическое списание 199 ₽ за месяц. Подписка продлевается автоматически.
+              Подписка продлевается автоматически. Вы можете отменить её в любой момент в личном кабинете.
             </p>
           </div>
 
@@ -537,7 +539,7 @@ ${allFormFields.map(f => `  ${f.name} = ${f.value}`).join('\n')}${signatureInfo}
                 >
                   {loading === "creating" 
                     ? "Создаём оплату..." 
-                    : "Начать пробный период"}
+                    : "Оформить подписку"}
                 </button>
                 
                 {loading === "creating" && (

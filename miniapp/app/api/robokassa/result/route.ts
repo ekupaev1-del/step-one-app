@@ -134,7 +134,7 @@ async function handle(req: Request) {
         previous_invoice_id: null,
         amount: amount,
         status: "success",
-        is_recurring: false, // первый платеж 1 ₽ - не recurring
+        is_recurring: true, // первый платеж 199 ₽ с Recurring=true
       });
       
       if (insertError) {
@@ -146,34 +146,37 @@ async function handle(req: Request) {
     // STEP 3: Логика обработки платежа
     const now = new Date();
     
-    // STEP 3: Первый платёж = 1 RUB (trial)
-    // Сохраняем InvoiceID как parent_invoice_id и активируем trial на 3 дня
-    if (Math.abs(amount - 1) < 0.01) {
-      const trialStartedAt = now;
-      const trialEndsAt = new Date(now.getTime() + 3 * 24 * 60 * 60 * 1000); // +3 дня
+    // STEP 3: Первый платёж = 199 RUB (subscription with Recurring=true)
+    // Активируем подписку на 30 дней
+    if (Math.abs(amount - 199) < 0.01) {
+      // First payment: 199 RUB with Recurring=true
+      // Activate subscription for 30 days
+      const subscriptionStartedAt = now;
+      const nextChargeAt = new Date(now.getTime() + 30 * 24 * 60 * 60 * 1000); // +30 days
 
       const { error: updateError } = await supabase
         .from("users")
         .update({
-          subscription_status: "trial",
-          trial_started_at: trialStartedAt.toISOString(),
-          trial_end_at: trialEndsAt.toISOString(),
-          robokassa_initial_invoice_id: invId, // Сохраняем как parent_invoice_id
+          subscription_status: "active",
+          subscription_started_at: subscriptionStartedAt.toISOString(),
+          robokassa_initial_invoice_id: invId, // Save as parent_invoice_id for recurring charges
+          paid_until: nextChargeAt.toISOString(),
+          next_charge_at: nextChargeAt.toISOString(),
           last_payment_status: "success",
         })
         .eq("id", userId);
 
       if (updateError) {
-        console.error("[robokassa/result] Error updating user for trial:", updateError);
-        throw new Error(`Failed to activate trial: ${updateError.message}`);
+        console.error("[robokassa/result] Error updating user for subscription:", updateError);
+        throw new Error(`Failed to activate subscription: ${updateError.message}`);
       }
 
-      console.log("[robokassa/result] ✅ Trial activated for user:", userId);
+      console.log("[robokassa/result] ✅ Subscription activated for user:", userId);
       console.log("[robokassa/result] Parent invoice ID (saved):", invId);
-      console.log("[robokassa/result] Trial started at:", trialStartedAt.toISOString());
-      console.log("[robokassa/result] Trial ends at:", trialEndsAt.toISOString());
+      console.log("[robokassa/result] Subscription started at:", subscriptionStartedAt.toISOString());
+      console.log("[robokassa/result] Next charge at:", nextChargeAt.toISOString());
 
-      // Уведомляем бота об активации trial
+      // Notify bot about subscription activation
       try {
         const { data: user } = await supabase
           .from("users")
@@ -188,7 +191,11 @@ async function handle(req: Request) {
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({
               userId,
-              message: "Спасибо! Мы сохранили твои данные.\nТы можешь отправлять фото, текст или голос с едой — я всё проанализирую.",
+              message: "✅ Подписка оформлена! Доступ активен до " + nextChargeAt.toLocaleDateString("ru-RU", {
+                day: "numeric",
+                month: "long",
+                year: "numeric",
+              }) + ".",
               sendMenu: true,
             }),
           });
