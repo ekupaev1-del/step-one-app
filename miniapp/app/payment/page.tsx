@@ -259,18 +259,8 @@ Stack: ${e.stack || "N/A"}
       }
     });
     
-    // Затем добавляем остальные поля (включая Shp_userId, если он не в fieldOrder)
-    Object.entries(uniqueFormData).forEach(([key, value]) => {
-      if (!fieldOrder.includes(key)) {
-        const input = document.createElement("input");
-        input.type = "hidden";
-        input.name = key;
-        input.value = value;
-        form.appendChild(input);
-        formFields.push({ name: key, value: value });
-        console.log(`[payment] Added additional form field: ${key} = ${value}`);
-      }
-    });
+    // MINIMAL: Do NOT add any extra fields (NO Recurring, NO Receipt, NO Shp_*, NO Description)
+    // Only fields in fieldOrder are allowed
     
     // КРИТИЧНО: Проверяем на дублирование полей перед отправкой
     const fieldNames = formFields.map(f => f.name);
