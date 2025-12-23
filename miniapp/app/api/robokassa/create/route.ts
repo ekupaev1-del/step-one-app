@@ -2,8 +2,8 @@ import { NextResponse } from "next/server";
 import { createServerSupabaseClient } from "../../../../lib/supabaseAdmin";
 import crypto from "crypto";
 
-// Первый платеж = 1 RUB (с Recurring=true для привязки карты)
-const FIRST_PAYMENT_AMOUNT = 1.00;
+// Единственный платеж = 199 RUB (с Recurring=true для подписки)
+const SUBSCRIPTION_AMOUNT = 199.0;
 
 function md5(input: string): string {
   return crypto.createHash("md5").update(input).digest("hex");
@@ -99,7 +99,7 @@ export async function POST(req: Request) {
     console.log("[robokassa/create] =================================================");
 
     console.log("[robokassa/create] UserId:", numericUserId);
-    console.log("[robokassa/create] Amount:", FIRST_PAYMENT_AMOUNT, "RUB");
+    console.log("[robokassa/create] Amount:", SUBSCRIPTION_AMOUNT, "RUB");
 
     // Проверяем пользователя (минимальная проверка)
     const { data: user, error: userError } = await supabase
@@ -169,14 +169,14 @@ export async function POST(req: Request) {
     console.log("[robokassa/create] InvoiceID as string:", invoiceIdStr);
     console.log("[robokassa/create] InvoiceID <= 2147483647:", invoiceId <= MAX_INT32);
     
-    const amountStr = FIRST_PAYMENT_AMOUNT.toFixed(2); // "1.00"
+    const amountStr = SUBSCRIPTION_AMOUNT.toFixed(2); // "199.00"
 
-    // Проверяем, что OutSum = "1.00"
-    if (amountStr !== "1.00") {
-      throw new Error(`Invalid OutSum: expected "1.00", got "${amountStr}"`);
+    // Проверяем, что OutSum = "199.00"
+    if (amountStr !== "199.00") {
+      throw new Error(`Invalid OutSum: expected "199.00", got "${amountStr}"`);
     }
 
-    // STEP 1: FIRST (PARENT) PAYMENT (1 RUB with Recurring=true)
+    // STEP 1: PARENT PAYMENT (199 RUB with Recurring=true)
     // КРИТИЧНО: Подпись для первого платежа С Receipt и Shp_userId:
     // md5(MerchantLogin:OutSum:InvoiceID:Receipt:Shp_userId:Password1)
     // 
@@ -190,7 +190,7 @@ export async function POST(req: Request) {
     // - Receipt в подписи - это JSON строка (НЕ URL-encoded)
     
     // STEP 2: Строим Receipt для фискализации
-    const receiptJson = buildSubscriptionReceipt(FIRST_PAYMENT_AMOUNT, "Подписка Step One — пробный период 3 дня");
+    const receiptJson = buildSubscriptionReceipt(SUBSCRIPTION_AMOUNT, "Подписка Step One — 1 месяц");
     const receiptEncoded = encodeURIComponent(receiptJson);
     
     // КРИТИЧНО: Формируем подпись в правильном порядке
@@ -224,14 +224,14 @@ export async function POST(req: Request) {
     signatureBaseForLog += `:[PASSWORD_HIDDEN]`;
     
     console.log("[robokassa/create] ========== STEP 1: FIRST (PARENT) PAYMENT ==========");
-    console.log("[robokassa/create] Purpose: First payment 1 RUB with Recurring=true");
+    console.log("[robokassa/create] Purpose: Subscription payment 199 RUB with Recurring=true");
     console.log("[robokassa/create] ========== SIGNATURE DEBUG ==========");
     console.log("[robokassa/create] Signature base (BEFORE md5, WITHOUT password):", signatureBaseForLog);
     console.log("[robokassa/create] Signature base (ПОЛНАЯ):", signatureBase);
     console.log("[robokassa/create] Signature value (md5):", signatureValue);
     console.log("[robokassa/create] ========== PARAMETERS ==========");
     console.log("[robokassa/create] MerchantLogin:", merchantLogin);
-    console.log("[robokassa/create] OutSum:", amountStr, "(must be '1.00', type:", typeof amountStr, ")");
+    console.log("[robokassa/create] OutSum:", amountStr, "(must be '199.00', type:", typeof amountStr, ")");
     console.log("[robokassa/create] InvoiceID:", invoiceId, "(type:", typeof invoiceId, ")");
     console.log("[robokassa/create] InvoiceID as string:", invoiceIdStr);
     console.log("[robokassa/create] InvoiceID <= 2147483647:", invoiceId <= 2147483647);
@@ -255,15 +255,15 @@ export async function POST(req: Request) {
     // - Receipt (urlencoded JSON для фискализации ФЗ-54)
     // - SignatureValue
     
-    const description = "Подписка Step One — пробный период 3 дня";
+    const description = "Подписка Step One — 1 месяц";
     
     const formData: Record<string, string> = {
       MerchantLogin: merchantLogin,
       OutSum: amountStr, // "199.00"
       InvoiceID: invoiceIdStr,
       Description: description,
-      Recurring: "true", // Recurring=true для привязки карты
-      Receipt: receiptEncoded, // STEP 2: Receipt обязателен для самозанятого
+      Recurring: "true", // Recurring=true для подписки
+      Receipt: receiptEncoded, // Receipt обязателен для самозанятого
       SignatureValue: signatureValue,
     };
     
