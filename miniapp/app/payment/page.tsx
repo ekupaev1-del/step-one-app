@@ -136,6 +136,7 @@ function PaymentContent() {
       setPaymentData({
         actionUrl: data.actionUrl,
         formData: data.formData,
+        debugSignature: data.debugSignature, // Добавляем debugSignature если есть
       });
       setLoading(false);
       setError(null);

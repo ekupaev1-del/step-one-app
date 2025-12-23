@@ -34,3 +34,5 @@ COMMENT ON COLUMN users.email IS 'Email адрес пользователя';
 
 
 
+
+
