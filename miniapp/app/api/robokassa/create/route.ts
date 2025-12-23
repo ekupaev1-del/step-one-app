@@ -193,10 +193,10 @@ export async function POST(req: Request) {
     const receiptJson = buildSubscriptionReceipt(SUBSCRIPTION_AMOUNT, "Подписка Step One — 1 месяц");
     const receiptEncoded = encodeURIComponent(receiptJson);
     
-    // КРИТИЧНО: Формируем подпись из ТОЧНЫХ значений, которые уйдут в POST
+    // КРИТИЧНО: Формируем подпись в точном порядке
     // Order: MerchantLogin:OutSum:InvoiceID:Receipt:Shp_userId=XXX:Password1
-    // Receipt в подписи = та же urlencoded строка, что уходит в POST
-    let signatureBase = `${merchantLogin}:${amountStr}:${invoiceIdStr}:${receiptEncoded}`;
+    // В подписи Receipt = JSON (НЕ encoded), Shp_userId добавляем только если отправляем
+    let signatureBase = `${merchantLogin}:${amountStr}:${invoiceIdStr}:${receiptJson}`;
     if (numericUserId) {
       signatureBase += `:Shp_userId=${numericUserId}`;
     }
@@ -210,7 +210,7 @@ export async function POST(req: Request) {
     }
 
     // DEBUG: Логируем строку подписи БЕЗ пароля
-    let signatureBaseForLog = `${merchantLogin}:${amountStr}:${invoiceIdStr}:${receiptEncoded}`;
+    let signatureBaseForLog = `${merchantLogin}:${amountStr}:${invoiceIdStr}:${receiptJson}`;
     if (numericUserId) {
       signatureBaseForLog += `:Shp_userId=${numericUserId}`;
     }
