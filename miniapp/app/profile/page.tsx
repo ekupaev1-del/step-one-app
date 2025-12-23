@@ -549,205 +549,206 @@ function ProfilePageContent() {
           
           {basicInfoExpanded && (
             <div className="mt-4">
-          {isEditing ? (
-            <div className="space-y-4">
-              {/* Имя */}
-              <div>
-                <label className="block text-sm font-medium text-textSecondary mb-2">
-                  Имя
-                </label>
-                <input
-                  type="text"
-                  value={editName}
-                  onChange={(e) => setEditName(e.target.value)}
-                  className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-accent"
-                  placeholder="Введите имя"
-                  maxLength={100}
-                />
-              </div>
+              {isEditing ? (
+                <div className="space-y-4">
+                  {/* Имя */}
+                  <div>
+                    <label className="block text-sm font-medium text-textSecondary mb-2">
+                      Имя
+                    </label>
+                    <input
+                      type="text"
+                      value={editName}
+                      onChange={(e) => setEditName(e.target.value)}
+                      className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-accent"
+                      placeholder="Введите имя"
+                      maxLength={100}
+                    />
+                  </div>
 
-              {/* Вес */}
-              <div>
-                <label className="block text-sm font-medium text-textSecondary mb-2">
-                  Вес (кг)
-                </label>
-                <input
-                  type="number"
-                  value={editWeight}
-                  onChange={(e) => setEditWeight(e.target.value)}
-                  className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-accent"
-                  placeholder="Введите вес"
-                  min="1"
-                  max="500"
-                />
-              </div>
+                  {/* Вес */}
+                  <div>
+                    <label className="block text-sm font-medium text-textSecondary mb-2">
+                      Вес (кг)
+                    </label>
+                    <input
+                      type="number"
+                      value={editWeight}
+                      onChange={(e) => setEditWeight(e.target.value)}
+                      className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-accent"
+                      placeholder="Введите вес"
+                      min="1"
+                      max="500"
+                    />
+                  </div>
 
-              {/* Рост */}
-              <div>
-                <label className="block text-sm font-medium text-textSecondary mb-2">
-                  Рост (см)
-                </label>
-                <input
-                  type="number"
-                  value={editHeight}
-                  onChange={(e) => setEditHeight(e.target.value)}
-                  className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-accent"
-                  placeholder="Введите рост"
-                  min="50"
-                  max="300"
-                />
-              </div>
+                  {/* Рост */}
+                  <div>
+                    <label className="block text-sm font-medium text-textSecondary mb-2">
+                      Рост (см)
+                    </label>
+                    <input
+                      type="number"
+                      value={editHeight}
+                      onChange={(e) => setEditHeight(e.target.value)}
+                      className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-accent"
+                      placeholder="Введите рост"
+                      min="50"
+                      max="300"
+                    />
+                  </div>
 
-              {/* Пол */}
-              <div>
-                <label className="block text-sm font-medium text-textSecondary mb-2">
-                  Пол
-                </label>
-                <select
-                  value={editGender}
-                  onChange={(e) => setEditGender(e.target.value)}
-                  className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-accent"
-                >
-                  <option value="">Выберите пол</option>
-                  <option value="male">Мужской</option>
-                  <option value="female">Женский</option>
-                </select>
-              </div>
+                  {/* Пол */}
+                  <div>
+                    <label className="block text-sm font-medium text-textSecondary mb-2">
+                      Пол
+                    </label>
+                    <select
+                      value={editGender}
+                      onChange={(e) => setEditGender(e.target.value)}
+                      className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-accent"
+                    >
+                      <option value="">Выберите пол</option>
+                      <option value="male">Мужской</option>
+                      <option value="female">Женский</option>
+                    </select>
+                  </div>
 
-              {/* Возраст */}
-              <div>
-                <label className="block text-sm font-medium text-textSecondary mb-2">
-                  Возраст (лет)
-                </label>
-                <input
-                  type="number"
-                  value={editAge}
-                  onChange={(e) => setEditAge(e.target.value)}
-                  className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-accent"
-                  placeholder="Введите возраст"
-                  min="1"
-                  max="150"
-                />
-              </div>
+                  {/* Возраст */}
+                  <div>
+                    <label className="block text-sm font-medium text-textSecondary mb-2">
+                      Возраст (лет)
+                    </label>
+                    <input
+                      type="number"
+                      value={editAge}
+                      onChange={(e) => setEditAge(e.target.value)}
+                      className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-accent"
+                      placeholder="Введите возраст"
+                      min="1"
+                      max="150"
+                    />
+                  </div>
 
-              {/* Уровень активности */}
-              <div>
-                <label className="block text-sm font-medium text-textSecondary mb-2">
-                  Активность
-                </label>
-                <select
-                  value={editActivity}
-                  onChange={(e) => setEditActivity(e.target.value)}
-                  className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-accent"
-                >
-                  <option value="">Выберите уровень активности</option>
-                  <option value="sedentary">Сидячая работа</option>
-                  <option value="light">1–2 тренировки в неделю</option>
-                  <option value="moderate">3–4 тренировки в неделю</option>
-                  <option value="active">5+ тренировок в неделю</option>
-                  <option value="very_active">Спорт ежедневно</option>
-                </select>
-              </div>
+                  {/* Уровень активности */}
+                  <div>
+                    <label className="block text-sm font-medium text-textSecondary mb-2">
+                      Активность
+                    </label>
+                    <select
+                      value={editActivity}
+                      onChange={(e) => setEditActivity(e.target.value)}
+                      className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-accent"
+                    >
+                      <option value="">Выберите уровень активности</option>
+                      <option value="sedentary">Сидячая работа</option>
+                      <option value="light">1–2 тренировки в неделю</option>
+                      <option value="moderate">3–4 тренировки в неделю</option>
+                      <option value="active">5+ тренировок в неделю</option>
+                      <option value="very_active">Спорт ежедневно</option>
+                    </select>
+                  </div>
 
-              {/* Цель */}
-              <div>
-                <label className="block text-sm font-medium text-textSecondary mb-2">
-                  Цель
-                </label>
-                <select
-                  value={editGoal}
-                  onChange={(e) => setEditGoal(e.target.value)}
-                  className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-accent"
-                >
-                  <option value="">Выберите цель</option>
-                  <option value="lose">Похудение</option>
-                  <option value="maintain">Поддержание веса</option>
-                  <option value="gain">Набор веса</option>
-                </select>
-              </div>
+                  {/* Цель */}
+                  <div>
+                    <label className="block text-sm font-medium text-textSecondary mb-2">
+                      Цель
+                    </label>
+                    <select
+                      value={editGoal}
+                      onChange={(e) => setEditGoal(e.target.value)}
+                      className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-accent"
+                    >
+                      <option value="">Выберите цель</option>
+                      <option value="lose">Похудение</option>
+                      <option value="maintain">Поддержание веса</option>
+                      <option value="gain">Набор веса</option>
+                    </select>
+                  </div>
 
-              {/* Кнопки действий */}
-              <div className="flex gap-3 pt-2">
-                <button
-                  onClick={() => {
-                    setIsEditing(false);
-                    setError(null);
-                    // Восстанавливаем значения из профиля
-                    setEditName(profile.name || "");
-                    setEditWeight(profile.weightKg?.toString() || "");
-                    setEditHeight(profile.heightCm?.toString() || "");
-                    setEditGoal(profile.goal || "");
-                    setEditActivity(profile.activityLevel || "");
-                    setEditGender(profile.gender || "");
-                    setEditAge(profile.age?.toString() || "");
-                  }}
-                  className="flex-1 px-4 py-2 border border-gray-300 text-textPrimary font-medium rounded-lg hover:bg-gray-50 transition-colors"
-                  disabled={saving}
-                >
-                  Отмена
-                </button>
-                <button
-                  onClick={handleSave}
-                  disabled={saving}
-                  className="flex-1 px-4 py-2 bg-accent text-white font-medium rounded-lg hover:bg-accent/90 transition-colors disabled:opacity-50"
-                >
-                  {saving ? "Сохранение..." : "Сохранить"}
-                </button>
-              </div>
+                  {/* Кнопки действий */}
+                  <div className="flex gap-3 pt-2">
+                    <button
+                      onClick={() => {
+                        setIsEditing(false);
+                        setError(null);
+                        // Восстанавливаем значения из профиля
+                        setEditName(profile.name || "");
+                        setEditWeight(profile.weightKg?.toString() || "");
+                        setEditHeight(profile.heightCm?.toString() || "");
+                        setEditGoal(profile.goal || "");
+                        setEditActivity(profile.activityLevel || "");
+                        setEditGender(profile.gender || "");
+                        setEditAge(profile.age?.toString() || "");
+                      }}
+                      className="flex-1 px-4 py-2 border border-gray-300 text-textPrimary font-medium rounded-lg hover:bg-gray-50 transition-colors"
+                      disabled={saving}
+                    >
+                      Отмена
+                    </button>
+                    <button
+                      onClick={handleSave}
+                      disabled={saving}
+                      className="flex-1 px-4 py-2 bg-accent text-white font-medium rounded-lg hover:bg-accent/90 transition-colors disabled:opacity-50"
+                    >
+                      {saving ? "Сохранение..." : "Сохранить"}
+                    </button>
+                  </div>
+                </div>
+              ) : (
+                <div className="space-y-3">
+                  {profile.weightKg && (
+                    <div className="flex justify-between items-center py-2 border-b border-gray-100">
+                      <span className="text-textSecondary">Вес</span>
+                      <span className="font-medium text-textPrimary">{profile.weightKg} кг</span>
+                    </div>
+                  )}
+                  
+                  {profile.heightCm && (
+                    <div className="flex justify-between items-center py-2 border-b border-gray-100">
+                      <span className="text-textSecondary">Рост</span>
+                      <span className="font-medium text-textPrimary">{profile.heightCm} см</span>
+                    </div>
+                  )}
+
+                  {profile.gender && (
+                    <div className="flex justify-between items-center py-2 border-b border-gray-100">
+                      <span className="text-textSecondary">Пол</span>
+                      <span className="font-medium text-textPrimary">{formatGender(profile.gender)}</span>
+                    </div>
+                  )}
+
+                  {profile.age && (
+                    <div className="flex justify-between items-center py-2 border-b border-gray-100">
+                      <span className="text-textSecondary">Возраст</span>
+                      <span className="font-medium text-textPrimary">{profile.age} лет</span>
+                    </div>
+                  )}
+
+                  {profile.activityLevel && (
+                    <div className="flex justify-between items-center py-2 border-b border-gray-100">
+                      <span className="text-textSecondary">Активность</span>
+                      <span className="font-medium text-textPrimary">{formatActivity(profile.activityLevel)}</span>
+                    </div>
+                  )}
+                  
+                  <div className="flex justify-between items-center py-2">
+                    <span className="text-textSecondary">Цель</span>
+                    <span className="font-medium text-textPrimary">{formatGoal(profile.goal)}</span>
+                  </div>
+
+                  {/* Кнопка редактирования внизу блока */}
+                  <div className="pt-4 mt-4 border-t border-gray-100">
+                    <button
+                      onClick={() => setIsEditing(true)}
+                      className="w-full px-4 py-2 bg-accent/20 text-accent font-medium rounded-lg hover:bg-accent/30 transition-colors"
+                    >
+                      Редактировать данные
+                    </button>
+                  </div>
+                </div>
+              )}
             </div>
-          ) : (
-            <div className="space-y-3">
-              {profile.weightKg && (
-                <div className="flex justify-between items-center py-2 border-b border-gray-100">
-                  <span className="text-textSecondary">Вес</span>
-                  <span className="font-medium text-textPrimary">{profile.weightKg} кг</span>
-                </div>
-              )}
-              
-              {profile.heightCm && (
-                <div className="flex justify-between items-center py-2 border-b border-gray-100">
-                  <span className="text-textSecondary">Рост</span>
-                  <span className="font-medium text-textPrimary">{profile.heightCm} см</span>
-                </div>
-              )}
-
-              {profile.gender && (
-                <div className="flex justify-between items-center py-2 border-b border-gray-100">
-                  <span className="text-textSecondary">Пол</span>
-                  <span className="font-medium text-textPrimary">{formatGender(profile.gender)}</span>
-                </div>
-              )}
-
-              {profile.age && (
-                <div className="flex justify-between items-center py-2 border-b border-gray-100">
-                  <span className="text-textSecondary">Возраст</span>
-                  <span className="font-medium text-textPrimary">{profile.age} лет</span>
-                </div>
-              )}
-
-              {profile.activityLevel && (
-                <div className="flex justify-between items-center py-2 border-b border-gray-100">
-                  <span className="text-textSecondary">Активность</span>
-                  <span className="font-medium text-textPrimary">{formatActivity(profile.activityLevel)}</span>
-                </div>
-              )}
-              
-              <div className="flex justify-between items-center py-2">
-                <span className="text-textSecondary">Цель</span>
-                <span className="font-medium text-textPrimary">{formatGoal(profile.goal)}</span>
-              </div>
-
-              {/* Кнопка редактирования внизу блока */}
-              <div className="pt-4 mt-4 border-t border-gray-100">
-                <button
-                  onClick={() => setIsEditing(true)}
-                  className="w-full px-4 py-2 bg-accent/20 text-accent font-medium rounded-lg hover:bg-accent/30 transition-colors"
-                >
-                  Редактировать данные
-                </button>
-              </div>
-            </div>
-          </div>
           )}
         </div>
 
