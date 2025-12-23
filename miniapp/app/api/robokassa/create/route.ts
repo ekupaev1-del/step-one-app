@@ -356,7 +356,7 @@ export async function POST(req: Request) {
       actionUrl: robokassaActionUrl, // URL для action формы
       formData: formData, // Данные для POST запроса
       invoiceId: invoiceIdStr,
-      amount: FIRST_PAYMENT_AMOUNT,
+      amount: SUBSCRIPTION_AMOUNT,
       method: "POST",
     };
     
