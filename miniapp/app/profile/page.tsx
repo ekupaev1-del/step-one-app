@@ -747,6 +747,7 @@ function ProfilePageContent() {
                 </button>
               </div>
             </div>
+          </div>
           )}
         </div>
 
