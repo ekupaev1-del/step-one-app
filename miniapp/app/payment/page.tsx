@@ -216,7 +216,7 @@ Stack: ${e.stack || "N/A"}
       "OutSum",
       "InvoiceID",
       "SignatureValue",
-      "Recurring",
+      // Recurring не отправляем на первом платеже
       // Shp_userId - ОПЦИОНАЛЬНО, включается только если есть в formData
     ];
     
@@ -288,9 +288,9 @@ Stack: ${e.stack || "N/A"}
     
     // ВАЖНО: Проверяем, что все обязательные поля добавлены
     // КРИТИЧНО: Description НЕ обязателен - убран по требованиям Robokassa
-    // Recurring обязателен для recurring-платежей
+    // Recurring НЕ отправляем на первом платеже
     // Shp_userId ОПЦИОНАЛЕН - НЕ включаем в requiredFields
-    const requiredFields = ["MerchantLogin", "OutSum", "InvoiceID", "SignatureValue", "Recurring"];
+    const requiredFields = ["MerchantLogin", "OutSum", "InvoiceID", "SignatureValue"];
     const missingFields = requiredFields.filter(field => !formFields.find(f => f.name === field));
     if (missingFields.length > 0) {
       console.error("[payment] ❌ MISSING REQUIRED FIELDS:", missingFields);

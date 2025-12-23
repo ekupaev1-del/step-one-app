@@ -176,30 +176,26 @@ export async function POST(req: Request) {
       throw new Error(`Invalid OutSum: expected "199.00", got "${amountStr}"`);
     }
 
-    // STEP 1: PARENT PAYMENT (199 RUB with Recurring=true)
-    // КРИТИЧНО: Подпись для первого платежа С Receipt и Shp_userId:
-    // md5(MerchantLogin:OutSum:InvoiceID:Receipt:Shp_userId:Password1)
+    // STEP 1: PARENT PAYMENT (199 RUB, БЕЗ Recurring)
+    // КРИТИЧНО: Подпись для первого платежа С Receipt:
+    // md5(MerchantLogin:OutSum:InvoiceID:Receipt:Password1)
     // 
     // ВАЖНО:
     // - Receipt ОБЯЗАТЕЛЕН для самозанятого (фискализация ФЗ-54)
-    // - Shp_userId ОБЯЗАТЕЛЕН в подписи, если отправляется в POST
-    // - Формат Shp_userId в подписи: Shp_userId=322 (не просто значение!)
-    // - Recurring НЕ участвует в подписи (но отправляется в POST)
+    // - Shp_* НЕ включаем в подпись
+    // - Recurring НЕ участвует и НЕ отправляется (первый платёж без recurring)
     // - Description НЕ участвует в подписи (но отправляется в POST)
     // - OutSum = строка "199.00"
-    // - Receipt в подписи - это JSON строка (НЕ URL-encoded)
+    // - Receipt в подписи = urlencoded JSON (строго то, что уходит в POST)
     
     // STEP 2: Строим Receipt для фискализации
     const receiptJson = buildSubscriptionReceipt(SUBSCRIPTION_AMOUNT, "Подписка Step One — 1 месяц");
     const receiptEncoded = encodeURIComponent(receiptJson);
     
     // КРИТИЧНО: Формируем подпись в точном порядке
-    // Order: MerchantLogin:OutSum:InvoiceID:Receipt:Shp_userId=XXX:Password1
-    // В подписи Receipt = JSON (НЕ encoded), Shp_userId добавляем только если отправляем
-    let signatureBase = `${merchantLogin}:${amountStr}:${invoiceIdStr}:${receiptJson}`;
-    if (numericUserId) {
-      signatureBase += `:Shp_userId=${numericUserId}`;
-    }
+    // Order: MerchantLogin:OutSum:InvoiceID:Receipt:Password1
+    // В подписи Receipt = URL-encoded строка, Shp_* не включаем
+    let signatureBase = `${merchantLogin}:${amountStr}:${invoiceIdStr}:${receiptEncoded}`;
     signatureBase += `:${password1}`;
     
     const signatureValue = md5(signatureBase).toLowerCase();
@@ -210,14 +206,11 @@ export async function POST(req: Request) {
     }
 
     // DEBUG: Логируем строку подписи БЕЗ пароля
-    let signatureBaseForLog = `${merchantLogin}:${amountStr}:${invoiceIdStr}:${receiptJson}`;
-    if (numericUserId) {
-      signatureBaseForLog += `:Shp_userId=${numericUserId}`;
-    }
+    let signatureBaseForLog = `${merchantLogin}:${amountStr}:${invoiceIdStr}:${receiptEncoded}`;
     signatureBaseForLog += `:[PASSWORD_HIDDEN]`;
     
     console.log("[robokassa/create] ========== STEP 1: FIRST (PARENT) PAYMENT ==========");
-    console.log("[robokassa/create] Purpose: Subscription payment 199 RUB with Recurring=true");
+    console.log("[robokassa/create] Purpose: Subscription payment 199 RUB (NO recurring on first payment)");
     console.log("[robokassa/create] ========== SIGNATURE DEBUG ==========");
     console.log("[robokassa/create] Signature base (BEFORE md5, WITHOUT password):", signatureBaseForLog);
     console.log("[robokassa/create] Signature base (ПОЛНАЯ):", signatureBase);
@@ -229,7 +222,7 @@ export async function POST(req: Request) {
     console.log("[robokassa/create] InvoiceID as string:", invoiceIdStr);
     console.log("[robokassa/create] InvoiceID <= 2147483647:", invoiceId <= 2147483647);
     console.log("[robokassa/create] ========== EXCLUDED FROM SIGNATURE ==========");
-    console.log("[robokassa/create] Recurring: true (NOT in signature)");
+    console.log("[robokassa/create] Recurring: NOT SENT on first payment");
     console.log("[robokassa/create] Description: (NOT in signature, but in POST)");
     console.log("[robokassa/create] Receipt: SENT (required for self-employed fiscalization)");
     console.log("[robokassa/create] =================================================");
@@ -244,7 +237,6 @@ export async function POST(req: Request) {
     // - OutSum = "199.00"
     // - InvoiceID (unique integer, NOT bigint, NOT timestamp in ms)
     // - Description = "Подписка Step One — 1 месяц"
-    // - Recurring = true
     // - Receipt (urlencoded JSON для фискализации ФЗ-54)
     // - SignatureValue
     
@@ -255,15 +247,14 @@ export async function POST(req: Request) {
       OutSum: amountStr, // "199.00"
       InvoiceID: invoiceIdStr,
       Description: description,
-      Recurring: "true", // Recurring=true для подписки
       Receipt: receiptEncoded, // Receipt обязателен для самозанятого
       SignatureValue: signatureValue,
     };
     
-    // Shp_userId опционален - добавляем только если userId существует
+    // Shp_userId опционален - НЕ включаем в подпись. Добавляем только в форму, если есть
     if (numericUserId) {
       formData.Shp_userId = String(numericUserId);
-      console.log("[robokassa/create] Added optional Shp_userId:", numericUserId);
+      console.log("[robokassa/create] Added optional Shp_userId (NOT in signature):", numericUserId);
     } else {
       console.log("[robokassa/create] Shp_userId not provided - skipping (optional field)");
     }
