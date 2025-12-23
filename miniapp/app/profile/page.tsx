@@ -475,6 +475,16 @@ function ProfilePageContent() {
     return null;
   };
 
+  const formatDate = (iso?: string | null) => {
+    if (!iso) return "—";
+    const d = new Date(iso);
+    return d.toLocaleDateString("ru-RU", {
+      day: "numeric",
+      month: "long",
+      year: "numeric",
+    });
+  };
+
   return (
     <AppLayout>
       <div className="min-h-screen bg-background p-4 py-8">
@@ -738,6 +748,53 @@ function ProfilePageContent() {
               </div>
             </div>
           )}
+        </div>
+
+        {/* Подписка */}
+        <div className="bg-white rounded-2xl shadow-soft p-6 mb-4">
+          <h2 className="text-lg font-semibold text-textPrimary mb-3">Подписка</h2>
+          <div className="space-y-2 text-sm text-textSecondary">
+            <div className="flex justify-between">
+              <span>Статус:</span>
+              <span className="text-textPrimary font-medium">{formatSubscriptionStatus(profile.subscriptionStatus)}</span>
+            </div>
+            <div className="flex justify-between">
+              <span>Триал до:</span>
+              <span className="text-textPrimary">{formatDate(profile.trialEndAt)}</span>
+            </div>
+            <div className="flex justify-between">
+              <span>Оплачено до:</span>
+              <span className="text-textPrimary">{formatDate(profile.paidUntil)}</span>
+            </div>
+            <div className="flex justify-between">
+              <span>Следующее списание:</span>
+              <span className="text-textPrimary">{getNextBillingDate() || "—"}</span>
+            </div>
+            <div className="flex justify-between">
+              <span>Parent invoice:</span>
+              <span className="text-textPrimary">{profile.robokassaInitialInvoiceId || "—"}</span>
+            </div>
+          </div>
+
+          {subscriptionCanceled && (
+            <div className="mt-3 text-xs text-red-600">Подписка отменена.</div>
+          )}
+
+          <div className="mt-4 flex gap-2">
+            <button
+              onClick={() => window.location.href = `/payment?id=${userId}`}
+              className="flex-1 px-4 py-2 rounded-lg bg-accent text-white text-sm font-semibold hover:opacity-90"
+            >
+              Оплатить 199 ₽
+            </button>
+            <button
+              onClick={handleCancelSubscription}
+              disabled={cancellingSubscription}
+              className="flex-1 px-4 py-2 rounded-lg border border-red-200 text-red-600 text-sm font-semibold hover:bg-red-50 disabled:opacity-50"
+            >
+              {cancellingSubscription ? "Отмена..." : "Отменить подписку"}
+            </button>
+          </div>
         </div>
           )}
         </div>
