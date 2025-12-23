@@ -333,7 +333,7 @@ export async function POST(req: Request) {
           user_id: numericUserId,
           invoice_id: invoiceIdStr,
           previous_invoice_id: null, // Для первого платежа (parent) всегда null
-          amount: FIRST_PAYMENT_AMOUNT,
+          amount: SUBSCRIPTION_AMOUNT,
           status: "pending",
           is_recurring: true,
         });
