@@ -99,7 +99,7 @@ export async function POST(req: Request) {
     console.log("[robokassa/create] =================================================");
 
     console.log("[robokassa/create] UserId:", numericUserId);
-    console.log("[robokassa/create] Amount:", SUBSCRIPTION_AMOUNT, "RUB");
+    console.log("[robokassa/create] Amount:", FIRST_PAYMENT_AMOUNT, "RUB");
 
     // Проверяем пользователя (минимальная проверка)
     const { data: user, error: userError } = await supabase
@@ -333,7 +333,7 @@ export async function POST(req: Request) {
           user_id: numericUserId,
           invoice_id: invoiceIdStr,
           previous_invoice_id: null, // Для первого платежа (parent) всегда null
-          amount: SUBSCRIPTION_AMOUNT,
+          amount: FIRST_PAYMENT_AMOUNT,
           status: "pending",
           is_recurring: true,
         });
@@ -356,7 +356,7 @@ export async function POST(req: Request) {
       actionUrl: robokassaActionUrl, // URL для action формы
       formData: formData, // Данные для POST запроса
       invoiceId: invoiceIdStr,
-      amount: SUBSCRIPTION_AMOUNT,
+      amount: FIRST_PAYMENT_AMOUNT,
       method: "POST",
     };
     
