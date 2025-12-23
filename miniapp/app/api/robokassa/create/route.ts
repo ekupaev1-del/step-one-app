@@ -197,8 +197,8 @@ export async function POST(req: Request) {
     // 1. Сначала базовые параметры: MerchantLogin:OutSum:InvoiceID
     let signatureBase = `${merchantLogin}:${amountStr}:${invoiceIdStr}`;
     
-    // 2. Добавляем Receipt (ДОЛЖЕН быть URL-encoded — используем ту же строку, что уйдет в POST)
-    signatureBase += `:${receiptEncoded}`;
+    // 2. Добавляем Receipt (в подписи — JSON строка, не encoded)
+    signatureBase += `:${receiptJson}`;
     
     // 3. Добавляем Shp_userId в формате Shp_userId=322 (если есть)
     if (numericUserId) {
@@ -217,7 +217,7 @@ export async function POST(req: Request) {
 
     // DEBUG: Логируем строку подписи БЕЗ пароля
     let signatureBaseForLog = `${merchantLogin}:${amountStr}:${invoiceIdStr}`;
-    signatureBaseForLog += `:${receiptEncoded}`;
+    signatureBaseForLog += `:${receiptJson}`;
     if (numericUserId) {
       signatureBaseForLog += `:Shp_userId=${numericUserId}`;
     }
