@@ -796,8 +796,6 @@ function ProfilePageContent() {
             </button>
           </div>
         </div>
-          )}
-        </div>
 
         {/* Нормы (сворачиваемая секция) */}
         <div className="bg-white rounded-2xl shadow-soft p-6 mb-4">
