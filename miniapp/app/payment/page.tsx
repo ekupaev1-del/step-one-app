@@ -63,6 +63,8 @@ function PaymentContent() {
     }
     setLoading("creating");
     setError(null);
+    setDebugInfo(null); // Очищаем предыдущий debug при новом запросе
+    setShowDebug(false);
     
     try {
       console.log("[payment] ========== SUBSCRIPTION REQUEST ==========");
@@ -439,12 +441,55 @@ function PaymentContent() {
             <div className="mt-4 p-4 bg-gray-100 rounded-xl border border-gray-300">
               <div className="flex items-center justify-between mb-2">
                 <h3 className="text-sm font-semibold text-gray-800">🐛 Debug Info</h3>
-                <button
-                  onClick={() => setShowDebug(!showDebug)}
-                  className="text-xs text-blue-600 hover:text-blue-800 underline"
-                >
-                  {showDebug ? "Скрыть" : "Показать"}
-                </button>
+                <div className="flex items-center gap-2">
+                  <button
+                    onClick={async () => {
+                      const allData = {
+                        request: debugInfo.request,
+                        response: debugInfo.response,
+                        formData: paymentData ? {
+                          actionUrl: paymentData.actionUrl,
+                          formData: paymentData.formData,
+                        } : null,
+                        error: debugInfo.error || null,
+                      };
+                      const text = JSON.stringify(allData, null, 2);
+                      try {
+                        await navigator.clipboard.writeText(text);
+                        alert("✅ Скопировано в буфер обмена!");
+                      } catch (err) {
+                        // Fallback для старых браузеров
+                        const textarea = document.createElement("textarea");
+                        textarea.value = text;
+                        textarea.style.position = "fixed";
+                        textarea.style.opacity = "0";
+                        document.body.appendChild(textarea);
+                        textarea.select();
+                        document.execCommand("copy");
+                        document.body.removeChild(textarea);
+                        alert("✅ Скопировано в буфер обмена!");
+                      }
+                    }}
+                    className="text-xs text-green-600 hover:text-green-800 underline font-medium"
+                  >
+                    📋 Копировать всё
+                  </button>
+                  <button
+                    onClick={() => setShowDebug(!showDebug)}
+                    className="text-xs text-blue-600 hover:text-blue-800 underline"
+                  >
+                    {showDebug ? "Скрыть" : "Показать"}
+                  </button>
+                  <button
+                    onClick={() => {
+                      setDebugInfo(null);
+                      setShowDebug(false);
+                    }}
+                    className="text-xs text-red-600 hover:text-red-800 underline"
+                  >
+                    ✕ Очистить
+                  </button>
+                </div>
               </div>
               {showDebug && (
                 <div className="space-y-2 text-xs font-mono">
@@ -477,6 +522,14 @@ function PaymentContent() {
                           null,
                           2
                         )}
+                      </pre>
+                    </div>
+                  )}
+                  {debugInfo.error && (
+                    <div>
+                      <strong>Error:</strong>
+                      <pre className="mt-1 p-2 bg-red-50 rounded text-xs overflow-auto max-h-32">
+                        {JSON.stringify(debugInfo.error, null, 2)}
                       </pre>
                     </div>
                   )}
