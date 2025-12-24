@@ -13,9 +13,6 @@ function PaymentContent() {
   const [subscriptionStatus, setSubscriptionStatus] = useState<string | null>(null);
   const [trialEndAt, setTrialEndAt] = useState<string | null>(null);
   const [agreedToTerms, setAgreedToTerms] = useState(false);
-  const [paymentData, setPaymentData] = useState<{ actionUrl: string; formData: Record<string, string>; debugSignature?: { base: string; md5: string; fullBase: string } } | null>(null);
-  const [debugInfo, setDebugInfo] = useState<string | null>(null);
-  const [showDebug, setShowDebug] = useState(false);
 
   useEffect(() => {
     const id = searchParams.get("id");
@@ -31,25 +28,9 @@ function PaymentContent() {
       setError("ID не передан");
     }
     
-    // ВАЖНО: При загрузке страницы ОБЯЗАТЕЛЬНО сбрасываем paymentData
-    // чтобы не было автоматических редиректов
-    setPaymentData(null);
+    // Сбрасываем состояние при загрузке
     setLoading(false);
     setAgreedToTerms(false);
-    
-    // Проверяем, есть ли сохраненная debug информация в localStorage
-    // (на случай, если пользователь вернулся после ошибки)
-    try {
-      const savedDebug = localStorage.getItem('robokassa_debug_info');
-      const savedTime = localStorage.getItem('robokassa_debug_time');
-      if (savedDebug) {
-        console.log("[payment] Found saved debug info from:", savedTime);
-        setDebugInfo(savedDebug);
-        setShowDebug(true);
-      }
-    } catch (e) {
-      console.warn("[payment] Failed to read debug info from localStorage:", e);
-    }
   }, [searchParams]);
 
   const loadSubscriptionStatus = async (id: number) => {
@@ -104,25 +85,14 @@ function PaymentContent() {
       }
       
       // Проверяем наличие subscription URL
-      console.log("[payment] Checking response data:", {
-        hasOk: !!data.ok,
-        hasSubscriptionUrl: !!data.subscriptionUrl,
-        subscriptionUrl: data.subscriptionUrl,
-        fullResponseKeys: Object.keys(data),
-      });
-      
       if (!data.subscriptionUrl) {
-        console.error("[payment] Missing subscription URL:", {
-          hasSubscriptionUrl: !!data.subscriptionUrl,
-          fullResponse: data,
-        });
-        throw new Error("URL подписки не получен от сервера. Проверьте логи консоли.");
+        console.error("[payment] Missing subscription URL:", data);
+        throw new Error("URL подписки не получен от сервера.");
       }
       
-      console.log("[payment] ✅ Subscription URL получен");
-      console.log("[payment] Subscription URL:", data.subscriptionUrl);
+      console.log("[payment] ✅ Subscription URL получен:", data.subscriptionUrl);
       
-      // Просто открываем ссылку на подписку Robokassa
+      // Открываем ссылку на подписку Robokassa
       // В Telegram Mini App это откроется в WebView
       window.location.href = data.subscriptionUrl;
       
@@ -161,7 +131,7 @@ Stack: ${e.stack || "N/A"}
   const canStartTrial = !subscriptionStatus || subscriptionStatus === "none" || subscriptionStatus === "expired";
 
   // Функция для отправки формы оплаты - вызывается ТОЛЬКО при нажатии кнопки
-  const submitPaymentForm = (e?: React.MouseEvent) => {
+  // submitPaymentForm removed - we use direct URL redirect now
     // Предотвращаем любые автоматические вызовы
     if (e) {
       e.preventDefault();
@@ -414,79 +384,6 @@ ${allFormFields.map(f => `  ${f.name} = ${f.value}`).join('\n')}${signatureInfo}
             <div className="p-3 rounded-lg bg-red-50 border border-red-200 text-red-700 text-sm">
               <p className="font-semibold mb-1">❌ Ошибка:</p>
               <p>{error}</p>
-              {debugInfo && (
-                <button
-                  onClick={() => setShowDebug(!showDebug)}
-                  className="mt-2 text-xs underline"
-                >
-                  {showDebug ? "Скрыть" : "Показать"} debug информацию
-                </button>
-              )}
-            </div>
-          )}
-          
-          {(paymentData || debugInfo) && (
-            <div className="bg-yellow-50 border border-yellow-200 rounded-xl p-4">
-              <div className="flex items-center justify-between mb-2">
-                <p className="text-sm font-semibold text-yellow-800">
-                  🔍 Debug информация
-                  {!paymentData && <span className="text-xs text-yellow-600 ml-2">(сохранено)</span>}
-                </p>
-                <div className="flex gap-2">
-                  <button
-                    onClick={() => {
-                      if (debugInfo) {
-                        navigator.clipboard.writeText(debugInfo);
-                        alert("Скопировано в буфер обмена!");
-                      }
-                    }}
-                    className="text-xs text-yellow-700 underline"
-                  >
-                    📋 Копировать
-                  </button>
-                  <button
-                    onClick={() => setShowDebug(!showDebug)}
-                    className="text-xs text-yellow-700 underline"
-                  >
-                    {showDebug ? "Скрыть" : "Показать"}
-                  </button>
-                </div>
-              </div>
-              {showDebug && debugInfo && (
-                <div className="mt-2">
-                  <textarea
-                    readOnly
-                    value={debugInfo}
-                    className="w-full p-2 text-xs font-mono bg-white border border-yellow-300 rounded resize-none"
-                    rows={15}
-                    onClick={(e) => (e.target as HTMLTextAreaElement).select()}
-                  />
-                  <div className="mt-2 flex gap-2">
-                    <button
-                      onClick={() => {
-                        if (debugInfo) {
-                          navigator.clipboard.writeText(debugInfo);
-                          alert("✅ Скопировано в буфер обмена!");
-                        }
-                      }}
-                      className="px-3 py-1 text-xs bg-yellow-200 text-yellow-800 rounded hover:bg-yellow-300"
-                    >
-                      📋 Копировать всё
-                    </button>
-                    <button
-                      onClick={() => {
-                        localStorage.removeItem('robokassa_debug_info');
-                        localStorage.removeItem('robokassa_debug_time');
-                        setDebugInfo(null);
-                        setShowDebug(false);
-                      }}
-                      className="px-3 py-1 text-xs bg-gray-200 text-gray-700 rounded hover:bg-gray-300"
-                    >
-                      🗑️ Очистить
-                    </button>
-                  </div>
-                </div>
-              )}
             </div>
           )}
 
@@ -512,24 +409,20 @@ ${allFormFields.map(f => `  ${f.name} = ${f.value}`).join('\n')}${signatureInfo}
               </label>
             </div>
 
-            {!paymentData ? (
-              <>
-                <button
-                  onClick={startTrial}
-                  disabled={!userId || !!loading || !agreedToTerms}
-                  className="w-full py-3 rounded-xl bg-accent text-white font-semibold hover:opacity-90 disabled:opacity-50 disabled:cursor-not-allowed transition-opacity"
-                >
-                  {loading === "creating" 
-                    ? "Создаём оплату..." 
-                    : "Оформить подписку"}
-                </button>
-                
-                {loading === "creating" && (
-                  <p className="text-sm text-textSecondary text-center mt-2">
-                    Подготовка платежа... Пожалуйста, подождите
-                  </p>
-                )}
-              </>
+            <button
+              onClick={startTrial}
+              disabled={!userId || !!loading || !agreedToTerms}
+              className="w-full py-3 rounded-xl bg-accent text-white font-semibold hover:opacity-90 disabled:opacity-50 disabled:cursor-not-allowed transition-opacity"
+            >
+              {loading === "creating" 
+                ? "Переход на страницу оплаты..." 
+                : "Оформить подписку"}
+            </button>
+            
+            {loading === "creating" && (
+              <p className="text-sm text-textSecondary text-center mt-2">
+                Переход на страницу оплаты Robokassa...
+              </p>
             )}
           </div>
             </>
