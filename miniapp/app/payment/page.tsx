@@ -13,7 +13,7 @@ function PaymentContent() {
   const [subscriptionStatus, setSubscriptionStatus] = useState<string | null>(null);
   const [trialEndAt, setTrialEndAt] = useState<string | null>(null);
   const [agreedToTerms, setAgreedToTerms] = useState(false);
-  // Убрали paymentData - теперь просто редиректим на ссылку
+  const [paymentData, setPaymentData] = useState<{ actionUrl: string; formData: Record<string, string> } | null>(null);
   const [debugInfo, setDebugInfo] = useState<any>(null);
   const [showDebug, setShowDebug] = useState(false);
 
@@ -32,6 +32,7 @@ function PaymentContent() {
     }
     
     // Сбрасываем состояние при загрузке
+    setPaymentData(null);
     setDebugInfo(null);
     setLoading(false);
     setAgreedToTerms(false);
@@ -131,25 +132,41 @@ function PaymentContent() {
         throw new Error(errorMsg);
       }
       
-      // Проверяем наличие ссылки на подписку
-      if (!data.subscriptionUrl) {
+      // Проверяем наличие данных для POST формы
+      if (!data.actionUrl || !data.formData) {
         console.error("[payment] ========== MISSING DATA ERROR ==========");
-        console.error("[payment] Missing subscriptionUrl in response");
+        console.error("[payment] Missing actionUrl or formData in response");
         console.error("[payment] Full response:", data);
         console.error("[payment] Response keys:", Object.keys(data || {}));
         console.error("[payment] =======================================");
-        throw new Error("Ссылка на подписку не получена от сервера.");
+        throw new Error("Данные для оплаты не получены от сервера.");
       }
       
       console.log("[payment] ========== SUCCESS ==========");
-      console.log("[payment] ✅ Subscription URL получена");
-      console.log("[payment] Subscription URL:", data.subscriptionUrl);
-      console.log("[payment] Method:", data.method);
+      console.log("[payment] ✅ Payment data получены");
+      console.log("[payment] Action URL:", data.actionUrl);
+      console.log("[payment] Form data:", data.formData);
       console.log("[payment] =============================");
       
-      // Просто редиректим на ссылку подписки
+      // Создаем и отправляем POST форму
       setLoading("redirecting");
-      window.location.href = data.subscriptionUrl;
+      
+      const form = document.createElement("form");
+      form.method = "POST";
+      form.action = data.actionUrl;
+      form.style.display = "none";
+      form.target = "_self";
+      
+      Object.entries(data.formData).forEach(([key, value]) => {
+        const input = document.createElement("input");
+        input.type = "hidden";
+        input.name = key;
+        input.value = String(value);
+        form.appendChild(input);
+      });
+      
+      document.body.appendChild(form);
+      form.submit();
     } catch (e: any) {
       console.error("[payment] ========== EXCEPTION CAUGHT ==========");
       console.error("[payment] Error timestamp:", new Date().toISOString());
@@ -310,7 +327,8 @@ function PaymentContent() {
                       const allData = {
                         request: debugInfo.request,
                         response: debugInfo.response,
-                        subscriptionUrl: debugInfo?.response?.data?.subscriptionUrl || null,
+                        formData: debugInfo?.response?.data?.formData || null,
+                        actionUrl: debugInfo?.response?.data?.actionUrl || null,
                         error: debugInfo.error || null,
                       };
                       const text = JSON.stringify(allData, null, 2);
@@ -365,11 +383,23 @@ function PaymentContent() {
                       {JSON.stringify(debugInfo.response, null, 2)}
                     </pre>
                   </div>
-                  {debugInfo?.response?.data?.subscriptionUrl && (
+                  {debugInfo?.response?.data?.formData && (
                     <div>
-                      <strong>Subscription URL:</strong>
+                      <strong>Form Data:</strong>
                       <pre className="mt-1 p-2 bg-white rounded text-xs overflow-auto max-h-32">
-                        {debugInfo.response.data.subscriptionUrl}
+                        {JSON.stringify(
+                          {
+                            actionUrl: debugInfo.response.data.actionUrl,
+                            formData: Object.fromEntries(
+                              Object.entries(debugInfo.response.data.formData).map(([k, v]) => [
+                                k,
+                                k === "SignatureValue" ? `${String(v).substring(0, 8)}...` : v,
+                              ])
+                            ),
+                          },
+                          null,
+                          2
+                        )}
                       </pre>
                     </div>
                   )}
