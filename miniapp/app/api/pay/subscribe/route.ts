@@ -15,12 +15,13 @@ function md5(input: string): string {
  * Creates payment form for first subscription payment with card binding
  */
 export async function POST(req: Request) {
+  let body: any = null;
   try {
     console.log("[pay/subscribe] ========== SUBSCRIPTION PAYMENT ==========");
     console.log("[pay/subscribe] Request received at:", new Date().toISOString());
     
     const supabase = createServerSupabaseClient();
-    const body = await req.json();
+    body = await req.json();
     const { userId } = body;
 
     console.log("[pay/subscribe] Request body:", { userId });
