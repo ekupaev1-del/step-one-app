@@ -33,7 +33,7 @@ export async function GET(req: Request) {
   // Получаем данные пользователя (полный профиль)
   const { data: user, error } = await supabase
     .from("users")
-    .select("weight, height, goal, activity, gender, age, calories, protein, fat, carbs, water_goal_ml, avatar_url, name, subscription_status, trial_started_at, trial_end_at, next_charge_at, subscription_end_at, paid_until, robokassa_initial_invoice_id")
+    .select("weight, height, goal, activity, gender, age, calories, protein, fat, carbs, water_goal_ml, avatar_url, name")
     .eq("id", numericId)
     .maybeSingle();
 
