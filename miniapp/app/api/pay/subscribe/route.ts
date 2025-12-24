@@ -129,15 +129,22 @@ export async function POST(req: Request) {
       throw new Error(`Invalid signature generated: ${signatureValue}`);
     }
 
-    console.log("[pay/subscribe] ========== SIGNATURE DEBUG ==========");
+    console.log("[pay/subscribe] ========== ERROR 26 DEBUG INFO ==========");
+    console.log("[pay/subscribe] Timestamp:", new Date().toISOString());
+    console.log("[pay/subscribe] UserId:", numericUserId, `(type: ${typeof numericUserId})`);
+    console.log("[pay/subscribe] MerchantLogin:", merchantLogin, `(type: ${typeof merchantLogin}, length: ${merchantLogin.length})`);
+    console.log("[pay/subscribe] Password1:", password1 ? `${password1.substring(0, 5)}...${password1.substring(password1.length - 3)}` : "NOT SET", `(length: ${password1?.length || 0})`);
+    console.log("[pay/subscribe] Amount (OutSum):", amountStr, `(type: ${typeof amountStr}, length: ${amountStr.length})`);
+    console.log("[pay/subscribe] InvId:", InvId, `(type: ${typeof InvId}, length: ${InvId.length}, isNumeric: ${/^\d+$/.test(InvId)})`);
+    console.log("[pay/subscribe] ========== SIGNATURE CALCULATION ==========");
     console.log("[pay/subscribe] Signature base (WITHOUT password):", `${merchantLogin}:${amountStr}:${InvId}:[PASSWORD_HIDDEN]`);
     console.log("[pay/subscribe] Signature base (FULL - for verification):", `${merchantLogin}:${amountStr}:${InvId}:${password1}`);
+    console.log("[pay/subscribe] Full signature string (with password):", `${merchantLogin}:${amountStr}:${InvId}:${password1}`);
+    console.log("[pay/subscribe] Signature formula: MerchantLogin:OutSum:InvId:Password1");
     console.log("[pay/subscribe] Signature value (md5):", signatureValue);
     console.log("[pay/subscribe] Signature value length:", signatureValue.length);
-    console.log("[pay/subscribe] Signature formula: MerchantLogin:OutSum:InvId:Password1");
+    console.log("[pay/subscribe] Signature value (md5):", signatureValue, `(type: ${typeof signatureValue}, length: ${signatureValue.length})`);
     console.log("[pay/subscribe] NOTE: Description and Recurring are NOT in signature");
-    console.log("[pay/subscribe] ======================================");
-
     // Robokassa payment URL
     const robokassaDomain = process.env.ROBOKASSA_DOMAIN || "auth.robokassa.ru";
     const robokassaActionUrl = `https://${robokassaDomain}/Merchant/Index.aspx`;
@@ -152,20 +159,6 @@ export async function POST(req: Request) {
       Recurring: "true", // Card binding for recurring payments
       SignatureValue: signatureValue,
     };
-    
-    // Validate all required fields
-    const requiredFields = ["MerchantLogin", "OutSum", "InvId", "Description", "Recurring", "SignatureValue"];
-    const missingFields = requiredFields.filter(field => !formData[field]);
-    if (missingFields.length > 0) {
-      throw new Error(`Missing required fields: ${missingFields.join(", ")}`);
-    }
-    
-    // Validate InvId format
-    if (!/^\d+$/.test(formData.InvId)) {
-      throw new Error(`Invalid InvId format: ${formData.InvId}. Must contain only digits.`);
-    }
-    
-    console.log("[pay/subscribe] ✅ All required fields present");
     
     // Детальный лог всех полей формы
     console.log("[pay/subscribe] ========== FORM DATA DEBUG ==========");
@@ -207,34 +200,53 @@ export async function POST(req: Request) {
       console.warn("[pay/subscribe] Warning: DB error (ignored):", paymentErr.message);
     }
 
-    // Return payment form data
+    // Return subscription link
     const response = {
       ok: true, 
       actionUrl: robokassaActionUrl,
-      formData: formData,
+      formData: formData, // Empty, not needed for direct link
       InvId: InvId,
       amount: SUBSCRIPTION_AMOUNT,
-      method: "POST",
+      method: "GET",
     };
     
+    console.log("[pay/subscribe] ========== RESPONSE DATA ==========");
     console.log("[pay/subscribe] ✅ Returning response:", {
       ok: response.ok,
       hasActionUrl: !!response.actionUrl,
+      actionUrl: response.actionUrl,
       hasFormData: !!response.formData,
       formDataKeys: Object.keys(response.formData),
       InvId: response.InvId,
+      amount: response.amount,
+      method: response.method,
     });
+    console.log("[pay/subscribe] Full response object:", JSON.stringify(response, null, 2));
+    console.log("[pay/subscribe] ==================================");
     
     return NextResponse.json(response);
   } catch (error: any) {
-    console.error("[pay/subscribe] error", error);
-    console.error("[pay/subscribe] error stack", error.stack);
-    console.error("[pay/subscribe] error details:", {
+    console.error("[pay/subscribe] ========== ERROR OCCURRED ==========");
+    console.error("[pay/subscribe] Error timestamp:", new Date().toISOString());
+    console.error("[pay/subscribe] Error message:", error?.message);
+    console.error("[pay/subscribe] Error stack:", error?.stack);
+    console.error("[pay/subscribe] Error name:", error?.name);
+    console.error("[pay/subscribe] Error code:", error?.code);
+    console.error("[pay/subscribe] Full error object:", JSON.stringify(error, Object.getOwnPropertyNames(error), 2));
+    console.error("[pay/subscribe] Error details:", {
       message: error?.message,
       code: error?.code,
       details: error?.details,
       hint: error?.hint,
+      name: error?.name,
+      cause: error?.cause,
     });
+    console.error("[pay/subscribe] Request context at error time:", {
+      userId: body?.userId,
+      merchantLogin: process.env.ROBOKASSA_MERCHANT_LOGIN ? "SET" : "NOT SET",
+      password1: process.env.ROBOKASSA_PASSWORD1 ? "SET" : "NOT SET",
+    });
+    console.error("[pay/subscribe] =====================================");
     
     return NextResponse.json(
       { 
@@ -245,6 +257,8 @@ export async function POST(req: Request) {
           code: error?.code,
           details: error?.details,
           hint: error?.hint,
+          name: error?.name,
+          stack: error?.stack,
         } : undefined,
       },
       { status: 500 }
