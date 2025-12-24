@@ -84,17 +84,38 @@ function PaymentContent() {
         throw new Error(errorMsg);
       }
       
-      // Проверяем наличие subscription URL
-      if (!data.subscriptionUrl) {
-        console.error("[payment] Missing subscription URL:", data);
-        throw new Error("URL подписки не получен от сервера.");
+      // Проверяем наличие данных для POST формы
+      if (!data.actionUrl || !data.formData) {
+        console.error("[payment] Missing required data:", {
+          hasActionUrl: !!data.actionUrl,
+          hasFormData: !!data.formData,
+          fullResponse: data,
+        });
+        throw new Error("Данные для оплаты не получены от сервера.");
       }
       
-      console.log("[payment] ✅ Subscription URL получен:", data.subscriptionUrl);
+      console.log("[payment] ✅ Payment data получены");
+      console.log("[payment] Action URL:", data.actionUrl);
+      console.log("[payment] Form data:", data.formData);
       
-      // Открываем ссылку на подписку Robokassa
-      // В Telegram Mini App это откроется в WebView
-      window.location.href = data.subscriptionUrl;
+      // Создаем и отправляем POST форму
+      const form = document.createElement("form");
+      form.method = "POST";
+      form.action = data.actionUrl;
+      form.style.display = "none";
+      
+      // Добавляем все поля формы
+      Object.entries(data.formData).forEach(([key, value]) => {
+        const input = document.createElement("input");
+        input.type = "hidden";
+        input.name = key;
+        input.value = String(value);
+        form.appendChild(input);
+      });
+      
+      // Добавляем форму в DOM и отправляем
+      document.body.appendChild(form);
+      form.submit();
       
       setLoading(false);
       setError(null);
