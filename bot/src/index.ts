@@ -8,7 +8,6 @@ import { isWaterRequest, logWaterIntake, getDailyWaterSummary } from "./services
 import { createReminder, getUserReminders, deleteReminder, validateTime, type ReminderType } from "./services/reminders.js";
 import { startReminderScheduler } from "./services/reminderScheduler.js";
 import { startInactivityNotificationScheduler } from "./services/inactivityNotifications.js";
-import { startRecurringBillingScheduler } from "./services/recurringBilling.js";
 
 // Инициализация бота
 const bot = new Telegraf(env.telegramBotToken);
@@ -19,102 +18,6 @@ const bot = new Telegraf(env.telegramBotToken);
 const MINIAPP_BASE_URL =
   process.env.MINIAPP_BASE_URL ||
   "https://step-one-app-git-dev-emins-projects-4717eabc.vercel.app";
-
-// ░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░
-//      ФУНКЦИИ ПОДПИСКИ
-// ░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░
-
-/**
- * Проверяет, есть ли у пользователя активная подписка или триал
- */
-async function checkSubscription(userId: number): Promise<{
-  hasAccess: boolean;
-  status: 'trial' | 'active' | 'expired' | 'none';
-  trialEndAt: Date | null;
-  subscriptionEndAt: Date | null;
-}> {
-  try {
-    const { data: user, error } = await supabase
-      .from("users")
-      .select("subscription_status, trial_started_at, trial_end_at, next_charge_at, paid_until")
-      .eq("id", userId)
-      .maybeSingle();
-
-    if (error || !user) {
-      console.error("[checkSubscription] Ошибка получения пользователя:", error);
-      return { hasAccess: false, status: 'none', trialEndAt: null, subscriptionEndAt: null };
-    }
-
-    const now = new Date();
-    const status = user.subscription_status || 'none';
-    
-    // Если canceled или expired - нет доступа
-    if (status === 'canceled' || status === 'expired') {
-      return { hasAccess: false, status: status as any, trialEndAt: null, subscriptionEndAt: null };
-    }
-
-    // Если payment_failed - нет доступа
-    if (status === 'payment_failed') {
-      return { hasAccess: false, status: 'payment_failed', trialEndAt: null, subscriptionEndAt: null };
-    }
-
-    // Если триал, проверяем дату окончания
-    if (status === 'trial') {
-      if (!user.trial_end_at) {
-        // Триал не активирован - нет доступа до оплаты
-        return { hasAccess: false, status: 'none', trialEndAt: null, subscriptionEndAt: null };
-      }
-      
-      // Триал активирован, проверяем дату окончания
-      const trialEnd = new Date(user.trial_end_at);
-      if (trialEnd > now) {
-        return { hasAccess: true, status: 'trial', trialEndAt: trialEnd, subscriptionEndAt: null };
-      } else {
-        // Триал истек - recurringBilling должен обработать это
-        return { hasAccess: false, status: 'expired', trialEndAt: trialEnd, subscriptionEndAt: null };
-      }
-    }
-
-    // Если подписка активна, проверяем paid_until
-    if (status === 'active') {
-      if (user.paid_until) {
-        const paidUntil = new Date(user.paid_until);
-        if (paidUntil > now) {
-          return { hasAccess: true, status: 'active', trialEndAt: null, subscriptionEndAt: paidUntil };
-        } else {
-          // Подписка истекла
-          await supabase
-            .from("users")
-            .update({ subscription_status: 'expired' })
-            .eq("id", userId);
-          return { hasAccess: false, status: 'expired', trialEndAt: null, subscriptionEndAt: paidUntil };
-        }
-      }
-      
-      // Если paid_until нет, но есть next_charge_at в будущем - подписка активна
-      if (user.next_charge_at) {
-        const nextCharge = new Date(user.next_charge_at);
-        if (nextCharge > now) {
-          return { hasAccess: true, status: 'active', trialEndAt: null, subscriptionEndAt: nextCharge };
-        }
-      }
-      
-      // Подписка истекла
-      await supabase
-        .from("users")
-        .update({ subscription_status: 'expired' })
-        .eq("id", userId);
-      return { hasAccess: false, status: 'expired', trialEndAt: null, subscriptionEndAt: null };
-    }
-
-    // Нет подписки или триала
-    return { hasAccess: false, status: status as any, trialEndAt: null, subscriptionEndAt: null };
-  } catch (error) {
-    console.error("[checkSubscription] Исключение:", error);
-    return { hasAccess: false, status: 'none', trialEndAt: null, subscriptionEndAt: null };
-  }
-}
-
 
 // ░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░
 //      ЕДИНАЯ ФУНКЦИЯ ГЛАВНОГО МЕНЮ
@@ -381,65 +284,8 @@ bot.start(async (ctx) => {
       return;
     }
 
-    // Если анкета заполнена - проверяем подписку и показываем меню
+    // Если анкета заполнена - показываем меню
     console.log("[bot] /start: отправка меню для пользователя с id:", userId);
-    
-    // Проверяем подписку
-    const subscription = await checkSubscription(userId);
-    
-    // Если подписка неактивна - показываем сообщение о подписке
-    if (!subscription.hasAccess) {
-      const paymentUrl = `${MINIAPP_BASE_URL}/payment?id=${userId}`;
-      
-      let subscriptionMessage = `💳 <b>Подписка Step One</b>
-
-1 месяц стоит 199 ₽
-
-🎁 <b>Триал бесплатный на 3 дня</b>
-
-После оформления подписки и привязки карты у вас откроется доступ ко всем функциям бота:
-• Анализ еды по фото, тексту и голосу
-• Отслеживание калорий и Б/Ж/У
-• Отчёты и статистика
-• Напоминания о приёме пищи
-
-После окончания триала подписка продлится автоматически.`;
-
-      if (subscription.status === 'expired') {
-        subscriptionMessage = `💳 <b>Подписка Step One</b>
-
-Ваша подписка была отменена или истекла.
-
-🎁 <b>Триал бесплатный на 3 дня</b>
-
-Оформите подписку снова, чтобы получить доступ ко всем функциям бота:
-• Анализ еды по фото, тексту и голосу
-• Отслеживание калорий и Б/Ж/У
-• Отчёты и статистика
-• Напоминания о приёме пищи
-
-После оформления подписки и привязки карты у вас откроется доступ. После окончания триала подписка продлится автоматически.`;
-      }
-
-      const subscriptionKeyboard = {
-        inline_keyboard: [
-          [
-            {
-              text: "💳 Оформить подписку",
-              web_app: { url: paymentUrl }
-            }
-          ]
-        ]
-      };
-
-      await ctx.reply(subscriptionMessage, {
-        parse_mode: "HTML",
-        reply_markup: subscriptionKeyboard
-      });
-      
-      // Небольшая задержка перед показом меню
-      await new Promise(resolve => setTimeout(resolve, 500));
-    }
     
     // Используем getMainMenuKeyboard для получения меню
     const menu = getMainMenuKeyboard(userId);
@@ -581,62 +427,9 @@ async function handleQuestionnaireSaved(
   // Небольшая задержка между сообщениями
   await new Promise(resolve => setTimeout(resolve, 500));
   
-  // ШАГ 2: Отправляем сообщение о подписке с кнопкой оформления подписки
-  let subscriptionMessageSent = false;
-  try {
-    const paymentUrl = userIdToUse 
-      ? `${MINIAPP_BASE_URL}/payment?id=${userIdToUse}` 
-      : undefined;
-
-    const subscriptionMessage = `💳 <b>Подписка Step One</b>
-
-1 месяц стоит 199 ₽
-
-🎁 <b>Триал бесплатный на 3 дня</b>
-
-После оформления подписки и привязки карты у вас откроется доступ ко всем функциям бота:
-• Анализ еды по фото, тексту и голосу
-• Отслеживание калорий и Б/Ж/У
-• Отчёты и статистика
-• Напоминания о приёме пищи
-
-После окончания триала подписка продлится автоматически.`;
-
-    const subscriptionKeyboard: any = {
-      inline_keyboard: []
-    };
-
-    if (paymentUrl) {
-      subscriptionKeyboard.inline_keyboard.push([
-        {
-          text: "💳 Оформить подписку",
-          web_app: { url: paymentUrl }
-        }
-      ]);
-    }
-
-    await ctx.telegram.sendMessage(targetChatId, subscriptionMessage, {
-      parse_mode: "HTML",
-      reply_markup: subscriptionKeyboard
-        });
-    subscriptionMessageSent = true;
-    console.log("[bot] ✅ Сообщение о подписке отправлено");
-  } catch (subscriptionError: any) {
-    console.error("[bot] ❌ Ошибка отправки сообщения о подписке:", subscriptionError);
-    console.error("[bot] Subscription error details:", {
-      message: subscriptionError?.message,
-      code: subscriptionError?.response?.error_code,
-      description: subscriptionError?.response?.description
-    });
-  }
-  
   // Финальная проверка
-  if (!confirmationSent && !subscriptionMessageSent) {
-    console.error("[bot] ❌ КРИТИЧЕСКАЯ ОШИБКА: Не удалось отправить ни подтверждение, ни сообщение о подписке!");
-  } else if (!confirmationSent) {
-    console.warn("[bot] ⚠️ Предупреждение: Подтверждение не отправлено, но сообщение о подписке отправлено");
-  } else if (!subscriptionMessageSent) {
-    console.warn("[bot] ⚠️ Предупреждение: Сообщение о подписке не отправлено, но подтверждение отправлено");
+  if (!confirmationSent) {
+    console.error("[bot] ❌ КРИТИЧЕСКАЯ ОШИБКА: Не удалось отправить подтверждение!");
   }
 }
 
@@ -1423,50 +1216,6 @@ bot.on("text", async (ctx) => {
 
     console.log(`[bot] Текстовое сообщение от ${telegram_id}: ${text}`);
 
-    // Получаем userId для проверки подписки
-    const { data: userForSubscription } = await supabase
-      .from("users")
-      .select("id")
-      .eq("telegram_id", telegram_id)
-      .maybeSingle();
-
-    if (userForSubscription?.id) {
-      // Проверяем подписку
-      const subscription = await checkSubscription(userForSubscription.id);
-      if (!subscription.hasAccess) {
-        const paymentUrl = userForSubscription.id 
-          ? `${MINIAPP_BASE_URL}/payment?id=${userForSubscription.id}` 
-          : undefined;
-        
-        let message = "❌ <b>Нет доступа</b>\n\n";
-        if (subscription.status === 'expired' || subscription.status === 'payment_failed') {
-          if (subscription.status === 'payment_failed') {
-            message += "Ошибка оплаты. Триал закончился, но автоматическое списание не прошло.\n\n";
-          } else {
-            message += "Ваш триал или подписка истекли.\n\n";
-          }
-        } else {
-          message += "Для использования функций бота необходимо активировать триал.\n\n";
-        }
-        message += "💳 <b>Подписка Step One</b>\n";
-        message += "После триала: 199 ₽ в месяц\n\n";
-        message += "🎁 <b>Триал бесплатный на 3 дня</b>\n";
-        message += "Для активации нужно привязать карту (списание 1 ₽)";
-
-        const keyboard: any[] = [];
-        if (paymentUrl) {
-          keyboard.push([
-            { text: "💳 Оформить подписку", web_app: { url: paymentUrl } }
-          ]);
-        }
-
-        return ctx.reply(message, {
-          parse_mode: "HTML",
-          reply_markup: keyboard.length > 0 ? { inline_keyboard: keyboard } : undefined
-        });
-      }
-    }
-
     // Показываем, что обрабатываем
     const processingMsg = await ctx.reply("🔍 Анализирую еду...");
 
@@ -2057,50 +1806,6 @@ bot.on("photo", async (ctx) => {
 
     console.log(`[bot] Получено фото от ${telegram_id}`);
 
-    // Получаем userId для проверки подписки
-    const { data: userForSubscription } = await supabase
-      .from("users")
-      .select("id")
-      .eq("telegram_id", telegram_id)
-      .maybeSingle();
-
-    if (userForSubscription?.id) {
-      // Проверяем подписку
-      const subscription = await checkSubscription(userForSubscription.id);
-      if (!subscription.hasAccess) {
-        const paymentUrl = userForSubscription.id 
-          ? `${MINIAPP_BASE_URL}/payment?id=${userForSubscription.id}` 
-          : undefined;
-        
-        let message = "❌ <b>Нет доступа</b>\n\n";
-        if (subscription.status === 'expired' || subscription.status === 'payment_failed') {
-          if (subscription.status === 'payment_failed') {
-            message += "Ошибка оплаты. Триал закончился, но автоматическое списание не прошло.\n\n";
-          } else {
-            message += "Ваш триал или подписка истекли.\n\n";
-          }
-        } else {
-          message += "Для использования функций бота необходимо активировать триал.\n\n";
-        }
-        message += "💳 <b>Подписка Step One</b>\n";
-        message += "После триала: 199 ₽ в месяц\n\n";
-        message += "🎁 <b>Триал бесплатный на 3 дня</b>\n";
-        message += "Для активации нужно привязать карту (списание 1 ₽)";
-
-        const keyboard: any[] = [];
-        if (paymentUrl) {
-          keyboard.push([
-            { text: "💳 Оформить подписку", web_app: { url: paymentUrl } }
-          ]);
-        }
-
-        return ctx.reply(message, {
-          parse_mode: "HTML",
-          reply_markup: keyboard.length > 0 ? { inline_keyboard: keyboard } : undefined
-        });
-      }
-    }
-
     // Показываем, что обрабатываем
     const processingMsg = await ctx.reply("📸 Анализирую фото еды...");
 
@@ -2255,49 +1960,6 @@ bot.on("voice", async (ctx) => {
 
     console.log(`[bot] Получено голосовое сообщение от ${telegram_id}`);
 
-    // Получаем userId для проверки подписки
-    const { data: userForSubscription } = await supabase
-      .from("users")
-      .select("id")
-      .eq("telegram_id", telegram_id)
-      .maybeSingle();
-
-    if (userForSubscription?.id) {
-      // Проверяем подписку
-      const subscription = await checkSubscription(userForSubscription.id);
-      if (!subscription.hasAccess) {
-        const paymentUrl = userForSubscription.id 
-          ? `${MINIAPP_BASE_URL}/payment?id=${userForSubscription.id}` 
-          : undefined;
-        
-        let message = "❌ <b>Нет доступа</b>\n\n";
-        if (subscription.status === 'expired' || subscription.status === 'payment_failed') {
-          if (subscription.status === 'payment_failed') {
-            message += "Ошибка оплаты. Триал закончился, но автоматическое списание не прошло.\n\n";
-          } else {
-            message += "Ваш триал или подписка истекли.\n\n";
-          }
-        } else {
-          message += "Для использования функций бота необходимо активировать триал.\n\n";
-        }
-        message += "💳 <b>Подписка Step One</b>\n";
-        message += "После триала: 199 ₽ в месяц\n\n";
-        message += "🎁 <b>Триал бесплатный на 3 дня</b>\n";
-        message += "Для активации нужно привязать карту (списание 1 ₽)";
-
-        const keyboard: any[] = [];
-        if (paymentUrl) {
-          keyboard.push([
-            { text: "💳 Оформить подписку", web_app: { url: paymentUrl } }
-          ]);
-        }
-
-        return ctx.reply(message, {
-          parse_mode: "HTML",
-          reply_markup: keyboard.length > 0 ? { inline_keyboard: keyboard } : undefined
-        });
-      }
-    }
 
     // Показываем, что обрабатываем
     const processingMsg = await ctx.reply("🎤 Расшифровываю голосовое сообщение...");
@@ -2453,5 +2115,4 @@ startInactivityNotificationScheduler(bot);
 console.log("📢 Scheduler уведомлений о неактивности запущен");
 
 // Запускаем scheduler автосписаний
-startRecurringBillingScheduler();
 console.log("💳 Scheduler автосписаний запущен");

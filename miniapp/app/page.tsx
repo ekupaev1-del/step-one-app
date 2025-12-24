@@ -17,7 +17,6 @@ export default async function Page({
   }
   
   // Если id не передан - показываем простую страницу вместо ошибки 400
-  // Это может быть редирект от Robokassa или прямой доступ
   return (
     <div style={{ 
       minHeight: '100vh', 

@@ -20,13 +20,6 @@ interface ProfileData {
   fatGoal: number | null;
   carbsGoal: number | null;
   waterGoalMl: number | null;
-  subscriptionStatus: string | null;
-  trialStartedAt: string | null;
-  trialEndAt: string | null;
-  nextChargeAt: string | null;
-  subscriptionEndAt: string | null;
-  paidUntil: string | null;
-  robokassaInitialInvoiceId: string | null;
 }
 
 function ProfilePageContent() {
@@ -44,8 +37,6 @@ function ProfilePageContent() {
   const [uploadingAvatar, setUploadingAvatar] = useState(false);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const [basicInfoExpanded, setBasicInfoExpanded] = useState(false);
-  const [cancellingSubscription, setCancellingSubscription] = useState(false);
-  const [subscriptionCanceled, setSubscriptionCanceled] = useState(false);
 
   // Редактируемые поля
   const [editName, setEditName] = useState<string>("");
@@ -139,13 +130,6 @@ function ProfilePageContent() {
           fatGoal: data.fatGoal,
           carbsGoal: data.carbsGoal,
           waterGoalMl: data.waterGoalMl,
-          subscriptionStatus: data.subscriptionStatus,
-          trialStartedAt: data.trialStartedAt,
-          trialEndAt: data.trialEndAt,
-          nextChargeAt: data.nextChargeAt,
-          subscriptionEndAt: data.subscriptionEndAt,
-          paidUntil: data.paidUntil,
-          robokassaInitialInvoiceId: data.robokassaInitialInvoiceId
         });
 
         setAvatarUrl(data.avatarUrl || null);
@@ -383,97 +367,6 @@ function ProfilePageContent() {
     }
   };
 
-  const handleCancelSubscription = async () => {
-    if (!userId) return;
-    const confirmCancel = window.confirm("Вы действительно хотите отменить подписку? После отмены доступ к функциям бота будет закрыт.");
-    if (!confirmCancel) return;
-
-    try {
-      setCancellingSubscription(true);
-      const response = await fetch(`/api/subscription/cancel?userId=${userId}`, {
-        method: "POST"
-      });
-      const data = await response.json();
-      if (!response.ok || !data.ok) {
-        throw new Error(data.error || "Не удалось отменить подписку");
-      }
-      // Показываем сообщение об отмене
-      setSubscriptionCanceled(true);
-      // Обновляем профиль
-      const profileResponse = await fetch(`/api/user?userId=${userId}`);
-      const profileData = await profileResponse.json();
-      if (profileResponse.ok && profileData.ok) {
-        setProfile({
-          ...profile,
-          subscriptionStatus: profileData.subscriptionStatus,
-          trialStartedAt: profileData.trialStartedAt,
-          trialEndAt: profileData.trialEndAt,
-          nextChargeAt: profileData.nextChargeAt,
-          subscriptionEndAt: profileData.subscriptionEndAt,
-          paidUntil: profileData.paidUntil,
-          robokassaInitialInvoiceId: profileData.robokassaInitialInvoiceId
-        });
-      }
-    } catch (err: any) {
-      console.error("[profile] Ошибка отмены подписки:", err);
-      setError(err.message || "Ошибка отмены подписки");
-    } finally {
-      setCancellingSubscription(false);
-    }
-  };
-
-  const formatSubscriptionStatus = (status: string | null): string => {
-    if (!status) return "Не активирована";
-    switch (status) {
-      case "trial":
-        return "Триал активен";
-      case "active":
-        return "Активна";
-      case "expired":
-        return "Истекла";
-      case "payment_failed":
-        return "Ошибка оплаты";
-      case "canceled":
-        return "Отменена";
-      case "none":
-        return "Не активирована";
-      default:
-        return status;
-    }
-  };
-
-  const getNextBillingDate = (): string | null => {
-    // Используем next_charge_at для определения следующего списания
-    if (profile.nextChargeAt) {
-      const nextCharge = new Date(profile.nextChargeAt);
-      return nextCharge.toLocaleDateString("ru-RU", {
-        day: "numeric",
-        month: "long",
-        year: "numeric",
-      });
-    }
-    
-    // Fallback для обратной совместимости
-    if (profile.subscriptionStatus === "trial" && profile.trialEndAt) {
-      const trialEnd = new Date(profile.trialEndAt);
-      return trialEnd.toLocaleDateString("ru-RU", {
-        day: "numeric",
-        month: "long",
-        year: "numeric",
-      });
-    }
-    
-    if (profile.subscriptionStatus === "active" && profile.paidUntil) {
-      const paidUntil = new Date(profile.paidUntil);
-      return paidUntil.toLocaleDateString("ru-RU", {
-        day: "numeric",
-        month: "long",
-        year: "numeric",
-      });
-    }
-    
-    return null;
-  };
 
   const formatDate = (iso?: string | null) => {
     if (!iso) return "—";
@@ -752,52 +645,6 @@ function ProfilePageContent() {
           )}
         </div>
 
-        {/* Подписка */}
-        <div className="bg-white rounded-2xl shadow-soft p-6 mb-4">
-          <h2 className="text-lg font-semibold text-textPrimary mb-3">Подписка</h2>
-          <div className="space-y-2 text-sm text-textSecondary">
-            <div className="flex justify-between">
-              <span>Статус:</span>
-              <span className="text-textPrimary font-medium">{formatSubscriptionStatus(profile.subscriptionStatus)}</span>
-            </div>
-            <div className="flex justify-between">
-              <span>Триал до:</span>
-              <span className="text-textPrimary">{formatDate(profile.trialEndAt)}</span>
-            </div>
-            <div className="flex justify-between">
-              <span>Оплачено до:</span>
-              <span className="text-textPrimary">{formatDate(profile.paidUntil)}</span>
-            </div>
-            <div className="flex justify-between">
-              <span>Следующее списание:</span>
-              <span className="text-textPrimary">{getNextBillingDate() || "—"}</span>
-            </div>
-            <div className="flex justify-between">
-              <span>Parent invoice:</span>
-              <span className="text-textPrimary">{profile.robokassaInitialInvoiceId || "—"}</span>
-            </div>
-          </div>
-
-          {subscriptionCanceled && (
-            <div className="mt-3 text-xs text-red-600">Подписка отменена.</div>
-          )}
-
-          <div className="mt-4 flex gap-2">
-            <button
-              onClick={() => window.location.href = `/payment?id=${userId}`}
-              className="flex-1 px-4 py-2 rounded-lg bg-accent text-white text-sm font-semibold hover:opacity-90"
-            >
-              Оплатить 199 ₽
-            </button>
-            <button
-              onClick={handleCancelSubscription}
-              disabled={cancellingSubscription}
-              className="flex-1 px-4 py-2 rounded-lg border border-red-200 text-red-600 text-sm font-semibold hover:bg-red-50 disabled:opacity-50"
-            >
-              {cancellingSubscription ? "Отмена..." : "Отменить подписку"}
-            </button>
-          </div>
-        </div>
 
         {/* Нормы (сворачиваемая секция) */}
         <div className="bg-white rounded-2xl shadow-soft p-6 mb-4">

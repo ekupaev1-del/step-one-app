@@ -61,14 +61,7 @@ export async function GET(req: Request) {
     fatGoal: user.fat ? Number(user.fat) : null,
     carbsGoal: user.carbs ? Number(user.carbs) : null,
     waterGoalMl: user.water_goal_ml ? Number(user.water_goal_ml) : null,
-    avatarUrl: user.avatar_url || null,
-    subscriptionStatus: user.subscription_status || null,
-    trialStartedAt: user.trial_started_at || null,
-    trialEndAt: user.trial_end_at || null,
-    nextChargeAt: user.next_charge_at || null,
-    subscriptionEndAt: user.subscription_end_at || null,
-    paidUntil: user.paid_until || null,
-    robokassaInitialInvoiceId: user.robokassa_initial_invoice_id || null
+    avatarUrl: user.avatar_url || null
   });
 }
 

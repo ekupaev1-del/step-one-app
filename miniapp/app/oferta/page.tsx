@@ -248,7 +248,7 @@ function OfertaPageContent() {
 
           <div className="mt-8 pt-6 border-t border-gray-200">
             <Link 
-              href={userId ? `/payment?id=${userId}` : "/payment"}
+              href={userId ? `/profile?id=${userId}` : "/"}
               className="inline-flex items-center gap-2 px-6 py-3 bg-accent text-white font-medium rounded-xl hover:opacity-90 transition-opacity"
             >
               <svg 
@@ -260,7 +260,7 @@ function OfertaPageContent() {
               >
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
               </svg>
-              Назад к оплате
+              Назад
             </Link>
           </div>
         </div>
