@@ -61,44 +61,76 @@ function PaymentContent() {
     setError(null);
     
     try {
+      console.log("[payment] ========== SUBSCRIPTION REQUEST ==========");
+      console.log("[payment] Timestamp:", new Date().toISOString());
+      console.log("[payment] UserId:", userId, `(type: ${typeof userId})`);
+      console.log("[payment] Request URL: /api/pay/subscribe");
+      console.log("[payment] Request method: POST");
+      
+      const requestBody = { userId };
+      console.log("[payment] Request body:", JSON.stringify(requestBody, null, 2));
+      
       // Use clean subscription endpoint
       const res = await fetch("/api/pay/subscribe", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ userId }),
+        body: JSON.stringify(requestBody),
       });
-      const data = await res.json();
       
-      console.log("[payment] Response status:", res.status);
-      console.log("[payment] Response data:", JSON.stringify(data, null, 2));
+      console.log("[payment] ========== RESPONSE RECEIVED ==========");
+      console.log("[payment] Response status:", res.status, res.statusText);
+      console.log("[payment] Response headers:", Object.fromEntries(res.headers.entries()));
+      console.log("[payment] Response ok:", res.ok);
+      
+      const data = await res.json();
+      console.log("[payment] Response data (raw):", data);
+      console.log("[payment] Response data (stringified):", JSON.stringify(data, null, 2));
       
       // Проверяем статус ответа
       if (!res.ok) {
         const errorMsg = data?.error || `HTTP ${res.status}: Ошибка сервера`;
-        console.error("[payment] HTTP error:", res.status, errorMsg);
+        console.error("[payment] ========== HTTP ERROR ==========");
+        console.error("[payment] HTTP status:", res.status);
+        console.error("[payment] HTTP statusText:", res.statusText);
+        console.error("[payment] Error message:", errorMsg);
+        console.error("[payment] Full error response:", data);
+        console.error("[payment] ==================================");
         throw new Error(errorMsg);
       }
       
       // Проверяем, что API вернул успешный ответ
       if (!data || !data.ok) {
         const errorMsg = data?.error || "Ошибка создания платежа";
-        console.error("[payment] API error:", errorMsg, data);
+        console.error("[payment] ========== API ERROR ==========");
+        console.error("[payment] API returned ok: false");
+        console.error("[payment] Error message:", errorMsg);
+        console.error("[payment] Full response:", data);
+        console.error("[payment] Error details:", data?.details);
+        console.error("[payment] ===============================");
         throw new Error(errorMsg);
       }
       
-      // Проверяем наличие данных для POST формы
-      if (!data.actionUrl || !data.formData) {
-        console.error("[payment] Missing required data:", {
-          hasActionUrl: !!data.actionUrl,
-          hasFormData: !!data.formData,
-          fullResponse: data,
-        });
+      // Проверяем наличие ссылки на оплату
+      if (!data.actionUrl) {
+        console.error("[payment] ========== MISSING DATA ERROR ==========");
+        console.error("[payment] Missing actionUrl in response");
+        console.error("[payment] Full response:", data);
+        console.error("[payment] Response keys:", Object.keys(data || {}));
+        console.error("[payment] =======================================");
         throw new Error("Данные для оплаты не получены от сервера.");
       }
       
+      console.log("[payment] ========== SUCCESS ==========");
       console.log("[payment] ✅ Payment data получены");
       console.log("[payment] Action URL:", data.actionUrl);
+      console.log("[payment] Action URL type:", typeof data.actionUrl);
+      console.log("[payment] Action URL length:", data.actionUrl?.length);
       console.log("[payment] Form data:", data.formData);
+      console.log("[payment] Form data keys:", Object.keys(data.formData || {}));
+      console.log("[payment] InvId:", data.InvId);
+      console.log("[payment] Amount:", data.amount);
+      console.log("[payment] Method:", data.method);
+      console.log("[payment] =============================");
       
       // Сохраняем данные платежа - НЕ отправляем форму автоматически!
       setPaymentData({
@@ -108,7 +140,16 @@ function PaymentContent() {
       setLoading(false);
       setError(null);
     } catch (e: any) {
-      console.error("[payment] Error:", e);
+      console.error("[payment] ========== EXCEPTION CAUGHT ==========");
+      console.error("[payment] Error timestamp:", new Date().toISOString());
+      console.error("[payment] Error name:", e?.name);
+      console.error("[payment] Error message:", e?.message);
+      console.error("[payment] Error stack:", e?.stack);
+      console.error("[payment] Full error object:", e);
+      console.error("[payment] Error stringified:", JSON.stringify(e, Object.getOwnPropertyNames(e), 2));
+      console.error("[payment] UserId at error time:", userId);
+      console.error("[payment] ======================================");
+      
       const errorMessage = e.message || "Ошибка создания платежа";
       setError(errorMessage);
       setLoading(false);
@@ -129,33 +170,32 @@ function PaymentContent() {
   const isActive = subscriptionStatus === "active";
   const canStartTrial = !subscriptionStatus || subscriptionStatus === "none" || subscriptionStatus === "expired";
 
-  // Функция для отправки формы оплаты
+  // Функция для редиректа на страницу оплаты
   const submitPaymentForm = () => {
+    console.log("[payment] ========== REDIRECT TO PAYMENT ==========");
+    console.log("[payment] Timestamp:", new Date().toISOString());
+    console.log("[payment] UserId:", userId);
+    
     if (!paymentData) {
-      console.error("[payment] No payment data to submit");
+      console.error("[payment] ❌ No payment data to submit");
+      console.error("[payment] Payment data:", paymentData);
       return;
     }
     
+    console.log("[payment] Payment data exists:", !!paymentData);
+    console.log("[payment] Action URL:", paymentData.actionUrl);
+    console.log("[payment] Action URL type:", typeof paymentData.actionUrl);
+    console.log("[payment] Action URL length:", paymentData.actionUrl?.length);
+    console.log("[payment] Form data:", paymentData.formData);
+    console.log("[payment] Form data keys:", Object.keys(paymentData.formData || {}));
+    
     setLoading("redirecting");
     
-    // Создаем POST форму
-    const form = document.createElement("form");
-    form.method = "POST";
-    form.action = paymentData.actionUrl;
-    form.style.display = "none";
+    console.log("[payment] Redirecting to:", paymentData.actionUrl);
+    console.log("[payment] =======================================");
     
-    // Добавляем все поля формы
-    Object.entries(paymentData.formData).forEach(([key, value]) => {
-      const input = document.createElement("input");
-      input.type = "hidden";
-      input.name = key;
-      input.value = String(value);
-      form.appendChild(input);
-    });
-    
-    // Добавляем форму в DOM и отправляем
-    document.body.appendChild(form);
-    form.submit();
+    // Просто редиректим на ссылку подписки Robokassa
+    window.location.href = paymentData.actionUrl;
   };
 
   return (
