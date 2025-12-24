@@ -973,6 +973,7 @@ bot.on("text", async (ctx) => {
 
       const todayMeals = await getTodayMeals(telegram_id);
       const dailyNorm = await getUserDailyNorm(telegram_id);
+      const waterInfo = await getWaterProgressByTelegram(telegram_id);
 
       // Получаем userId для создания ссылок на Mini App
       const { data: user } = await supabase
@@ -1397,7 +1398,7 @@ bot.on("callback_query", async (ctx) => {
       return ctx.answerCbQuery("Ошибка: не удалось определить ваш ID");
     }
 
-    const data = ctx.callbackQuery.data;
+    const data = (ctx.callbackQuery as any).data;
     if (!data) {
       return ctx.answerCbQuery();
     }
@@ -1611,6 +1612,7 @@ bot.command("отменить", async (ctx) => {
     // Получаем обновлённую статистику
     const todayMeals = await getTodayMeals(telegram_id);
     const dailyNorm = await getUserDailyNorm(telegram_id);
+    const waterInfo = await getWaterProgressByTelegram(telegram_id);
 
     ctx.reply(
       `✅ Удалено: ${lastMeal.meal_text} (${lastMeal.calories} ккал)\n\n${formatProgressMessage(todayMeals, dailyNorm, waterInfo || undefined)}`
@@ -1654,6 +1656,7 @@ bot.command("отчет", async (ctx) => {
 
     const todayMeals = await getTodayMeals(telegram_id);
     const dailyNorm = await getUserDailyNorm(telegram_id);
+    const waterInfo = await getWaterProgressByTelegram(telegram_id);
 
     let report = "📋 Отчёт за сегодня:\n\n";
     meals.forEach((meal, index) => {
