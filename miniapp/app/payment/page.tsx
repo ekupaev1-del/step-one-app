@@ -14,6 +14,8 @@ function PaymentContent() {
   const [trialEndAt, setTrialEndAt] = useState<string | null>(null);
   const [agreedToTerms, setAgreedToTerms] = useState(false);
   const [paymentData, setPaymentData] = useState<{ actionUrl: string; formData: Record<string, string> } | null>(null);
+  const [debugInfo, setDebugInfo] = useState<any>(null);
+  const [showDebug, setShowDebug] = useState(false);
 
   useEffect(() => {
     const id = searchParams.get("id");
@@ -31,8 +33,10 @@ function PaymentContent() {
     
     // Сбрасываем состояние при загрузке
     setPaymentData(null);
+    setDebugInfo(null);
     setLoading(false);
     setAgreedToTerms(false);
+    setShowDebug(false);
   }, [searchParams]);
 
   const loadSubscriptionStatus = async (id: number) => {
@@ -131,10 +135,26 @@ function PaymentContent() {
 
   // Функция для отправки формы оплаты
   const submitPaymentForm = () => {
+    console.log("[payment] ========== SUBMIT FORM ==========");
+    console.log("[payment] Timestamp:", new Date().toISOString());
+    
     if (!paymentData) {
-      console.error("[payment] No payment data to submit");
+      console.error("[payment] ❌ No payment data to submit");
       return;
     }
+    
+    console.log("[payment] Action URL:", paymentData.actionUrl);
+    console.log("[payment] Form data:", paymentData.formData);
+    
+    // Логируем все поля формы перед отправкой
+    console.log("[payment] 📋 Form fields to submit:");
+    Object.entries(paymentData.formData).forEach(([key, value]) => {
+      if (key === "SignatureValue") {
+        console.log(`[payment]   ${key}: ${String(value).substring(0, 8)}... (${String(value).length} chars)`);
+      } else {
+        console.log(`[payment]   ${key}: ${value}`);
+      }
+    });
     
     setLoading("redirecting");
     
@@ -143,19 +163,63 @@ function PaymentContent() {
     form.method = "POST";
     form.action = paymentData.actionUrl;
     form.style.display = "none";
+    form.target = "_self"; // Открываем в том же окне
+    
+    console.log("[payment] Form element created");
+    console.log("[payment] Form method:", form.method);
+    console.log("[payment] Form action:", form.action);
+    console.log("[payment] Form target:", form.target);
     
     // Добавляем все поля формы
+    const formFields: Array<{ name: string; value: string }> = [];
     Object.entries(paymentData.formData).forEach(([key, value]) => {
       const input = document.createElement("input");
       input.type = "hidden";
       input.name = key;
       input.value = String(value);
       form.appendChild(input);
+      formFields.push({ name: key, value: String(value) });
     });
     
-    // Добавляем форму в DOM и отправляем
+    console.log("[payment] ✅ Form fields added:", formFields.length, "fields");
+    
+    // Добавляем форму в DOM
     document.body.appendChild(form);
-    form.submit();
+    console.log("[payment] ✅ Form appended to DOM");
+    
+    // Проверяем форму перед отправкой
+    console.log("[payment] Form check before submit:");
+    console.log("[payment]   Form in DOM:", document.body.contains(form));
+    console.log("[payment]   Form action:", form.action);
+    console.log("[payment]   Form method:", form.method);
+    console.log("[payment]   Form inputs count:", form.querySelectorAll("input").length);
+    
+    // Логируем финальные значения всех input'ов
+    const inputs = form.querySelectorAll("input");
+    console.log("[payment] Final input values:");
+    inputs.forEach((input) => {
+      const inputElement = input as HTMLInputElement;
+      if (inputElement.name === "SignatureValue") {
+        console.log(`[payment]   ${inputElement.name}: ${inputElement.value.substring(0, 8)}...`);
+      } else {
+        console.log(`[payment]   ${inputElement.name}: ${inputElement.value}`);
+      }
+    });
+    
+    console.log("[payment] 🚀 Submitting form to Robokassa...");
+    console.log("[payment] ======================================");
+    
+    // Отправляем форму
+    try {
+      form.submit();
+      console.log("[payment] ✅ Form.submit() called successfully");
+    } catch (submitError: any) {
+      console.error("[payment] ❌ Form submit error:", submitError);
+      console.error("[payment] Error message:", submitError.message);
+      console.error("[payment] Error stack:", submitError.stack);
+      setError(`Ошибка отправки формы: ${submitError.message}`);
+      setLoading(false);
+    }
   };
 
   return (
@@ -297,6 +361,67 @@ function PaymentContent() {
           <p className="text-xs text-textSecondary text-center">
             Оплата проходит через Robokassa. Вы можете отменить автосписание в любой момент до даты списания.
           </p>
+
+          {/* Debug Panel (только в dev режиме) */}
+          {(process.env.NODE_ENV === "development" || showDebug) && debugInfo && (
+            <div className="mt-4 p-4 bg-gray-100 rounded-xl border border-gray-300">
+              <div className="flex items-center justify-between mb-2">
+                <h3 className="text-sm font-semibold text-gray-800">🐛 Debug Info</h3>
+                <button
+                  onClick={() => setShowDebug(!showDebug)}
+                  className="text-xs text-gray-600 hover:text-gray-800"
+                >
+                  {showDebug ? "Скрыть" : "Показать"}
+                </button>
+              </div>
+              {showDebug && (
+                <div className="space-y-2 text-xs font-mono">
+                  <div>
+                    <strong>Request:</strong>
+                    <pre className="mt-1 p-2 bg-white rounded text-xs overflow-auto max-h-32">
+                      {JSON.stringify(debugInfo.request, null, 2)}
+                    </pre>
+                  </div>
+                  <div>
+                    <strong>Response:</strong>
+                    <pre className="mt-1 p-2 bg-white rounded text-xs overflow-auto max-h-48">
+                      {JSON.stringify(debugInfo.response, null, 2)}
+                    </pre>
+                  </div>
+                  {paymentData && (
+                    <div>
+                      <strong>Form Data:</strong>
+                      <pre className="mt-1 p-2 bg-white rounded text-xs overflow-auto max-h-32">
+                        {JSON.stringify(
+                          {
+                            actionUrl: paymentData.actionUrl,
+                            formData: Object.fromEntries(
+                              Object.entries(paymentData.formData).map(([k, v]) => [
+                                k,
+                                k === "SignatureValue" ? `${String(v).substring(0, 8)}...` : v,
+                              ])
+                            ),
+                          },
+                          null,
+                          2
+                        )}
+                      </pre>
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* Кнопка для показа debug в production (скрытая) */}
+          {process.env.NODE_ENV === "production" && debugInfo && (
+            <button
+              onClick={() => setShowDebug(!showDebug)}
+              className="mt-2 text-xs text-gray-400 hover:text-gray-600"
+            >
+              {showDebug ? "Скрыть debug" : "Показать debug"}
+            </button>
+          )}
         </div>
       </div>
     </AppLayout>

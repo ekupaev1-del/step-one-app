@@ -131,7 +131,9 @@ export async function POST(req: Request) {
 
     console.log("[pay/subscribe] ========== SIGNATURE DEBUG ==========");
     console.log("[pay/subscribe] Signature base (WITHOUT password):", `${merchantLogin}:${amountStr}:${InvId}:[PASSWORD_HIDDEN]`);
+    console.log("[pay/subscribe] Signature base (FULL - for verification):", `${merchantLogin}:${amountStr}:${InvId}:${password1}`);
     console.log("[pay/subscribe] Signature value (md5):", signatureValue);
+    console.log("[pay/subscribe] Signature value length:", signatureValue.length);
     console.log("[pay/subscribe] Signature formula: MerchantLogin:OutSum:InvId:Password1");
     console.log("[pay/subscribe] NOTE: Description and Recurring are NOT in signature");
     console.log("[pay/subscribe] ======================================");
@@ -164,6 +166,24 @@ export async function POST(req: Request) {
     }
     
     console.log("[pay/subscribe] ✅ All required fields present");
+    
+    // Детальный лог всех полей формы
+    console.log("[pay/subscribe] ========== FORM DATA DEBUG ==========");
+    console.log("[pay/subscribe] Action URL:", robokassaActionUrl);
+    console.log("[pay/subscribe] Form fields:");
+    Object.entries(formData).forEach(([key, value]) => {
+      if (key === "SignatureValue") {
+        console.log(`[pay/subscribe]   ${key}: ${value.substring(0, 8)}... (${value.length} chars)`);
+      } else {
+        console.log(`[pay/subscribe]   ${key}: ${value}`);
+      }
+    });
+    console.log("[pay/subscribe] Form data as URL params:", 
+      Object.entries(formData)
+        .map(([k, v]) => `${k}=${encodeURIComponent(String(v))}`)
+        .join("&")
+    );
+    console.log("[pay/subscribe] ======================================");
     
     // Save payment to DB for tracking
     try {
