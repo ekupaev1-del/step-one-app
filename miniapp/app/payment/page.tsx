@@ -13,6 +13,7 @@ function PaymentContent() {
   const [subscriptionStatus, setSubscriptionStatus] = useState<string | null>(null);
   const [trialEndAt, setTrialEndAt] = useState<string | null>(null);
   const [agreedToTerms, setAgreedToTerms] = useState(false);
+  const [paymentData, setPaymentData] = useState<{ actionUrl: string; formData: Record<string, string> } | null>(null);
 
   useEffect(() => {
     const id = searchParams.get("id");
@@ -29,6 +30,7 @@ function PaymentContent() {
     }
     
     // Сбрасываем состояние при загрузке
+    setPaymentData(null);
     setLoading(false);
     setAgreedToTerms(false);
   }, [searchParams]);
@@ -98,25 +100,11 @@ function PaymentContent() {
       console.log("[payment] Action URL:", data.actionUrl);
       console.log("[payment] Form data:", data.formData);
       
-      // Создаем и отправляем POST форму
-      const form = document.createElement("form");
-      form.method = "POST";
-      form.action = data.actionUrl;
-      form.style.display = "none";
-      
-      // Добавляем все поля формы
-      Object.entries(data.formData).forEach(([key, value]) => {
-        const input = document.createElement("input");
-        input.type = "hidden";
-        input.name = key;
-        input.value = String(value);
-        form.appendChild(input);
+      // Сохраняем данные платежа - НЕ отправляем форму автоматически!
+      setPaymentData({
+        actionUrl: data.actionUrl,
+        formData: data.formData,
       });
-      
-      // Добавляем форму в DOM и отправляем
-      document.body.appendChild(form);
-      form.submit();
-      
       setLoading(false);
       setError(null);
     } catch (e: any) {
@@ -140,6 +128,35 @@ function PaymentContent() {
   const isTrialActive = subscriptionStatus === "trial" && trialEndAt;
   const isActive = subscriptionStatus === "active";
   const canStartTrial = !subscriptionStatus || subscriptionStatus === "none" || subscriptionStatus === "expired";
+
+  // Функция для отправки формы оплаты
+  const submitPaymentForm = () => {
+    if (!paymentData) {
+      console.error("[payment] No payment data to submit");
+      return;
+    }
+    
+    setLoading("redirecting");
+    
+    // Создаем POST форму
+    const form = document.createElement("form");
+    form.method = "POST";
+    form.action = paymentData.actionUrl;
+    form.style.display = "none";
+    
+    // Добавляем все поля формы
+    Object.entries(paymentData.formData).forEach(([key, value]) => {
+      const input = document.createElement("input");
+      input.type = "hidden";
+      input.name = key;
+      input.value = String(value);
+      form.appendChild(input);
+    });
+    
+    // Добавляем форму в DOM и отправляем
+    document.body.appendChild(form);
+    form.submit();
+  };
 
   return (
     <AppLayout>
@@ -213,20 +230,56 @@ function PaymentContent() {
               </label>
             </div>
 
-            <button
-              onClick={startTrial}
-              disabled={!userId || !!loading || !agreedToTerms}
-              className="w-full py-3 rounded-xl bg-accent text-white font-semibold hover:opacity-90 disabled:opacity-50 disabled:cursor-not-allowed transition-opacity"
-            >
-              {loading === "creating" 
-                ? "Переход на страницу оплаты..." 
-                : "Оформить подписку"}
-            </button>
-            
-            {loading === "creating" && (
-              <p className="text-sm text-textSecondary text-center mt-2">
-                Переход на страницу оплаты Robokassa...
-              </p>
+            {!paymentData ? (
+              <>
+                <button
+                  onClick={startTrial}
+                  disabled={!userId || !!loading || !agreedToTerms}
+                  className="w-full py-3 rounded-xl bg-accent text-white font-semibold hover:opacity-90 disabled:opacity-50 disabled:cursor-not-allowed transition-opacity"
+                >
+                  {loading === "creating" 
+                    ? "Создаём оплату..." 
+                    : "Оформить подписку"}
+                </button>
+                
+                {loading === "creating" && (
+                  <p className="text-sm text-textSecondary text-center mt-2">
+                    Подготовка платежа... Пожалуйста, подождите
+                  </p>
+                )}
+              </>
+            ) : (
+              <>
+                <div className="bg-blue-50 border border-blue-200 rounded-xl p-4 mb-2">
+                  <p className="text-sm font-semibold text-blue-800 mb-1">
+                    Готово к оплате!
+                  </p>
+                  <p className="text-xs text-blue-700">
+                    Нажмите кнопку ниже для перехода на страницу оплаты
+                  </p>
+                </div>
+
+                <button
+                  onClick={submitPaymentForm}
+                  disabled={!!loading}
+                  type="button"
+                  className="w-full py-3 rounded-xl bg-accent text-white font-semibold hover:opacity-90 disabled:opacity-50 disabled:cursor-not-allowed transition-opacity"
+                >
+                  {loading === "redirecting" 
+                    ? "Переход на страницу оплаты..." 
+                    : "Перейти к оплате"}
+                </button>
+
+                <button
+                  onClick={() => {
+                    setPaymentData(null);
+                    setLoading(false);
+                  }}
+                  className="w-full py-2 rounded-xl border border-gray-300 text-textPrimary font-medium hover:bg-gray-50 transition-colors text-sm"
+                >
+                  Отмена
+                </button>
+              </>
             )}
           </div>
             </>
