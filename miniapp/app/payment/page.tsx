@@ -103,47 +103,31 @@ function PaymentContent() {
         throw new Error(errorMsg);
       }
       
-      // Проверяем наличие данных для POST формы
+      // Проверяем наличие subscription URL
       console.log("[payment] Checking response data:", {
         hasOk: !!data.ok,
-        hasActionUrl: !!data.actionUrl,
-        hasFormData: !!data.formData,
-        actionUrl: data.actionUrl,
-        formDataType: typeof data.formData,
-        formDataKeys: data.formData ? Object.keys(data.formData) : null,
+        hasSubscriptionUrl: !!data.subscriptionUrl,
+        subscriptionUrl: data.subscriptionUrl,
         fullResponseKeys: Object.keys(data),
       });
       
-      if (!data.actionUrl || !data.formData) {
-        console.error("[payment] Missing required data:", {
-          hasActionUrl: !!data.actionUrl,
-          hasFormData: !!data.formData,
-          actionUrl: data.actionUrl,
-          formDataKeys: data.formData ? Object.keys(data.formData) : null,
+      if (!data.subscriptionUrl) {
+        console.error("[payment] Missing subscription URL:", {
+          hasSubscriptionUrl: !!data.subscriptionUrl,
           fullResponse: data,
         });
-        throw new Error("Данные для оплаты не получены от сервера. Проверьте логи консоли.");
+        throw new Error("URL подписки не получен от сервера. Проверьте логи консоли.");
       }
       
-      console.log("[payment] ✅ Payment data получены");
-      console.log("[payment] Action URL:", data.actionUrl);
-      console.log("[payment] Form data:", data.formData);
+      console.log("[payment] ✅ Subscription URL получен");
+      console.log("[payment] Subscription URL:", data.subscriptionUrl);
       
-      // Сохраняем данные платежа - НЕ отправляем форму автоматически!
-      // Пользователь останется на странице и сам решит, когда переходить к оплате
-      console.log("[payment] ✅ Payment data saved, NOT submitting form automatically");
-      console.log("[payment] User must click 'Перейти к оплате' button to proceed");
+      // Просто открываем ссылку на подписку Robokassa
+      // В Telegram Mini App это откроется в WebView
+      window.location.href = data.subscriptionUrl;
       
-      setPaymentData({
-        actionUrl: data.actionUrl,
-        formData: data.formData,
-        debugSignature: data.debugSignature, // Добавляем debugSignature если есть
-      });
       setLoading(false);
       setError(null);
-      
-      // ВАЖНО: НЕ вызываем submitPaymentForm() здесь!
-      // Форма должна отправляться ТОЛЬКО при нажатии кнопки пользователем
     } catch (e: any) {
       console.error("[payment] Error:", e);
       const errorMessage = e.message || "Ошибка создания платежа";
@@ -545,43 +529,6 @@ ${allFormFields.map(f => `  ${f.name} = ${f.value}`).join('\n')}${signatureInfo}
                     Подготовка платежа... Пожалуйста, подождите
                   </p>
                 )}
-              </>
-            ) : (
-              <>
-                <div className="bg-blue-50 border border-blue-200 rounded-xl p-4 mb-2">
-                  <p className="text-sm font-semibold text-blue-800 mb-1">
-                    Готово к оплате!
-                  </p>
-                  <p className="text-xs text-blue-700">
-                    Нажмите кнопку ниже для перехода на страницу оплаты
-                  </p>
-                </div>
-
-                <button
-                  onClick={(e) => {
-                    e.preventDefault();
-                    e.stopPropagation();
-                    console.log("[payment] BUTTON CLICKED - user explicitly clicked 'Перейти к оплате'");
-                    submitPaymentForm(e);
-                  }}
-                  disabled={!!loading}
-                  type="button"
-                  className="w-full py-3 rounded-xl bg-accent text-white font-semibold hover:opacity-90 disabled:opacity-50 disabled:cursor-not-allowed transition-opacity"
-                >
-                  {loading === "redirecting" 
-                    ? "Переход на страницу оплаты..." 
-                    : "Перейти к оплате"}
-                </button>
-
-                <button
-                  onClick={() => {
-                    setPaymentData(null);
-                    setLoading(false);
-                  }}
-                  className="w-full py-2 rounded-xl border border-gray-300 text-textPrimary font-medium hover:bg-gray-50 transition-colors text-sm"
-                >
-                  Отмена
-                </button>
               </>
             )}
           </div>
