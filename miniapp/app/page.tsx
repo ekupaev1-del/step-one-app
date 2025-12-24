@@ -7,7 +7,6 @@ export default async function Page({
 }: {
   searchParams?: { id?: string | string[] };
 }) {
-  // Если это редирект от Robokassa после оплаты - обрабатываем по-другому
   const id = searchParams?.id;
   const idValue = Array.isArray(id) ? id[0] : id;
   

@@ -33,7 +33,6 @@ export async function GET() {
     return NextResponse.json({
       ok: true,
       database: "connected",
-      schema: "valid",
       environment: envCheck,
     });
   } catch (error: any) {
