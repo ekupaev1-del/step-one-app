@@ -200,11 +200,11 @@ export async function POST(req: Request) {
       console.warn("[pay/subscribe] Warning: DB error (ignored):", paymentErr.message);
     }
 
-    // Return subscription link
+    // Return payment form data
     const response = {
       ok: true, 
       actionUrl: robokassaActionUrl,
-      formData: formData, // Empty, not needed for direct link
+      formData: formData,
       InvId: InvId,
       amount: SUBSCRIPTION_AMOUNT,
       method: "GET",
