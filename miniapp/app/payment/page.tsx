@@ -90,6 +90,22 @@ function PaymentContent() {
       console.log("[payment] Response data (raw):", data);
       console.log("[payment] Response data (stringified):", JSON.stringify(data, null, 2));
       
+      // Сохраняем debug info
+      setDebugInfo({
+        request: {
+          url: "/api/pay/subscribe",
+          method: "POST",
+          body: requestBody,
+          timestamp: new Date().toISOString(),
+        },
+        response: {
+          status: res.status,
+          statusText: res.statusText,
+          data: data,
+          timestamp: new Date().toISOString(),
+        },
+      });
+      
       // Проверяем статус ответа
       if (!res.ok) {
         const errorMsg = data?.error || `HTTP ${res.status}: Ошибка сервера`;
@@ -157,6 +173,15 @@ function PaymentContent() {
       const errorMessage = e.message || "Ошибка создания платежа";
       setError(errorMessage);
       setLoading(false);
+      
+      // Сохраняем debug info даже при ошибке
+      setDebugInfo((prev: any) => ({
+        ...prev,
+        error: {
+          message: errorMessage,
+          timestamp: new Date().toISOString(),
+        },
+      }));
     }
   };
 
@@ -409,14 +434,14 @@ function PaymentContent() {
             Оплата проходит через Robokassa. Вы можете отменить автосписание в любой момент до даты списания.
           </p>
 
-          {/* Debug Panel (только в dev режиме) */}
-          {(process.env.NODE_ENV === "development" || showDebug) && debugInfo && (
+          {/* Debug Panel - всегда показываем кнопку если есть debugInfo */}
+          {debugInfo && (
             <div className="mt-4 p-4 bg-gray-100 rounded-xl border border-gray-300">
               <div className="flex items-center justify-between mb-2">
                 <h3 className="text-sm font-semibold text-gray-800">🐛 Debug Info</h3>
                 <button
                   onClick={() => setShowDebug(!showDebug)}
-                  className="text-xs text-gray-600 hover:text-gray-800"
+                  className="text-xs text-blue-600 hover:text-blue-800 underline"
                 >
                   {showDebug ? "Скрыть" : "Показать"}
                 </button>
@@ -460,13 +485,16 @@ function PaymentContent() {
             </div>
           )}
 
-          {/* Кнопка для показа debug в production (скрытая) */}
-          {process.env.NODE_ENV === "production" && debugInfo && (
+          {/* Кнопка для включения debug заранее (если еще нет debugInfo) */}
+          {!debugInfo && (
             <button
-              onClick={() => setShowDebug(!showDebug)}
-              className="mt-2 text-xs text-gray-400 hover:text-gray-600"
+              onClick={() => {
+                console.log("[payment] Debug panel enabled manually");
+                setShowDebug(true);
+              }}
+              className="mt-2 text-xs text-gray-400 hover:text-gray-600 underline"
             >
-              {showDebug ? "Скрыть debug" : "Показать debug"}
+              🔍 Включить debug (показывать логи в консоли)
             </button>
           )}
         </div>
