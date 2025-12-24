@@ -13,7 +13,7 @@ function PaymentContent() {
   const [subscriptionStatus, setSubscriptionStatus] = useState<string | null>(null);
   const [trialEndAt, setTrialEndAt] = useState<string | null>(null);
   const [agreedToTerms, setAgreedToTerms] = useState(false);
-  const [paymentData, setPaymentData] = useState<{ actionUrl: string; formData: Record<string, string> } | null>(null);
+  // Убрали paymentData - теперь просто редиректим на ссылку
   const [debugInfo, setDebugInfo] = useState<any>(null);
   const [showDebug, setShowDebug] = useState(false);
 
@@ -32,7 +32,6 @@ function PaymentContent() {
     }
     
     // Сбрасываем состояние при загрузке
-    setPaymentData(null);
     setDebugInfo(null);
     setLoading(false);
     setAgreedToTerms(false);
@@ -132,35 +131,25 @@ function PaymentContent() {
         throw new Error(errorMsg);
       }
       
-      // Проверяем наличие ссылки на оплату
-      if (!data.actionUrl) {
+      // Проверяем наличие ссылки на подписку
+      if (!data.subscriptionUrl) {
         console.error("[payment] ========== MISSING DATA ERROR ==========");
-        console.error("[payment] Missing actionUrl in response");
+        console.error("[payment] Missing subscriptionUrl in response");
         console.error("[payment] Full response:", data);
         console.error("[payment] Response keys:", Object.keys(data || {}));
         console.error("[payment] =======================================");
-        throw new Error("Данные для оплаты не получены от сервера.");
+        throw new Error("Ссылка на подписку не получена от сервера.");
       }
       
       console.log("[payment] ========== SUCCESS ==========");
-      console.log("[payment] ✅ Payment data получены");
-      console.log("[payment] Action URL:", data.actionUrl);
-      console.log("[payment] Action URL type:", typeof data.actionUrl);
-      console.log("[payment] Action URL length:", data.actionUrl?.length);
-      console.log("[payment] Form data:", data.formData);
-      console.log("[payment] Form data keys:", Object.keys(data.formData || {}));
-      console.log("[payment] InvId:", data.InvId);
-      console.log("[payment] Amount:", data.amount);
+      console.log("[payment] ✅ Subscription URL получена");
+      console.log("[payment] Subscription URL:", data.subscriptionUrl);
       console.log("[payment] Method:", data.method);
       console.log("[payment] =============================");
       
-      // Сохраняем данные платежа - НЕ отправляем форму автоматически!
-      setPaymentData({
-        actionUrl: data.actionUrl,
-        formData: data.formData,
-      });
-      setLoading(false);
-      setError(null);
+      // Просто редиректим на ссылку подписки
+      setLoading("redirecting");
+      window.location.href = data.subscriptionUrl;
     } catch (e: any) {
       console.error("[payment] ========== EXCEPTION CAUGHT ==========");
       console.error("[payment] Error timestamp:", new Date().toISOString());
@@ -201,100 +190,6 @@ function PaymentContent() {
   const isActive = subscriptionStatus === "active";
   const canStartTrial = !subscriptionStatus || subscriptionStatus === "none" || subscriptionStatus === "expired";
 
-  // Функция для отправки формы оплаты
-  const submitPaymentForm = () => {
-    console.log("[payment] ========== SUBMIT FORM ==========");
-    console.log("[payment] Timestamp:", new Date().toISOString());
-    console.log("[payment] UserId:", userId);
-    
-    if (!paymentData) {
-      console.error("[payment] ❌ No payment data to submit");
-      console.error("[payment] Payment data:", paymentData);
-      return;
-    }
-    
-    console.log("[payment] Payment data exists:", !!paymentData);
-    console.log("[payment] Action URL:", paymentData.actionUrl);
-    console.log("[payment] Action URL type:", typeof paymentData.actionUrl);
-    console.log("[payment] Action URL length:", paymentData.actionUrl?.length);
-    console.log("[payment] Form data:", paymentData.formData);
-    console.log("[payment] Form data keys:", Object.keys(paymentData.formData || {}));
-    
-    // Логируем все поля формы перед отправкой
-    console.log("[payment] 📋 Form fields to submit:");
-    Object.entries(paymentData.formData).forEach(([key, value]) => {
-      if (key === "SignatureValue") {
-        console.log(`[payment]   ${key}: ${String(value).substring(0, 8)}... (${String(value).length} chars)`);
-      } else {
-        console.log(`[payment]   ${key}: ${value}`);
-      }
-    });
-    
-    setLoading("redirecting");
-    
-    // Создаем POST форму
-    const form = document.createElement("form");
-    form.method = "POST";
-    form.action = paymentData.actionUrl;
-    form.style.display = "none";
-    form.target = "_self"; // Открываем в том же окне
-    
-    console.log("[payment] Form element created");
-    console.log("[payment] Form method:", form.method);
-    console.log("[payment] Form action:", form.action);
-    console.log("[payment] Form target:", form.target);
-    
-    // Добавляем все поля формы
-    const formFields: Array<{ name: string; value: string }> = [];
-    Object.entries(paymentData.formData).forEach(([key, value]) => {
-      const input = document.createElement("input");
-      input.type = "hidden";
-      input.name = key;
-      input.value = String(value);
-      form.appendChild(input);
-      formFields.push({ name: key, value: String(value) });
-    });
-    
-    console.log("[payment] ✅ Form fields added:", formFields.length, "fields");
-    
-    // Добавляем форму в DOM
-    document.body.appendChild(form);
-    console.log("[payment] ✅ Form appended to DOM");
-    
-    // Проверяем форму перед отправкой
-    console.log("[payment] Form check before submit:");
-    console.log("[payment]   Form in DOM:", document.body.contains(form));
-    console.log("[payment]   Form action:", form.action);
-    console.log("[payment]   Form method:", form.method);
-    console.log("[payment]   Form inputs count:", form.querySelectorAll("input").length);
-    
-    // Логируем финальные значения всех input'ов
-    const inputs = form.querySelectorAll("input");
-    console.log("[payment] Final input values:");
-    inputs.forEach((input) => {
-      const inputElement = input as HTMLInputElement;
-      if (inputElement.name === "SignatureValue") {
-        console.log(`[payment]   ${inputElement.name}: ${inputElement.value.substring(0, 8)}...`);
-      } else {
-        console.log(`[payment]   ${inputElement.name}: ${inputElement.value}`);
-      }
-    });
-    
-    console.log("[payment] 🚀 Submitting form to Robokassa...");
-    console.log("[payment] ======================================");
-    
-    // Отправляем форму
-    try {
-      form.submit();
-      console.log("[payment] ✅ Form.submit() called successfully");
-    } catch (submitError: any) {
-      console.error("[payment] ❌ Form submit error:", submitError);
-      console.error("[payment] Error message:", submitError.message);
-      console.error("[payment] Error stack:", submitError.stack);
-      setError(`Ошибка отправки формы: ${submitError.message}`);
-      setLoading(false);
-    }
-  };
 
   return (
     <AppLayout>
@@ -368,56 +263,24 @@ function PaymentContent() {
               </label>
             </div>
 
-            {!paymentData ? (
-              <>
-                <button
-                  onClick={startTrial}
-                  disabled={!userId || !!loading || !agreedToTerms}
-                  className="w-full py-3 rounded-xl bg-accent text-white font-semibold hover:opacity-90 disabled:opacity-50 disabled:cursor-not-allowed transition-opacity"
-                >
-                  {loading === "creating" 
-                    ? "Создаём оплату..." 
-                    : "Оформить подписку"}
-                </button>
-                
-                {loading === "creating" && (
-                  <p className="text-sm text-textSecondary text-center mt-2">
-                    Подготовка платежа... Пожалуйста, подождите
-                  </p>
-                )}
-              </>
-            ) : (
-              <>
-                <div className="bg-blue-50 border border-blue-200 rounded-xl p-4 mb-2">
-                  <p className="text-sm font-semibold text-blue-800 mb-1">
-                    Готово к оплате!
-                  </p>
-                  <p className="text-xs text-blue-700">
-                    Нажмите кнопку ниже для перехода на страницу оплаты
-                  </p>
-                </div>
-
-                <button
-                  onClick={submitPaymentForm}
-                  disabled={!!loading}
-                  type="button"
-                  className="w-full py-3 rounded-xl bg-accent text-white font-semibold hover:opacity-90 disabled:opacity-50 disabled:cursor-not-allowed transition-opacity"
-                >
-                  {loading === "redirecting" 
-                    ? "Переход на страницу оплаты..." 
-                    : "Перейти к оплате"}
-                </button>
-
-                <button
-                  onClick={() => {
-                    setPaymentData(null);
-                    setLoading(false);
-                  }}
-                  className="w-full py-2 rounded-xl border border-gray-300 text-textPrimary font-medium hover:bg-gray-50 transition-colors text-sm"
-                >
-                  Отмена
-                </button>
-              </>
+            <button
+              onClick={startTrial}
+              disabled={!userId || !!loading || !agreedToTerms}
+              className="w-full py-3 rounded-xl bg-accent text-white font-semibold hover:opacity-90 disabled:opacity-50 disabled:cursor-not-allowed transition-opacity"
+            >
+              {loading === "creating" 
+                ? "Переход на страницу оплаты..." 
+                : loading === "redirecting"
+                ? "Переход на страницу оплаты..."
+                : "Оформить подписку"}
+            </button>
+            
+            {loading && (
+              <p className="text-sm text-textSecondary text-center mt-2">
+                {loading === "creating" 
+                  ? "Подготовка платежа... Пожалуйста, подождите"
+                  : "Переход на страницу оплаты Robokassa..."}
+              </p>
             )}
           </div>
             </>
@@ -447,10 +310,7 @@ function PaymentContent() {
                       const allData = {
                         request: debugInfo.request,
                         response: debugInfo.response,
-                        formData: paymentData ? {
-                          actionUrl: paymentData.actionUrl,
-                          formData: paymentData.formData,
-                        } : null,
+                        subscriptionUrl: debugInfo?.response?.data?.subscriptionUrl || null,
                         error: debugInfo.error || null,
                       };
                       const text = JSON.stringify(allData, null, 2);
@@ -505,23 +365,11 @@ function PaymentContent() {
                       {JSON.stringify(debugInfo.response, null, 2)}
                     </pre>
                   </div>
-                  {paymentData && (
+                  {debugInfo?.response?.data?.subscriptionUrl && (
                     <div>
-                      <strong>Form Data:</strong>
+                      <strong>Subscription URL:</strong>
                       <pre className="mt-1 p-2 bg-white rounded text-xs overflow-auto max-h-32">
-                        {JSON.stringify(
-                          {
-                            actionUrl: paymentData.actionUrl,
-                            formData: Object.fromEntries(
-                              Object.entries(paymentData.formData).map(([k, v]) => [
-                                k,
-                                k === "SignatureValue" ? `${String(v).substring(0, 8)}...` : v,
-                              ])
-                            ),
-                          },
-                          null,
-                          2
-                        )}
+                        {debugInfo.response.data.subscriptionUrl}
                       </pre>
                     </div>
                   )}
