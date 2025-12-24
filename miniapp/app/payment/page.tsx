@@ -148,25 +148,14 @@ function PaymentContent() {
       console.log("[payment] Form data:", data.formData);
       console.log("[payment] =============================");
       
-      // Создаем и отправляем POST форму
-      setLoading("redirecting");
-      
-      const form = document.createElement("form");
-      form.method = "POST";
-      form.action = data.actionUrl;
-      form.style.display = "none";
-      form.target = "_self";
-      
-      Object.entries(data.formData).forEach(([key, value]) => {
-        const input = document.createElement("input");
-        input.type = "hidden";
-        input.name = key;
-        input.value = String(value);
-        form.appendChild(input);
+      // Сохраняем данные для debug и ручной отправки
+      setPaymentData({
+        actionUrl: data.actionUrl,
+        formData: data.formData,
       });
+      setLoading(false);
       
-      document.body.appendChild(form);
-      form.submit();
+      // НЕ отправляем форму автоматически - пользователь нажмет кнопку сам
     } catch (e: any) {
       console.error("[payment] ========== EXCEPTION CAUGHT ==========");
       console.error("[payment] Error timestamp:", new Date().toISOString());
@@ -206,6 +195,35 @@ function PaymentContent() {
   const isTrialActive = subscriptionStatus === "trial" && trialEndAt;
   const isActive = subscriptionStatus === "active";
   const canStartTrial = !subscriptionStatus || subscriptionStatus === "none" || subscriptionStatus === "expired";
+
+  // Функция для отправки формы оплаты
+  const submitPaymentForm = () => {
+    if (!paymentData) {
+      console.error("[payment] ❌ No payment data to submit");
+      return;
+    }
+    
+    console.log("[payment] 🚀 Submitting form to Robokassa...");
+    setLoading("redirecting");
+    
+    // Создаем POST форму
+    const form = document.createElement("form");
+    form.method = "POST";
+    form.action = paymentData.actionUrl;
+    form.style.display = "none";
+    form.target = "_self";
+    
+    Object.entries(paymentData.formData).forEach(([key, value]) => {
+      const input = document.createElement("input");
+      input.type = "hidden";
+      input.name = key;
+      input.value = String(value);
+      form.appendChild(input);
+    });
+    
+    document.body.appendChild(form);
+    form.submit();
+  };
 
 
   return (
@@ -280,24 +298,56 @@ function PaymentContent() {
               </label>
             </div>
 
-            <button
-              onClick={startTrial}
-              disabled={!userId || !!loading || !agreedToTerms}
-              className="w-full py-3 rounded-xl bg-accent text-white font-semibold hover:opacity-90 disabled:opacity-50 disabled:cursor-not-allowed transition-opacity"
-            >
-              {loading === "creating" 
-                ? "Переход на страницу оплаты..." 
-                : loading === "redirecting"
-                ? "Переход на страницу оплаты..."
-                : "Оформить подписку"}
-            </button>
-            
-            {loading && (
-              <p className="text-sm text-textSecondary text-center mt-2">
-                {loading === "creating" 
-                  ? "Подготовка платежа... Пожалуйста, подождите"
-                  : "Переход на страницу оплаты Robokassa..."}
-              </p>
+            {!paymentData ? (
+              <>
+                <button
+                  onClick={startTrial}
+                  disabled={!userId || !!loading || !agreedToTerms}
+                  className="w-full py-3 rounded-xl bg-accent text-white font-semibold hover:opacity-90 disabled:opacity-50 disabled:cursor-not-allowed transition-opacity"
+                >
+                  {loading === "creating" 
+                    ? "Создаём оплату..." 
+                    : "Оформить подписку"}
+                </button>
+                
+                {loading === "creating" && (
+                  <p className="text-sm text-textSecondary text-center mt-2">
+                    Подготовка платежа... Пожалуйста, подождите
+                  </p>
+                )}
+              </>
+            ) : (
+              <>
+                <div className="bg-blue-50 border border-blue-200 rounded-xl p-4 mb-2">
+                  <p className="text-sm font-semibold text-blue-800 mb-1">
+                    ✅ Готово к оплате!
+                  </p>
+                  <p className="text-xs text-blue-700">
+                    Скопируйте debug данные ниже, затем нажмите кнопку для перехода на оплату
+                  </p>
+                </div>
+
+                <button
+                  onClick={submitPaymentForm}
+                  disabled={!!loading}
+                  type="button"
+                  className="w-full py-3 rounded-xl bg-accent text-white font-semibold hover:opacity-90 disabled:opacity-50 disabled:cursor-not-allowed transition-opacity"
+                >
+                  {loading === "redirecting" 
+                    ? "Переход на страницу оплаты..." 
+                    : "Перейти к оплате"}
+                </button>
+
+                <button
+                  onClick={() => {
+                    setPaymentData(null);
+                    setLoading(false);
+                  }}
+                  className="w-full py-2 rounded-xl border border-gray-300 text-textPrimary font-medium hover:bg-gray-50 transition-colors text-sm"
+                >
+                  Отмена
+                </button>
+              </>
             )}
           </div>
             </>
