@@ -160,6 +160,20 @@ export async function POST(req: Request) {
       SignatureValue: signatureValue,
     };
     
+    // Validate all required fields
+    const requiredFields = ["MerchantLogin", "OutSum", "InvId", "Description", "Recurring", "SignatureValue"];
+    const missingFields = requiredFields.filter(field => !formData[field]);
+    if (missingFields.length > 0) {
+      throw new Error(`Missing required fields: ${missingFields.join(", ")}`);
+    }
+    
+    // Validate InvId format
+    if (!/^\d+$/.test(formData.InvId)) {
+      throw new Error(`Invalid InvId format: ${formData.InvId}. Must contain only digits.`);
+    }
+    
+    console.log("[pay/subscribe] ✅ All required fields present");
+    
     // Детальный лог всех полей формы
     console.log("[pay/subscribe] ========== FORM DATA DEBUG ==========");
     console.log("[pay/subscribe] Action URL:", robokassaActionUrl);
@@ -207,7 +221,7 @@ export async function POST(req: Request) {
       formData: formData,
       InvId: InvId,
       amount: SUBSCRIPTION_AMOUNT,
-      method: "GET",
+      method: "POST",
     };
     
     console.log("[pay/subscribe] ========== RESPONSE DATA ==========");
