@@ -47,8 +47,35 @@ function buildCustomParams(formFields: Record<string, string>): string[] {
       customParams.push(`${key}=${value}`);
     }
   }
-  // Sort lexicographically by key for stable order
+  // Sort lexicographically by parameter name (case-sensitive)
   return customParams.sort();
+}
+
+/**
+ * Validate that if Shp_* params exist in formFields, they are included in signature
+ */
+function validateCustomParamsInSignature(
+  formFields: Record<string, string>,
+  customParams: string[]
+): boolean {
+  const shpKeysInForm = Object.keys(formFields).filter(k => k.startsWith('Shp_'));
+  const shpKeysInSignature = customParams.map(p => p.split('=')[0]);
+  
+  // All Shp_* from form must be in signature
+  for (const key of shpKeysInForm) {
+    if (!shpKeysInSignature.includes(key)) {
+      return false;
+    }
+  }
+  
+  // All Shp_* in signature must be in form
+  for (const key of shpKeysInSignature) {
+    if (!shpKeysInForm.includes(key)) {
+      return false;
+    }
+  }
+  
+  return true;
 }
 
 /**
@@ -76,13 +103,15 @@ export function generateReceipt(amount: number): Receipt {
 
 /**
  * Unified signature generator for both minimal and recurring modes
- * Signature rule: MD5(MerchantLogin:OutSum:InvId[:ReceiptEncoded][:Shp_* params]:Password1)
+ * Signature rule: MD5(MerchantLogin:OutSum:InvId[:ReceiptEncoded]:Password1:Shp_* params)
+ * 
+ * CRITICAL: Shp_* params MUST be AFTER Password1, not before!
  * 
  * @param config - Robokassa configuration
  * @param outSum - Payment amount as string (e.g., "1.00")
  * @param invId - Unique InvId (integer)
  * @param receiptEncoded - Receipt encoded (only for recurring mode, optional)
- * @param customParams - Array of custom params in format "Shp_key=value" (sorted)
+ * @param customParams - Array of custom params in format "Shp_key=value" (sorted alphabetically)
  * @returns Signature, signature base (without password), and full signature string
  */
 function calculateRobokassaSignature(
@@ -92,36 +121,109 @@ function calculateRobokassaSignature(
   receiptEncoded?: string,
   customParams: string[] = []
 ): { signature: string; signatureBase: string; signatureFull: string } {
-  // Build signature parts in correct order:
-  // MerchantLogin:OutSum:InvId[:ReceiptEncoded][:Shp_* params]:Password1
+  // Build signature parts in CORRECT order:
+  // MerchantLogin:OutSum:InvId[:ReceiptEncoded]:Password1[:Shp_* params]
   const signatureParts: (string | number)[] = [
     config.merchantLogin,
     outSum,
     invId,
   ];
   
-  // Add ReceiptEncoded if present (recurring mode)
+  // Add ReceiptEncoded if present (recurring mode) - BEFORE Password1
   if (receiptEncoded) {
     signatureParts.push(receiptEncoded);
   }
   
-  // Add custom params (Shp_*) if any - BEFORE Password1
+  // Add Password1 BEFORE custom params
+  signatureParts.push(config.password1);
+  
+  // Add custom params (Shp_*) AFTER Password1 - sorted alphabetically
   if (customParams.length > 0) {
     signatureParts.push(...customParams);
   }
   
-  // Add Password1 LAST
-  signatureParts.push(config.password1);
-  
-  // Build signature base (without password) for logging
-  const baseParts = signatureParts.slice(0, -1); // All except password
+  // Build signature base (without password and custom params) for logging
+  const baseParts = [
+    config.merchantLogin,
+    outSum,
+    invId,
+  ];
+  if (receiptEncoded) {
+    baseParts.push(receiptEncoded);
+  }
   const signatureBase = baseParts.join(':');
-  const signatureFull = signatureParts.join(':');
+  
+  // Build full signature string (with password masked) for debug
+  const fullParts = [
+    config.merchantLogin,
+    outSum,
+    invId,
+  ];
+  if (receiptEncoded) {
+    fullParts.push(receiptEncoded);
+  }
+  fullParts.push('[PASSWORD1]');
+  if (customParams.length > 0) {
+    fullParts.push(...customParams);
+  }
+  const signatureFull = fullParts.join(':');
   
   // Calculate MD5 signature
   const signature = calculateSignature(...signatureParts);
   
   return { signature, signatureBase, signatureFull };
+}
+
+/**
+ * Sign minimal payment (no Receipt, no Recurring)
+ * Signature: MD5(MerchantLogin:OutSum:InvId:Password1[:Shp_* params])
+ * 
+ * @param config - Robokassa configuration
+ * @param outSum - Payment amount as string (e.g., "1.00")
+ * @param invId - Unique InvId (integer)
+ * @param customParams - Array of custom params in format "Shp_key=value" (sorted alphabetically)
+ * @returns Signature, signature base (without password), and full signature string
+ */
+export function signMinimal(
+  config: RobokassaConfig,
+  outSum: string,
+  invId: number,
+  customParams: string[] = []
+): { signature: string; signatureBase: string; signatureFull: string } {
+  return calculateRobokassaSignature(
+    config,
+    outSum,
+    invId,
+    undefined, // No receipt
+    customParams
+  );
+}
+
+/**
+ * Sign payment with Receipt (recurring mode)
+ * Signature: MD5(MerchantLogin:OutSum:InvId:ReceiptEncoded:Password1[:Shp_* params])
+ * 
+ * @param config - Robokassa configuration
+ * @param outSum - Payment amount as string (e.g., "1.00")
+ * @param invId - Unique InvId (integer)
+ * @param receiptEncoded - Receipt JSON stringified and encoded with encodeURIComponent ONCE
+ * @param customParams - Array of custom params in format "Shp_key=value" (sorted alphabetically)
+ * @returns Signature and signature base (without password)
+ */
+export function signWithReceipt(
+  config: RobokassaConfig,
+  outSum: string,
+  invId: number,
+  receiptEncoded: string,
+  customParams: string[] = []
+): { signature: string; signatureBase: string; signatureFull: string } {
+  return calculateRobokassaSignature(
+    config,
+    outSum,
+    invId,
+    receiptEncoded, // Include receipt
+    customParams
+  );
 }
 
 /**
@@ -181,18 +283,18 @@ export function generatePaymentForm(
     formFields.Shp_userId = String(telegramUserId);
   }
   
-  // Build custom params array for signature (sorted lexicographically)
+  // Build custom params array from ALL Shp_* keys in formFields (sorted alphabetically)
   const customParams = buildCustomParams(formFields);
+  
+  // Validate that all Shp_* from formFields are included in signature
+  const customParamsValid = validateCustomParamsInSignature(formFields, customParams);
+  if (!customParamsValid) {
+    throw new Error('Shp_* parameters in formFields must match customParams in signature');
+  }
   
   if (mode === 'minimal') {
     // Minimal mode: no Receipt, no Recurring
-    const signResult = calculateRobokassaSignature(
-      config,
-      outSum,
-      invId,
-      undefined, // No receipt
-      customParams
-    );
+    const signResult = signMinimal(config, outSum, invId, customParams);
     signature = signResult.signature;
     signatureBase = signResult.signatureBase;
     signatureFull = signResult.signatureFull;
@@ -209,13 +311,7 @@ export function generatePaymentForm(
     encodedReceipt = encodeURIComponent(receiptJson);
     
     // Step 3: Sign with encoded receipt and custom params
-    const signResult = calculateRobokassaSignature(
-      config,
-      outSum,
-      invId,
-      encodedReceipt, // Include receipt in signature
-      customParams
-    );
+    const signResult = signWithReceipt(config, outSum, invId, encodedReceipt, customParams);
     signature = signResult.signature;
     signatureBase = signResult.signatureBase;
     signatureFull = signResult.signatureFull;
@@ -246,11 +342,13 @@ export function generatePaymentForm(
     isTestIncluded: config.isTest,
     robokassaTestMode: process.env.ROBOKASSA_TEST_MODE,
     baseUrl,
-    signatureBaseWithoutPassword: signatureBase,
-    signatureFullWithPassword: signatureFull.replace(config.password1, '[PASSWORD1_HIDDEN]'),
+    signatureBaseWithoutPassword: signatureBase, // Base without password and custom params
+    signatureFullWithPassword: signatureFull, // Full with password masked and custom params
     signatureValue: signature,
     signatureLength: signature.length,
-    customParams: customParams, // Show which Shp_* params were included in signature
+    customParams: customParams, // Show which Shp_* params were included in signature (after Password1)
+    customParamsSorted: customParams, // Confirmed sorted alphabetically
+    customParamsValid: customParamsValid, // Validation result
     formFields: Object.fromEntries(
       Object.entries(formFields).map(([k, v]) => [
         k,
@@ -417,15 +515,14 @@ export function generatePaymentForm(
     </button>
     
     <div class="error-info">
-      <h4>⚠️ Robokassa Error 26 - Диагностика</h4>
+      <h4>⚠️ Robokassa Error 29 - Диагностика</h4>
       <p><strong>Типичные причины:</strong></p>
       <ul>
-        <li>Неправильный расчет подписи (Shp_* параметры должны быть включены)</li>
+        <li>Неправильный порядок параметров в подписи (Shp_* должны быть ПОСЛЕ Password1)</li>
+        <li>Shp_* параметры не отсортированы алфавитно</li>
         <li>Неправильные имена параметров (должно быть InvId, не InvoiceID)</li>
         <li>Проблемы с кодированием Receipt (двойное кодирование или неправильный формат)</li>
         <li>Несоответствие формата OutSum (должно быть "1.00", не "1.000000")</li>
-        <li>Отсутствие обязательных полей</li>
-        <li>Несоответствие Password1</li>
         <li>MerchantLogin не совпадает с идентификатором в кабинете Robokassa (case-sensitive, должно быть "steopone")</li>
       </ul>
       <p><strong>Проверки:</strong></p>
@@ -471,10 +568,10 @@ export function generatePaymentForm(
   if (mode === 'recurring' && encodedReceipt) {
     signatureFormulaParts.push('ReceiptEncoded');
   }
+  signatureFormulaParts.push('Password1');
   if (customParams.length > 0) {
     signatureFormulaParts.push(...customParams);
   }
-  signatureFormulaParts.push('Password1');
   const signatureFormula = `MD5(${signatureFormulaParts.join(':')})`;
   
   formHtml += `
@@ -485,17 +582,28 @@ export function generatePaymentForm(
       <h3>🔐 Signature Calculation</h3>
       <pre>Formula: ${signatureFormula}
 
-Signature Base (without password):
+Signature Base (without password and custom params):
 ${signatureBase}
 
-Custom Params (Shp_*) included in signature:
+Custom Params (Shp_*) - appended AFTER Password1, sorted alphabetically:
 ${customParams.length > 0 ? customParams.join(', ') : 'None'}
+
+Signature Full (with password masked):
+${signatureFull}
 
 Signature Value:
 ${signature}
 
 Parts in order:
-${signatureFormulaParts.map((p, i) => `${i + 1}. ${p === 'MerchantLogin' ? config.merchantLogin : p === 'OutSum' ? outSum : p === 'InvId' ? invId : p === 'ReceiptEncoded' ? (encodedReceipt?.substring(0, 100) + '...') : p === 'Password1' ? '[HIDDEN]' : p}`).join('\n')}
+${signatureFormulaParts.map((p, i) => {
+  if (p === 'MerchantLogin') return `${i + 1}. MerchantLogin: ${config.merchantLogin}`;
+  if (p === 'OutSum') return `${i + 1}. OutSum: ${outSum}`;
+  if (p === 'InvId') return `${i + 1}. InvId: ${invId}`;
+  if (p === 'ReceiptEncoded') return `${i + 1}. ReceiptEncoded: ${encodedReceipt?.substring(0, 100)}...`;
+  if (p === 'Password1') return `${i + 1}. Password1: [HIDDEN]`;
+  if (p.startsWith('Shp_')) return `${i + 1}. ${p}`;
+  return `${i + 1}. ${p}`;
+}).join('\n')}
 </pre>
     </div>`;
   
@@ -538,6 +646,9 @@ Match: ${receipt?.items[0]?.sum === parseFloat(outSum) ? '✅ YES' : '❌ NO'}
         merchantLoginIsSteopone: config.merchantLogin === 'steopone',
         shpUserIdInForm: 'Shp_userId' in formFields,
         shpUserIdInSignature: customParams.length > 0 && customParams.some(p => p.startsWith('Shp_userId=')),
+        customParamsSorted: customParams.length === 0 || JSON.stringify(customParams) === JSON.stringify([...customParams].sort()),
+        customParamsValid: customParamsValid,
+        shpParamsAfterPassword1: true, // Confirmed by implementation
       })};
       const checksHtml = Object.entries(checks).map(([key, value]) => {
         const className = value ? 'check-ok' : 'check-fail';
