@@ -156,13 +156,17 @@ function buildSignatureBaseParts(
  * @returns Receipt object
  */
 export function generateReceipt(amount: number): Receipt {
+  // CRITICAL: Ensure sum matches OutSum format exactly
+  // Format amount to 2 decimal places to match OutSum format (e.g., "1.00")
+  const formattedAmount = parseFloat(amount.toFixed(2));
+  
   return {
     sno: 'npd', // НПД (налог на профессиональный доход) for Robocheki SMZ
     items: [
       {
         name: 'Trial subscription 3 days',
         quantity: 1,
-        sum: amount, // MUST equal OutSum exactly (1.00)
+        sum: formattedAmount, // MUST equal OutSum exactly (1.00)
         payment_method: 'full_payment',
         payment_object: 'service',
         tax: 'none',
