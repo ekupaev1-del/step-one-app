@@ -27,11 +27,25 @@ export interface Receipt {
 export type PaymentMode = 'minimal' | 'recurring';
 
 /**
+ * Mask password for logging (shows length + first/last 2 chars)
+ */
+function maskPassword(password: string): string {
+  if (!password || password.length === 0) {
+    return '[EMPTY]';
+  }
+  if (password.length <= 4) {
+    return '[***]';
+  }
+  return `${password.substring(0, 2)}...${password.substring(password.length - 2)} (length: ${password.length})`;
+}
+
+/**
  * Calculate MD5 signature for Robokassa
+ * CRITICAL: Returns UPPERCASE hex (Robokassa requirement)
  */
 function calculateSignature(...args: (string | number)[]): string {
   const signatureString = args.map(arg => String(arg)).join(':');
-  return createHash('md5').update(signatureString).digest('hex').toLowerCase();
+  return createHash('md5').update(signatureString).digest('hex').toUpperCase();
 }
 
 /**
@@ -271,6 +285,19 @@ function escapeHtmlAttribute(value: string): string {
 }
 
 /**
+ * Format OutSum to stable string format (always 2 decimals)
+ * Ensures consistent formatting: "1.00", "199.00", etc.
+ */
+function formatOutSum(amount: number | string): string {
+  const num = typeof amount === 'string' ? parseFloat(amount) : amount;
+  if (isNaN(num) || num < 0) {
+    throw new Error(`Invalid OutSum: ${amount}`);
+  }
+  // Format to exactly 2 decimal places
+  return num.toFixed(2);
+}
+
+/**
  * Generate HTML form for Robokassa payment
  * 
  * @param config - Robokassa configuration
@@ -285,7 +312,7 @@ function escapeHtmlAttribute(value: string): string {
  */
 export function generatePaymentForm(
   config: RobokassaConfig,
-  outSum: string,
+  outSum: string | number,
   invId: number,
   description: string,
   mode: PaymentMode,
@@ -294,6 +321,10 @@ export function generatePaymentForm(
   debugMode: boolean = true // Default to true for debugging
 ): { html: string; debug: any } {
   const baseUrl = 'https://auth.robokassa.ru/Merchant/Index.aspx';
+  
+  // CRITICAL: Format OutSum to stable string format (always 2 decimals)
+  // This ensures consistent formatting everywhere: form, signature, storage
+  const outSumFormatted = formatOutSum(outSum);
   
   let signature: string;
   let signatureBase: string;
@@ -306,7 +337,7 @@ export function generatePaymentForm(
   // IMPORTANT: MerchantLogin must be read from ENV and match exactly "steopone" (case-sensitive)
   const formFields: Record<string, string> = {
     MerchantLogin: config.merchantLogin, // Must match exactly from Robokassa cabinet
-    OutSum: outSum, // Must be "1.00" (string)
+    OutSum: outSumFormatted, // Must be "1.00" (string, 2 decimals) - use formatted value
     InvId: String(invId), // Use InvId (NOT InvoiceID), must be integer <= 2_000_000_000
     Description: description, // ASCII, no emojis
   };
@@ -338,7 +369,8 @@ export function generatePaymentForm(
   
   if (mode === 'minimal') {
     // Minimal mode: no Receipt, no Recurring
-    const signResult = signMinimal(config, outSum, invId, customParams);
+    // CRITICAL: Use outSumFormatted (not original outSum) for signature
+    const signResult = signMinimal(config, outSumFormatted, invId, customParams);
     signature = signResult.signature;
     signatureBase = signResult.signatureBase;
     signatureBaseFull = signResult.signatureBaseFull;
@@ -357,7 +389,8 @@ export function generatePaymentForm(
     
     // Step 3: Sign with encoded receipt and custom params
     // IMPORTANT: Use the SAME encodedReceipt string in form field AND signature
-    const signResult = signWithReceipt(config, outSum, invId, encodedReceipt, customParams);
+    // CRITICAL: Use outSumFormatted (not original outSum) for signature
+    const signResult = signWithReceipt(config, outSumFormatted, invId, encodedReceipt, customParams);
     signature = signResult.signature;
     signatureBase = signResult.signatureBase;
     signatureBaseFull = signResult.signatureBaseFull;
@@ -374,21 +407,34 @@ export function generatePaymentForm(
     formFields.IsTest = '1';
   }
   
-  // Build comprehensive debug info
+  // Environment check (server-side only, never leaks secrets)
+  const envCheck = typeof window === 'undefined' ? {
+    vercelEnv: process.env.VERCEL_ENV || 'unknown',
+    nodeEnv: process.env.NODE_ENV || 'unknown',
+    merchantLoginSet: !!config.merchantLogin,
+    merchantLoginLength: config.merchantLogin?.length || 0,
+    password1Set: !!config.password1,
+    password1Masked: maskPassword(config.password1),
+    password2Set: !!config.password2,
+    password2Masked: maskPassword(config.password2),
+    isTest: config.isTest,
+  } : null;
+  
+  // Build comprehensive debug info (NEVER leaks secrets)
   const debugInfo = {
     mode,
     merchantLogin: config.merchantLogin,
     merchantLoginIsSteopone: config.merchantLogin === 'steopone', // Strict check
-    outSum,
-    outSumType: typeof outSum,
+    outSum: outSumFormatted, // Always formatted as "1.00"
+    outSumOriginal: typeof outSum === 'string' ? outSum : String(outSum),
+    outSumType: typeof outSumFormatted,
     invId,
     invIdType: typeof invId,
     invIdString: String(invId),
     description,
     isTest: config.isTest,
-    isTestIncluded: config.isTest,
-    robokassaTestMode: process.env.ROBOKASSA_TEST_MODE,
     baseUrl,
+    // Signature info (NO secrets)
     signatureBaseWithoutPassword: signatureBase, // Base without password and custom params
     signatureBaseFull: signatureBaseFull, // Full with password masked and custom params
     signatureValue: signature,
@@ -398,20 +444,21 @@ export function generatePaymentForm(
       part: typeof p === 'string' && p === config.password1 ? '[PASSWORD1_HIDDEN]' : String(p),
       type: typeof p,
     })),
-    exactSignatureString: signatureParts.map(p => String(p)).join(':'),
     exactSignatureStringMasked: signatureParts.map(p => 
       typeof p === 'string' && p === config.password1 ? '[PASSWORD1_HIDDEN]' : String(p)
     ).join(':'),
     customParams: customParams, // Show which Shp_* params were included in signature (after Password1)
     customParamsSorted: customParams, // Confirmed sorted alphabetically
     customParamsValid: customParamsValid, // Validation result
+    // Form fields (safe - no secrets)
     formFields: Object.fromEntries(
       Object.entries(formFields).map(([k, v]) => [
         k,
         k === 'Receipt' ? `[encoded, length: ${v.length}, preview: ${v.substring(0, 100)}...]` : v
       ])
     ),
-    formFieldsRaw: formFields, // Full raw values for debugging
+    formFieldsRaw: formFields, // Full raw values for debugging (Receipt is encoded, no secrets)
+    // Receipt info (safe)
     receiptRaw: receiptJson,
     receiptRawLength: receiptJson?.length || 0,
     receiptEncoded: encodedReceipt,
@@ -419,6 +466,8 @@ export function generatePaymentForm(
     receiptEncodedPreview: encodedReceipt ? encodedReceipt.substring(0, 100) + '...' : undefined,
     receiptFull: receipt,
     telegramUserId: telegramUserId || undefined,
+    // Environment check (server-side only)
+    envCheck,
     timestamp: new Date().toISOString(),
   };
   
@@ -714,8 +763,8 @@ ${escapeHtmlAttribute(encodedReceipt || 'N/A')}
 
 Length: ${encodedReceipt?.length || 0} characters
 Item Sum: ${receipt?.items[0]?.sum}
-OutSum: ${outSum}
-Match: ${receipt?.items[0]?.sum === parseFloat(outSum) ? '✅ YES' : '❌ NO'}
+OutSum: ${outSumFormatted}
+Match: ${receipt?.items[0]?.sum === parseFloat(outSumFormatted) ? '✅ YES' : '❌ NO'}
 </pre>
     </div>`;
   }
@@ -731,8 +780,8 @@ Match: ${receipt?.items[0]?.sum === parseFloat(outSum) ? '✅ YES' : '❌ NO'}
       const checks = ${JSON.stringify({
         invIdIsNumber: typeof invId === 'number',
         invIdWithinRange: invId <= 2000000000,
-        outSumIsString: typeof outSum === 'string',
-        outSumFormat: outSum === '1.00',
+        outSumIsString: typeof outSumFormatted === 'string',
+        outSumFormat: outSumFormatted === '1.00',
         signatureLength: signature.length === 32,
         receiptEncodedOnce: mode === 'minimal' || (encodedReceipt && !encodedReceipt.includes('%25')),
         formHasInvId: 'InvId' in formFields,
@@ -796,6 +845,21 @@ export function getRobokassaConfig(): RobokassaConfig {
   const merchantLogin = process.env.ROBOKASSA_MERCHANT_LOGIN;
   const password1 = process.env.ROBOKASSA_PASSWORD1;
   const password2 = process.env.ROBOKASSA_PASSWORD2;
+  const vercelEnv = process.env.VERCEL_ENV || 'unknown';
+  const nodeEnv = process.env.NODE_ENV || 'unknown';
+  const isTest = process.env.ROBOKASSA_TEST_MODE === 'true';
+
+  // STRICT RUNTIME CHECK: Log environment variables (server-side only, never in client)
+  if (typeof window === 'undefined') {
+    console.log('[robokassa] ========== ENVIRONMENT CHECK ==========');
+    console.log('[robokassa] VERCEL_ENV:', vercelEnv);
+    console.log('[robokassa] NODE_ENV:', nodeEnv);
+    console.log('[robokassa] ROBOKASSA_MERCHANT_LOGIN:', merchantLogin || '[NOT SET]');
+    console.log('[robokassa] ROBOKASSA_PASSWORD1:', password1 ? maskPassword(password1) : '[NOT SET]');
+    console.log('[robokassa] ROBOKASSA_PASSWORD2:', password2 ? maskPassword(password2) : '[NOT SET]');
+    console.log('[robokassa] ROBOKASSA_TEST_MODE:', isTest);
+    console.log('[robokassa] ========================================');
+  }
 
   if (!merchantLogin || !password1 || !password2) {
     throw new Error(
@@ -803,9 +867,6 @@ export function getRobokassaConfig(): RobokassaConfig {
     );
   }
 
-  // TEMP DEBUG: Log merchantLogin to verify it's "steopone"
-  console.log('[robokassa] TEMP DEBUG: merchantLogin from env:', merchantLogin);
-  
   // Strict check: merchantLogin must be exactly "steopone"
   if (merchantLogin !== 'steopone') {
     console.error('[robokassa] ❌ CRITICAL: merchantLogin is not "steopone"! Current value:', merchantLogin);
@@ -816,7 +877,7 @@ export function getRobokassaConfig(): RobokassaConfig {
     merchantLogin, // Use exactly as from env (must be "steopone")
     password1,
     password2,
-    isTest: process.env.ROBOKASSA_TEST_MODE === 'true',
+    isTest,
   };
 }
 
