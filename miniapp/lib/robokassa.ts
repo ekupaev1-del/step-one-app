@@ -517,6 +517,73 @@ export function generatePaymentForm(
   
   // Build comprehensive debug info (NEVER leaks secrets)
   const outSumFormatted = formFieldsWithoutSignature.OutSum;
+  
+  // Validation checks for Error 29
+  const validationChecks = {
+    // MerchantLogin checks
+    merchantLoginSet: !!config.merchantLogin,
+    merchantLoginIsSteopone: config.merchantLogin === 'steopone',
+    merchantLoginLength: config.merchantLogin?.length || 0,
+    merchantLoginExact: config.merchantLogin, // For comparison
+    
+    // OutSum checks
+    outSumIsString: typeof outSumFormatted === 'string',
+    outSumFormat: outSumFormatted === '1.00',
+    outSumLength: outSumFormatted.length,
+    outSumHasTwoDecimals: /^\d+\.\d{2}$/.test(outSumFormatted),
+    
+    // InvId checks
+    invIdIsNumber: typeof invId === 'number',
+    invIdIsInteger: Number.isInteger(invId),
+    invIdWithinRange: invId > 0 && invId <= 2000000000,
+    invIdString: String(invId),
+    
+    // Signature checks
+    signatureLength: signatureResult.signatureValue.length === 32,
+    signatureIsLowercase: signatureResult.signatureValue === signatureResult.signatureValue.toLowerCase(),
+    signatureIsHex: /^[0-9a-f]{32}$/.test(signatureResult.signatureValue),
+    
+    // Receipt checks (if recurring)
+    receiptPresent: mode === 'recurring' ? !!receipt : null,
+    receiptEncodedPresent: mode === 'recurring' ? !!receiptEncoded : null,
+    receiptEncodedLength: receiptEncoded?.length || 0,
+    receiptNotDoubleEncoded: mode === 'minimal' || (receiptEncoded && !receiptEncoded.includes('%25')),
+    receiptInSignature: mode === 'recurring' ? signatureResult.signatureParts.some(p => typeof p === 'string' && p === receiptEncoded) : null,
+    
+    // Shp_* params checks
+    shpParamsCount: customParams.length,
+    shpParamsInForm: Object.keys(formFieldsWithoutSignature).filter(k => k.startsWith('Shp_')).length,
+    shpParamsInSignature: customParams.length,
+    shpParamsSorted: customParams.length === 0 || JSON.stringify(customParams) === JSON.stringify([...customParams].sort()),
+    shpParamsAfterPassword1: (() => {
+      const password1Index = signatureResult.signatureParts.findIndex(p => typeof p === 'string' && p === config.password1);
+      if (password1Index === -1) return false;
+      const shpInSignature = signatureResult.signatureParts.slice(password1Index + 1).some(p => typeof p === 'string' && p.startsWith('Shp_'));
+      return shpInSignature || customParams.length === 0;
+    })(),
+    shpUserIdInForm: 'Shp_userId' in formFieldsWithoutSignature,
+    shpUserIdInSignature: customParams.some(p => p.startsWith('Shp_userId=')),
+    
+    // Form fields checks
+    formFieldsCount: Object.keys(formFields).length,
+    formHasMerchantLogin: 'MerchantLogin' in formFields,
+    formHasOutSum: 'OutSum' in formFields,
+    formHasInvId: 'InvId' in formFields,
+    formHasDescription: 'Description' in formFields,
+    formHasSignatureValue: 'SignatureValue' in formFields,
+    formHasReceipt: 'Receipt' in formFields,
+    formHasRecurring: 'Recurring' in formFields,
+    formHasIsTest: 'IsTest' in formFields,
+    
+    // Field value consistency
+    formOutSumMatchesSignature: formFields.OutSum === outSumFormatted,
+    formInvIdMatchesSignature: formFields.InvId === String(invId),
+    formMerchantLoginMatchesSignature: formFields.MerchantLogin === config.merchantLogin,
+    receiptInFormMatchesSignature: mode === 'recurring' 
+      ? formFields.Receipt === receiptEncoded 
+      : null,
+  };
+  
   const debugInfo = {
     mode,
     merchantLogin: config.merchantLogin,
@@ -540,9 +607,13 @@ export function generatePaymentForm(
       index: i + 1,
       part: typeof p === 'string' && p === config.password1 ? '[PASSWORD1_HIDDEN]' : String(p),
       type: typeof p,
+      isPassword: typeof p === 'string' && p === config.password1,
+      isShp: typeof p === 'string' && p.startsWith('Shp_'),
+      isReceipt: typeof p === 'string' && p === receiptEncoded,
     })),
     customParams: customParams, // Show which Shp_* params were included in signature (after Password1)
     customParamsSorted: customParams, // Confirmed sorted alphabetically
+    customParamsCount: customParams.length,
     // Form fields (safe - no secrets)
     formFields: Object.fromEntries(
       Object.entries(formFields).map(([k, v]) => [
@@ -552,6 +623,8 @@ export function generatePaymentForm(
     ),
     formFieldsRaw: formFields, // Full raw values for debugging (Receipt is encoded, no secrets)
     finalFormFields: formFields, // Exact fields that will be submitted (for unit test comparison)
+    formFieldsKeys: Object.keys(formFields),
+    formFieldsCount: Object.keys(formFields).length,
     // Receipt info (safe)
     receiptRaw: receiptJson,
     receiptRawLength: receiptJson?.length || 0,
@@ -560,6 +633,8 @@ export function generatePaymentForm(
     receiptEncodedPreview: receiptEncoded ? receiptEncoded.substring(0, 100) + '...' : undefined,
     receiptFull: receipt,
     telegramUserId: telegramUserId || undefined,
+    // Validation checks for Error 29
+    validationChecks,
     // Environment check (server-side only)
     envCheck,
     timestamp: new Date().toISOString(),
@@ -567,11 +642,28 @@ export function generatePaymentForm(
   
   // Unit-test-like check: Print comparison data (server-side only)
   if (typeof window === 'undefined') {
-    console.log('[robokassa] ========== SIGNATURE VERIFICATION ==========');
+    console.log('[robokassa] ========== SIGNATURE VERIFICATION (Error 29 Debug) ==========');
     console.log('[robokassa] exactSignatureStringMasked:', signatureResult.exactSignatureStringMasked);
+    console.log('[robokassa] exactSignatureString (full):', signatureResult.exactSignatureString);
     console.log('[robokassa] signatureValueLowercase:', signatureResult.signatureValue);
+    console.log('[robokassa] signatureLength:', signatureResult.signatureValue.length);
+    console.log('[robokassa] signatureIsLowercase:', signatureResult.signatureValue === signatureResult.signatureValue.toLowerCase());
+    console.log('[robokassa] signatureIsHex:', /^[0-9a-f]{32}$/.test(signatureResult.signatureValue));
     console.log('[robokassa] finalFormFields:', JSON.stringify(formFields, null, 2));
-    console.log('[robokassa] =============================================');
+    console.log('[robokassa] formFieldsWithoutSignature:', JSON.stringify(formFieldsWithoutSignature, null, 2));
+    console.log('[robokassa] customParams:', customParams);
+    console.log('[robokassa] customParamsSorted:', JSON.stringify(customParams) === JSON.stringify([...customParams].sort()));
+    console.log('[robokassa] signatureParts count:', signatureResult.signatureParts.length);
+    console.log('[robokassa] signatureParts:', signatureResult.signatureParts.map((p, i) => ({
+      index: i + 1,
+      type: typeof p,
+      value: typeof p === 'string' && p === config.password1 ? '[PASSWORD1]' : String(p).substring(0, 50),
+      isPassword: typeof p === 'string' && p === config.password1,
+      isShp: typeof p === 'string' && p.startsWith('Shp_'),
+      isReceipt: typeof p === 'string' && p === receiptEncoded,
+    })));
+    console.log('[robokassa] validationChecks:', JSON.stringify(validationChecks, null, 2));
+    console.log('[robokassa] ============================================================');
   }
   
   // Build debug JSON string for copying
@@ -723,19 +815,27 @@ export function generatePaymentForm(
     </button>
     
     <div class="error-info">
-      <h4>⚠️ Robokassa Error 29 - Диагностика</h4>
-      <p><strong>Типичные причины:</strong></p>
+      <h4>⚠️ Robokassa Error 29 - Детальная Диагностика</h4>
+      <p><strong>Типичные причины Error 29:</strong></p>
       <ul>
-        <li>Неправильный порядок параметров в подписи (Shp_* должны быть ПОСЛЕ Password1)</li>
-        <li>Shp_* параметры не отсортированы алфавитно</li>
-        <li>Shp_* параметры не включены в подпись, хотя присутствуют в форме</li>
-        <li>Неправильные имена параметров (должно быть InvId, не InvoiceID)</li>
-        <li>Проблемы с кодированием Receipt (двойное кодирование или неправильный формат)</li>
-        <li>Несоответствие формата OutSum (должно быть "1.00", не "1.000000")</li>
-        <li>MerchantLogin не совпадает с идентификатором в кабинете Robokassa (case-sensitive, должно быть "steopone")</li>
+        <li>❌ Неправильный порядок параметров в подписи (Shp_* должны быть ПОСЛЕ Password1)</li>
+        <li>❌ Shp_* параметры не отсортированы алфавитно</li>
+        <li>❌ Shp_* параметры не включены в подпись, хотя присутствуют в форме</li>
+        <li>❌ Неправильные имена параметров (должно быть InvId, не InvoiceID)</li>
+        <li>❌ Проблемы с кодированием Receipt (двойное кодирование или неправильный формат)</li>
+        <li>❌ Несоответствие формата OutSum (должно быть "1.00", не "1.000000")</li>
+        <li>❌ MerchantLogin не совпадает с идентификатором в кабинете Robokassa (case-sensitive, должно быть "steopone")</li>
+        <li>❌ Подпись в UPPERCASE вместо lowercase</li>
+        <li>❌ Receipt включен в подпись, но отсутствует в форме (или наоборот)</li>
+        <li>❌ Несоответствие значений между формой и подписью</li>
       </ul>
-      <p><strong>Проверки:</strong></p>
+      <p><strong>Автоматические проверки (все должны быть ✅):</strong></p>
       <div id="checks"></div>
+    </div>
+    
+    <div class="debug-section">
+      <h3>🔍 Детальная Валидация (Error 29)</h3>
+      <pre id="validation-checks"></pre>
     </div>
     
     <div class="debug-section">
@@ -817,37 +917,66 @@ export function generatePaymentForm(
     </div>
     
     <div class="debug-section">
-      <h3>🔐 Signature Calculation</h3>
-      <pre>Formula: ${signatureFormula}
+      <h3>🔐 Signature Calculation (Детально для Error 29)</h3>
+      <pre>Формула: ${signatureFormula}
 
-Custom Params (Shp_*) - appended AFTER Password1, sorted alphabetically:
-${customParams.length > 0 ? customParams.join(', ') : 'None'}
-
-EXACT String Used for MD5 (with password masked):
-${debugInfo.exactSignatureStringMasked}
-
-EXACT String Used for MD5 (full, for comparison):
-${debugInfo.exactSignatureString}
-
-Signature Value (MD5 hash, lowercase):
-${signatureResult.signatureValue}
-
-Parts in order:
+Порядок параметров в подписи:
 ${signatureResult.signatureParts.map((p: string | number, i: number) => {
   if (typeof p === 'string' && p === config.password1) {
     return `${i + 1}. Password1: [HIDDEN]`;
   }
   if (typeof p === 'number') {
-    if (i === 2) return `${i + 1}. InvId: ${p}`;
+    if (i === 2) return `${i + 1}. InvId: ${p} (number)`;
   }
   if (typeof p === 'string') {
-    if (p === config.merchantLogin) return `${i + 1}. MerchantLogin: ${p}`;
-    if (p === outSumFormatted) return `${i + 1}. OutSum: ${p}`;
-    if (p === receiptEncoded) return `${i + 1}. ReceiptEncoded: ${p.substring(0, 100)}...`;
-    if (p.startsWith('Shp_')) return `${i + 1}. ${p}`;
+    if (p === config.merchantLogin) return `${i + 1}. MerchantLogin: "${p}" (length: ${p.length})`;
+    if (p === outSumFormatted) return `${i + 1}. OutSum: "${p}" (type: string, length: ${p.length})`;
+    if (p === receiptEncoded) return `${i + 1}. ReceiptEncoded: "${p.substring(0, 100)}..." (length: ${p.length}, encoded)`;
+    if (p.startsWith('Shp_')) return `${i + 1}. ${p} (Shp_* param, after Password1)`;
   }
-  return `${i + 1}. ${String(p)}`;
+  return `${i + 1}. ${String(p)} (unknown)`;
 }).join('\n')}
+
+Custom Params (Shp_*) - должны быть ПОСЛЕ Password1, отсортированы алфавитно:
+${customParams.length > 0 ? customParams.map((p, i) => `${i + 1}. ${p}`).join('\n') : 'None'}
+
+Проверка сортировки Shp_*:
+${customParams.length > 0 ? (JSON.stringify(customParams) === JSON.stringify([...customParams].sort()) ? '✅ Отсортированы правильно' : '❌ НЕ отсортированы!') : 'N/A'}
+
+EXACT String Used for MD5 (with password masked):
+${debugInfo.exactSignatureStringMasked}
+
+EXACT String Used for MD5 (full, для сравнения):
+${debugInfo.exactSignatureString}
+
+Signature Value (MD5 hash, lowercase):
+${signatureResult.signatureValue}
+
+Проверка подписи:
+- Длина: ${signatureResult.signatureValue.length} символов (должно быть 32)
+- Lowercase: ${signatureResult.signatureValue === signatureResult.signatureValue.toLowerCase() ? '✅ Да' : '❌ НЕТ!'}
+- Hex формат: ${/^[0-9a-f]{32}$/.test(signatureResult.signatureValue) ? '✅ Да' : '❌ НЕТ!'}
+
+Сравнение формы и подписи:
+- MerchantLogin в форме: "${formFields.MerchantLogin}"
+- MerchantLogin в подписи: "${config.merchantLogin}"
+- Совпадают: ${formFields.MerchantLogin === config.merchantLogin ? '✅ Да' : '❌ НЕТ!'}
+
+- OutSum в форме: "${formFields.OutSum}"
+- OutSum в подписи: "${outSumFormatted}"
+- Совпадают: ${formFields.OutSum === outSumFormatted ? '✅ Да' : '❌ НЕТ!'}
+
+- InvId в форме: "${formFields.InvId}"
+- InvId в подписи: ${invId}
+- Совпадают: ${formFields.InvId === String(invId) ? '✅ Да' : '❌ НЕТ!'}
+
+${mode === 'recurring' && receiptEncoded ? `- Receipt в форме: присутствует (length: ${formFields.Receipt.length})
+- Receipt в подписи: ${signatureResult.signatureParts.some(p => typeof p === 'string' && p === receiptEncoded) ? '✅ Включен' : '❌ НЕ включен!'}
+- Совпадают: ${formFields.Receipt === receiptEncoded ? '✅ Да' : '❌ НЕТ!'}` : ''}
+
+- Shp_userId в форме: ${'Shp_userId' in formFields ? `"${formFields.Shp_userId}"` : '❌ Отсутствует'}
+- Shp_userId в подписи: ${customParams.some(p => p.startsWith('Shp_userId=')) ? `✅ Включен: ${customParams.find(p => p.startsWith('Shp_userId='))}` : '❌ НЕ включен!'}
+- Совпадают: ${('Shp_userId' in formFields) === customParams.some(p => p.startsWith('Shp_userId=')) ? '✅ Да' : '❌ НЕТ!'}
 </pre>
     </div>`;
   
@@ -876,31 +1005,19 @@ Match: ${receipt?.items[0]?.sum === parseFloat(outSumFormatted) ? '✅ YES' : '�
     </div>
     
     <script>
-      // Render checks
-      const checks = ${JSON.stringify({
-        invIdIsNumber: typeof invId === 'number',
-        invIdWithinRange: invId <= 2000000000,
-        outSumIsString: typeof outSumFormatted === 'string',
-        outSumFormat: outSumFormatted === '1.00',
-        signatureLength: signatureResult.signatureValue.length === 32,
-        signatureIsLowercase: signatureResult.signatureValue === signatureResult.signatureValue.toLowerCase(),
-        receiptEncodedOnce: mode === 'minimal' || (receiptEncoded && !receiptEncoded.includes('%25')),
-        formHasInvId: 'InvId' in formFields,
-        formHasSignatureValue: 'SignatureValue' in formFields,
-        merchantLoginSet: config.merchantLogin && config.merchantLogin.length > 0,
-        merchantLoginIsSteopone: config.merchantLogin === 'steopone',
-        shpUserIdInForm: 'Shp_userId' in formFields,
-        shpUserIdInSignature: customParams.length > 0 && customParams.some((p: string) => p.startsWith('Shp_userId=')),
-        customParamsSorted: customParams.length === 0 || JSON.stringify(customParams) === JSON.stringify([...customParams].sort()),
-        shpParamsAfterPassword1: true, // Confirmed by implementation
-        allShpParamsInSignature: customParams.length > 0 && customParams.every((p: string) => signatureResult.signatureParts.some((sp: string | number) => String(sp) === p)),
-      })};
-      const checksHtml = Object.entries(checks).map(([key, value]) => {
-        const className = value ? 'check-ok' : 'check-fail';
-        const icon = value ? '✅' : '❌';
-        return \`<div class="check-item \${className}">\${icon} \${key}: \${value}</div>\`;
+      // Render validation checks
+      const validationChecks = ${JSON.stringify(debugInfo.validationChecks)};
+      const checksHtml = Object.entries(validationChecks).map(([key, value]) => {
+        const className = value === true || (typeof value === 'number' && value > 0) || (typeof value === 'string' && value.length > 0) ? 'check-ok' : 'check-fail';
+        const icon = value === true || (typeof value === 'number' && value > 0) || (typeof value === 'string' && value.length > 0) ? '✅' : '❌';
+        const displayValue = value === null ? 'N/A' : value;
+        return \`<div class="check-item \${className}">\${icon} <strong>\${key}:</strong> \${displayValue}</div>\`;
       }).join('');
       document.getElementById('checks').innerHTML = checksHtml;
+      
+      // Render detailed validation checks
+      const validationChecksJson = JSON.stringify(validationChecks, null, 2);
+      document.getElementById('validation-checks').textContent = validationChecksJson;
       
       function copyAllDebugInfo() {
         const debugData = ${JSON.stringify(debugInfo)};

@@ -329,10 +329,33 @@ export async function POST(req: Request) {
       debugMode
     );
 
-    // TEMP DEBUG: Log signature base and first 120 chars of HTML for error 26 diagnosis
-    console.log('[robokassa/create-trial] TEMP DEBUG: signatureBaseWithoutPassword:', formDebug.signatureBaseWithoutPassword);
-    console.log('[robokassa/create-trial] TEMP DEBUG: customParams in signature:', formDebug.customParams || []);
-    console.log('[robokassa/create-trial] TEMP DEBUG: HTML form (first 120 chars):', html.substring(0, 120));
+    // ========== DETAILED DEBUG FOR ERROR 29 ==========
+    console.log('[robokassa/create-trial] ========== ERROR 29 DIAGNOSTICS ==========');
+    console.log('[robokassa/create-trial] Mode:', modeParam);
+    console.log('[robokassa/create-trial] MerchantLogin:', config.merchantLogin);
+    console.log('[robokassa/create-trial] MerchantLogin is "steopone":', config.merchantLogin === 'steopone');
+    console.log('[robokassa/create-trial] OutSum:', outSum, '(type:', typeof outSum, ')');
+    console.log('[robokassa/create-trial] OutSum formatted:', formDebug.outSum);
+    console.log('[robokassa/create-trial] InvId:', invId, '(type:', typeof invId, ', <= 2B:', invId <= 2000000000, ')');
+    console.log('[robokassa/create-trial] Description:', description);
+    console.log('[robokassa/create-trial] TelegramUserId:', telegramUserId);
+    console.log('[robokassa/create-trial] IsTest:', config.isTest);
+    console.log('[robokassa/create-trial] Receipt present:', !!receipt);
+    console.log('[robokassa/create-trial] Receipt encoded length:', formDebug.receiptEncodedLength || 0);
+    console.log('[robokassa/create-trial] Custom params (Shp_*):', formDebug.customParams || []);
+    console.log('[robokassa/create-trial] Custom params count:', formDebug.customParams?.length || 0);
+    console.log('[robokassa/create-trial] Custom params sorted:', JSON.stringify(formDebug.customParams || []) === JSON.stringify([...(formDebug.customParams || [])].sort()));
+    console.log('[robokassa/create-trial] Exact signature string (masked):', formDebug.exactSignatureStringMasked);
+    console.log('[robokassa/create-trial] Signature value:', formDebug.signatureValue);
+    console.log('[robokassa/create-trial] Signature length:', formDebug.signatureLength);
+    console.log('[robokassa/create-trial] Signature is lowercase:', formDebug.signatureValue === formDebug.signatureValue.toLowerCase());
+    console.log('[robokassa/create-trial] Form fields keys:', Object.keys(formDebug.finalFormFields || {}));
+    console.log('[robokassa/create-trial] Form fields count:', Object.keys(formDebug.finalFormFields || {}).length);
+    console.log('[robokassa/create-trial] Shp_userId in form:', 'Shp_userId' in (formDebug.finalFormFields || {}));
+    console.log('[robokassa/create-trial] Receipt in form:', 'Receipt' in (formDebug.finalFormFields || {}));
+    console.log('[robokassa/create-trial] Recurring in form:', 'Recurring' in (formDebug.finalFormFields || {}));
+    console.log('[robokassa/create-trial] SignatureValue in form:', 'SignatureValue' in (formDebug.finalFormFields || {}));
+    console.log('[robokassa/create-trial] ============================================');
 
     // Store payment attempt in DB (non-blocking - do not fail request if this fails)
     debug.stage = 'store_payment';
@@ -371,16 +394,13 @@ export async function POST(req: Request) {
     debug.formGeneration = formDebug;
     debug.debugModeEnabled = debugMode;
 
-    // Log signature base WITHOUT password (safe logging)
+    // Log success summary
     console.log('[robokassa/create-trial] ========== SUCCESS ==========');
-    console.log('[robokassa/create-trial] Mode:', modeParam);
-    console.log('[robokassa/create-trial] InvId:', invId);
-    console.log('[robokassa/create-trial] OutSum:', outSum);
-    console.log('[robokassa/create-trial] Signature base (no password):', formDebug.signatureBaseWithoutPassword);
-    console.log('[robokassa/create-trial] Custom params in signature:', formDebug.customParams || []);
-    console.log('[robokassa/create-trial] Form fields (safe):', Object.keys(formDebug.formFields));
+    console.log('[robokassa/create-trial] Payment form generated successfully');
     console.log('[robokassa/create-trial] DB store result:', dbStoreResult.ok ? 'OK' : 'FAILED');
-    console.log('[robokassa/create-trial] Debug mode:', debugMode);
+    if (!dbStoreResult.ok) {
+      console.error('[robokassa/create-trial] DB error details:', JSON.stringify(dbStoreResult.error, null, 2));
+    }
 
     return NextResponse.json({
       ok: true,
