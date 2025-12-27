@@ -33,7 +33,7 @@ export async function GET(req: Request) {
   // Получаем данные пользователя (полный профиль)
   const { data: user, error } = await supabase
     .from("users")
-    .select("weight, height, goal, activity, gender, age, calories, protein, fat, carbs, water_goal_ml, avatar_url, name")
+    .select("weight, height, goal, activity, gender, age, calories, protein, fat, carbs, water_goal_ml, avatar_url, name, telegram_id")
     .eq("id", numericId)
     .maybeSingle();
 
@@ -61,7 +61,8 @@ export async function GET(req: Request) {
     fatGoal: user.fat ? Number(user.fat) : null,
     carbsGoal: user.carbs ? Number(user.carbs) : null,
     waterGoalMl: user.water_goal_ml ? Number(user.water_goal_ml) : null,
-    avatarUrl: user.avatar_url || null
+    avatarUrl: user.avatar_url || null,
+    telegram_id: user.telegram_id ? Number(user.telegram_id) : null
   });
 }
 

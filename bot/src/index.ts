@@ -47,8 +47,10 @@ function getMainMenuKeyboard(userId: number | null = null): any {
   const reportUrl = userId ? `${baseUrl}/report?id=${userId}` : undefined;
   const profileUrl = userId ? `${baseUrl}/profile?id=${userId}` : undefined;
 
-  // ЕДИНСТВЕННОЕ правильное меню - 3 кнопки с правильными URL
+  // ЕДИНСТВЕННОЕ правильное меню - 5 кнопок с правильными URL
   // Кнопки с web_app открывают Mini App напрямую
+  const subscriptionUrl = userId ? `${baseUrl}/subscription?id=${userId}` : undefined;
+  
   const keyboard = {
     keyboard: [
       [
@@ -56,6 +58,9 @@ function getMainMenuKeyboard(userId: number | null = null): any {
       ],
       [
         { text: "📊 Получить отчёт", web_app: reportUrl ? { url: reportUrl } : undefined }
+      ],
+      [
+        { text: "💳 Subscription", web_app: subscriptionUrl ? { url: subscriptionUrl } : undefined }
       ],
       [
         { text: "⏰ Напомнить о приёме пищи" }
