@@ -311,13 +311,24 @@ export function generatePaymentForm(
     Description: description, // ASCII, no emojis
   };
   
-  // Add custom params (Shp_*) BEFORE calculating signature
+  // Build Shp_* params map FIRST (before adding to formFields)
+  // CRITICAL: Shp_* params must be in ALPHABETICAL ORDER both in form AND signature
+  const shpParamsMap: Record<string, string> = {};
   if (telegramUserId) {
-    formFields.Shp_userId = String(telegramUserId);
+    shpParamsMap.Shp_userId = String(telegramUserId);
   }
   
-  // Build custom params array from ALL Shp_* keys in formFields (sorted alphabetically)
-  const customParams = buildCustomParams(formFields);
+  // Sort Shp_* keys alphabetically (case-sensitive)
+  const shpKeysSorted = Object.keys(shpParamsMap).sort();
+  
+  // Add Shp_* params to formFields in ALPHABETICAL ORDER
+  for (const key of shpKeysSorted) {
+    formFields[key] = shpParamsMap[key];
+  }
+  
+  // Build custom params array from sorted Shp_* keys (format: "Shp_key=value")
+  // This ensures signature uses the SAME order as form fields
+  const customParams = shpKeysSorted.map(key => `${key}=${shpParamsMap[key]}`);
   
   // Validate that all Shp_* from formFields are included in signature
   const customParamsValid = validateCustomParamsInSignature(formFields, customParams);
@@ -579,9 +590,34 @@ export function generatePaymentForm(
       <h3>💳 Payment Form</h3>
       <form id="robokassa-form" method="POST" action="${baseUrl}">`;
   
-  for (const [name, value] of Object.entries(formFields)) {
-    const escapedValue = name === 'Receipt' ? value : escapeHtmlAttribute(value);
-    formHtml += `\n        <input type="hidden" name="${name}" value="${escapedValue}">`;
+  // CRITICAL: Output form fields in correct order
+  // Standard fields first, then Shp_* params in alphabetical order
+  const standardFields = ['MerchantLogin', 'OutSum', 'InvId', 'Description'];
+  const receiptFields = mode === 'recurring' ? ['Receipt', 'Recurring'] : [];
+  const signatureField = ['SignatureValue'];
+  const testField = config.isTest ? ['IsTest'] : [];
+  
+  // Collect Shp_* fields separately and sort them alphabetically
+  const shpFields = Object.keys(formFields)
+    .filter(k => k.startsWith('Shp_'))
+    .sort(); // Alphabetical order (case-sensitive)
+  
+  // Build ordered field list
+  const orderedFields = [
+    ...standardFields,
+    ...receiptFields,
+    ...shpFields, // Shp_* in alphabetical order
+    ...signatureField,
+    ...testField,
+  ];
+  
+  // Output fields in correct order
+  for (const name of orderedFields) {
+    if (name in formFields) {
+      const value = formFields[name];
+      const escapedValue = name === 'Receipt' ? value : escapeHtmlAttribute(value);
+      formHtml += `\n        <input type="hidden" name="${name}" value="${escapedValue}">`;
+    }
   }
   
   formHtml += `
@@ -594,15 +630,19 @@ export function generatePaymentForm(
       <div class="form-preview" style="margin-top: 20px;">
         <strong>Form Fields (${Object.keys(formFields).length} fields):</strong>`;
   
-  for (const [name, value] of Object.entries(formFields)) {
-    const displayValue = name === 'Receipt' 
-      ? `[URL-encoded, length: ${value.length}] ${value.substring(0, 100)}...`
-      : value;
-    formHtml += `
+  // Display fields in same order as form (with Shp_* sorted alphabetically)
+  for (const name of orderedFields) {
+    if (name in formFields) {
+      const value = formFields[name];
+      const displayValue = name === 'Receipt' 
+        ? `[URL-encoded, length: ${value.length}] ${value.substring(0, 100)}...`
+        : value;
+      formHtml += `
         <div class="form-field">
           <span class="form-field-name">${name}:</span> 
           <span class="form-field-value">${escapeHtmlAttribute(displayValue)}</span>
         </div>`;
+    }
   }
   
   // Build signature formula for display
