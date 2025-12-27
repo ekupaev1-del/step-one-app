@@ -196,8 +196,9 @@ export function generatePaymentForm(
     formFields.Shp_userId = String(telegramUserId);
   }
   
-  // Build comprehensive debug info
+  // Build comprehensive debug info for error 26 diagnosis
   const debugInfo = {
+    timestamp: new Date().toISOString(),
     mode,
     merchantLogin: config.merchantLogin,
     outSum,
@@ -210,30 +211,66 @@ export function generatePaymentForm(
     isTestIncluded: config.isTest,
     robokassaTestMode: process.env.ROBOKASSA_TEST_MODE,
     baseUrl,
-    signatureBaseWithoutPassword: signatureBase,
-    signatureFullWithPassword: signatureFull.replace(config.password1, '[PASSWORD1_HIDDEN]'),
-    signatureValue: signature,
-    signatureLength: signature.length,
-    formFields: Object.fromEntries(
-      Object.entries(formFields).map(([k, v]) => [
-        k,
-        k === 'Receipt' ? `[encoded, length: ${v.length}, preview: ${v.substring(0, 100)}...]` : v
-      ])
-    ),
-    formFieldsRaw: formFields, // Full raw values for debugging
-    receiptRaw: receiptJson,
-    receiptRawLength: receiptJson?.length || 0,
-    receiptEncoded: encodedReceipt,
-    receiptEncodedLength: encodedReceipt?.length || 0,
-    receiptEncodedPreview: encodedReceipt ? encodedReceipt.substring(0, 100) + '...' : undefined,
-    receiptFull: receipt,
+    
+    // Signature calculation details
+    signatureCalculation: {
+      formula: mode === 'minimal' 
+        ? 'MD5(MerchantLogin:OutSum:InvId:Password1)'
+        : 'MD5(MerchantLogin:OutSum:InvId:ReceiptEncoded:Password1)',
+      signatureBase: signatureBase,
+      signatureBaseParts: mode === 'minimal'
+        ? [config.merchantLogin, outSum, String(invId)]
+        : [config.merchantLogin, outSum, String(invId), encodedReceipt],
+      signatureValue: signature,
+      signatureLength: signature.length,
+      expectedLength: 32, // MD5 hash length
+    },
+    
+    // Form fields (all values for debugging)
+    formFields: formFields,
+    formFieldsCount: Object.keys(formFields).length,
+    
+    // Receipt details (for recurring mode)
+    receipt: mode === 'recurring' ? {
+      raw: receiptJson,
+      rawLength: receiptJson?.length || 0,
+      encoded: encodedReceipt,
+      encodedLength: encodedReceipt?.length || 0,
+      encodedPreview: encodedReceipt ? encodedReceipt.substring(0, 150) + '...' : undefined,
+      object: receipt,
+      itemSum: receipt?.items[0]?.sum,
+      itemSumMatchesOutSum: receipt?.items[0]?.sum === parseFloat(outSum),
+    } : null,
+    
     telegramUserId: telegramUserId || undefined,
-    timestamp: new Date().toISOString(),
+    
+    // Robokassa error 26 diagnosis info
+    error26Diagnosis: {
+      commonCauses: [
+        'Incorrect signature calculation',
+        'Wrong parameter names (should be InvId, not InvoiceID)',
+        'Receipt encoding issues (double encoding or wrong format)',
+        'OutSum format mismatch (should be "1.00" not "1.000000")',
+        'Missing required fields',
+        'Password1 mismatch',
+      ],
+      checks: {
+        invIdIsNumber: typeof invId === 'number',
+        invIdWithinRange: invId <= 2000000000,
+        outSumIsString: typeof outSum === 'string',
+        outSumFormat: outSum === '1.00',
+        signatureLength: signature.length === 32,
+        receiptEncodedOnce: mode === 'minimal' || (encodedReceipt && !encodedReceipt.includes('%25')),
+        formHasInvId: 'InvId' in formFields,
+        formHasSignatureValue: 'SignatureValue' in formFields,
+      },
+    },
   };
   
-  // Always return debug HTML (no auto-submit for debugging)
+  // Build debug JSON string for copying
   const debugJson = JSON.stringify(debugInfo, null, 2);
   
+  // Build HTML with single copy button
   let formHtml = `<!DOCTYPE html>
 <html>
 <head>
@@ -249,9 +286,29 @@ export function generatePaymentForm(
       color: #e0e0e0; 
       margin: 0;
     }
-    .container { max-width: 1000px; margin: 0 auto; }
+    .container { max-width: 1200px; margin: 0 auto; }
     h1 { color: #00ff88; margin-bottom: 10px; }
     .subtitle { color: #888; margin-bottom: 30px; }
+    .copy-all-btn { 
+      background: #00ff88; 
+      color: #000; 
+      padding: 20px 40px; 
+      font-size: 18px; 
+      font-weight: bold;
+      border: none; 
+      border-radius: 8px; 
+      cursor: pointer; 
+      margin: 20px 0;
+      width: 100%;
+      box-shadow: 0 4px 15px rgba(0, 255, 136, 0.3);
+      transition: all 0.3s;
+    }
+    .copy-all-btn:hover { 
+      background: #00cc6a; 
+      transform: translateY(-2px);
+      box-shadow: 0 6px 20px rgba(0, 255, 136, 0.4);
+    }
+    .copy-all-btn:active { transform: translateY(0); }
     button { 
       background: #0066cc; 
       color: white; 
@@ -278,9 +335,6 @@ export function generatePaymentForm(
     .debug-section h3 { 
       margin-top: 0; 
       color: #00ff88; 
-      display: flex;
-      align-items: center;
-      justify-content: space-between;
     }
     pre { 
       background: #000; 
@@ -290,15 +344,9 @@ export function generatePaymentForm(
       font-size: 13px;
       line-height: 1.5;
       border: 1px solid #333;
+      max-height: 400px;
+      overflow-y: auto;
     }
-    .copy-btn { 
-      background: #333; 
-      padding: 8px 15px; 
-      font-size: 12px; 
-      margin-left: 10px;
-      border-radius: 3px;
-    }
-    .copy-btn:hover { background: #444; }
     .form-preview {
       background: #1a1a1a;
       padding: 15px;
@@ -334,25 +382,59 @@ export function generatePaymentForm(
     .status-prod { background: #00aa00; color: #fff; }
     .status-minimal { background: #0066cc; color: #fff; }
     .status-recurring { background: #aa00aa; color: #fff; }
+    .error-info {
+      background: #2a1a1a;
+      border-left: 4px solid #ff4444;
+      padding: 15px;
+      margin: 15px 0;
+      border-radius: 5px;
+    }
+    .error-info h4 {
+      color: #ff4444;
+      margin-top: 0;
+    }
+    .check-item {
+      margin: 5px 0;
+      padding: 5px;
+      background: #1a1a1a;
+      border-radius: 3px;
+    }
+    .check-ok { border-left: 3px solid #00ff88; }
+    .check-fail { border-left: 3px solid #ff4444; }
   </style>
 </head>
 <body>
   <div class="container">
-    <h1>🔍 Robokassa Payment Debug Mode</h1>
-    <div class="subtitle">Mode: <span class="status-badge status-${mode}">${mode.toUpperCase()}</span> 
-    ${config.isTest ? '<span class="status-badge status-test">TEST MODE</span>' : '<span class="status-badge status-prod">PRODUCTION</span>'}
+    <h1>🔍 Robokassa Payment Debug</h1>
+    <div class="subtitle">
+      Mode: <span class="status-badge status-${mode}">${mode.toUpperCase()}</span> 
+      ${config.isTest ? '<span class="status-badge status-test">TEST MODE</span>' : '<span class="status-badge status-prod">PRODUCTION</span>'}
+    </div>
+    
+    <button class="copy-all-btn" onclick="copyAllDebugInfo()">
+      📋 СКОПИРОВАТЬ ВСЮ DEBUG ИНФОРМАЦИЮ (ОДНИМ КЛИКОМ)
+    </button>
+    
+    <div class="error-info">
+      <h4>⚠️ Robokassa Error 26 - Диагностика</h4>
+      <p><strong>Типичные причины:</strong></p>
+      <ul>
+        <li>Неправильный расчет подписи</li>
+        <li>Неправильные имена параметров (должно быть InvId, не InvoiceID)</li>
+        <li>Проблемы с кодированием Receipt (двойное кодирование или неправильный формат)</li>
+        <li>Несоответствие формата OutSum (должно быть "1.00", не "1.000000")</li>
+        <li>Отсутствие обязательных полей</li>
+        <li>Несоответствие Password1</li>
+      </ul>
+      <p><strong>Проверки:</strong></p>
+      <div id="checks"></div>
     </div>
     
     <div class="debug-section">
-      <h3>
-        Payment Form
-        <button class="copy-btn" onclick="copyToClipboard('form-html')">Copy Form HTML</button>
-      </h3>
+      <h3>💳 Payment Form</h3>
       <form id="robokassa-form" method="POST" action="${baseUrl}">`;
   
   for (const [name, value] of Object.entries(formFields)) {
-    // For Receipt, use the raw encoded value (already URL-encoded)
-    // For other fields, escape HTML
     const escapedValue = name === 'Receipt' ? value : escapeHtmlAttribute(value);
     formHtml += `\n        <input type="hidden" name="${name}" value="${escapedValue}">`;
   }
@@ -365,11 +447,11 @@ export function generatePaymentForm(
       </div>
       
       <div class="form-preview" style="margin-top: 20px;">
-        <strong>Form Fields Preview:</strong>`;
+        <strong>Form Fields (${Object.keys(formFields).length} fields):</strong>`;
   
   for (const [name, value] of Object.entries(formFields)) {
     const displayValue = name === 'Receipt' 
-      ? `[URL-encoded, length: ${value.length}] ${value.substring(0, 80)}...`
+      ? `[URL-encoded, length: ${value.length}] ${value.substring(0, 100)}...`
       : value;
     formHtml += `
         <div class="form-field">
@@ -383,78 +465,77 @@ export function generatePaymentForm(
     </div>
     
     <div class="debug-section">
-      <h3>
-        📋 Full Debug JSON (Copy All)
-        <button class="success" onclick="copyAllDebugInfo()" style="font-size: 14px; padding: 10px 20px;">📋 Copy All Debug Info</button>
-      </h3>
-      <pre id="debug-json">${escapeHtmlAttribute(debugJson)}</pre>
-    </div>
-    
+      <h3>🔐 Signature Calculation</h3>
+      <pre>Formula: ${mode === 'minimal' ? 'MD5(MerchantLogin:OutSum:InvId:Password1)' : 'MD5(MerchantLogin:OutSum:InvId:ReceiptEncoded:Password1)'}
+
+Signature Base (without password):
+${signatureBase}
+
+Signature Value:
+${signature}
+
+Parts:
+${mode === 'minimal' 
+  ? `- MerchantLogin: ${config.merchantLogin}\n- OutSum: ${outSum}\n- InvId: ${invId}`
+  : `- MerchantLogin: ${config.merchantLogin}\n- OutSum: ${outSum}\n- InvId: ${invId}\n- ReceiptEncoded: ${encodedReceipt?.substring(0, 100)}...`}
+</pre>
+    </div>`;
+  
+  if (mode === 'recurring' && receiptJson) {
+    formHtml += `
     <div class="debug-section">
-      <h3>
-        🔐 Signature Base (without password)
-        <button class="copy-btn" onclick="copyToClipboard('signature-base')">Copy</button>
-      </h3>
-      <pre id="signature-base">${escapeHtmlAttribute(signatureBase)}</pre>
-    </div>
-    
-    <div class="debug-section">
-      <h3>
-        🔑 Signature Calculation
-        <button class="copy-btn" onclick="copyToClipboard('signature-calc')">Copy</button>
-      </h3>
-      <pre id="signature-calc">MD5(${escapeHtmlAttribute(signatureFull.replace(config.password1, '[PASSWORD1_HIDDEN]'))})
-= ${signature}</pre>
-    </div>
-    
-    <div class="debug-section">
-      <h3>
-        📄 Receipt Details
-        <button class="copy-btn" onclick="copyToClipboard('receipt-details')">Copy</button>
-      </h3>
-      <pre id="receipt-details">${mode === 'recurring' ? `
-Raw JSON:
-${escapeHtmlAttribute(receiptJson || 'N/A')}
+      <h3>📄 Receipt Details</h3>
+      <pre>Raw JSON:
+${escapeHtmlAttribute(receiptJson)}
 
 Encoded (encodeURIComponent):
 ${escapeHtmlAttribute(encodedReceipt || 'N/A')}
 
 Length: ${encodedReceipt?.length || 0} characters
-Preview: ${encodedReceipt ? encodedReceipt.substring(0, 100) + '...' : 'N/A'}` : 'N/A (minimal mode - no receipt)'}
+Item Sum: ${receipt?.items[0]?.sum}
+OutSum: ${outSum}
+Match: ${receipt?.items[0]?.sum === parseFloat(outSum) ? '✅ YES' : '❌ NO'}
 </pre>
+    </div>`;
+  }
+  
+  formHtml += `
+    <div class="debug-section">
+      <h3>📋 Full Debug JSON (для анализа)</h3>
+      <pre id="debug-json">${escapeHtmlAttribute(debugJson)}</pre>
     </div>
     
     <script>
-      function copyToClipboard(id) {
-        const text = document.getElementById(id).textContent;
-        navigator.clipboard.writeText(text).then(() => {
-          alert('✅ Copied to clipboard!');
-        }).catch(err => {
-          alert('❌ Failed to copy: ' + err);
-        });
-      }
+      // Render checks
+      const checks = ${JSON.stringify(debugInfo.error26Diagnosis.checks)};
+      const checksHtml = Object.entries(checks).map(([key, value]) => {
+        const className = value ? 'check-ok' : 'check-fail';
+        const icon = value ? '✅' : '❌';
+        return \`<div class="check-item \${className}">\${icon} \${key}: \${value}</div>\`;
+      }).join('');
+      document.getElementById('checks').innerHTML = checksHtml;
       
       function copyAllDebugInfo() {
-        const debugData = {
-          timestamp: new Date().toISOString(),
-          mode: '${mode}',
-          merchantLogin: '${config.merchantLogin}',
-          isTest: ${config.isTest},
-          baseUrl: '${baseUrl}',
-          formFields: ${JSON.stringify(formFields)},
-          signatureBase: '${signatureBase}',
-          signatureValue: '${signature}',
-          receiptRaw: ${receiptJson ? JSON.stringify(receiptJson) : 'null'},
-          receiptEncoded: ${encodedReceipt ? JSON.stringify(encodedReceipt) : 'null'},
-          receiptEncodedLength: ${encodedReceipt?.length || 0},
-          fullDebugJson: ${debugJson}
-        };
-        
+        const debugData = ${JSON.stringify(debugInfo)};
         const text = JSON.stringify(debugData, null, 2);
+        
         navigator.clipboard.writeText(text).then(() => {
-          alert('✅ All debug info copied to clipboard!');
+          alert('✅ Вся debug информация скопирована в буфер обмена!\\n\\nТеперь можете вставить в любой текстовый редактор для анализа.');
         }).catch(err => {
-          alert('❌ Failed to copy: ' + err);
+          // Fallback for older browsers
+          const textarea = document.createElement('textarea');
+          textarea.value = text;
+          textarea.style.position = 'fixed';
+          textarea.style.opacity = '0';
+          document.body.appendChild(textarea);
+          textarea.select();
+          try {
+            document.execCommand('copy');
+            alert('✅ Вся debug информация скопирована!');
+          } catch (e) {
+            alert('❌ Не удалось скопировать. Попробуйте выделить текст вручную.');
+          }
+          document.body.removeChild(textarea);
         });
       }
     </script>
