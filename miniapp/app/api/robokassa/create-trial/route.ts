@@ -279,8 +279,8 @@ export async function POST(req: Request) {
       debug.receiptMatchesOutSum = receipt.items[0].sum === 1.00;
     }
 
-    // Check if debug mode is enabled
-    const debugMode = process.env.ROBOKASSA_DEBUG_FORM === 'true';
+    // Always use debug mode (no auto-submit) for easier debugging
+    const debugMode = true; // Always true to show debug page
 
     // Generate payment form
     const { html, debug: formDebug } = generatePaymentForm(
