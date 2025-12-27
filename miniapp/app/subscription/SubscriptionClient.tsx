@@ -18,8 +18,9 @@ export default function SubscriptionClient() {
   const [error, setError] = useState<string | null>(null);
   const [debugData, setDebugData] = useState<any>(null);
   const [showDebug, setShowDebug] = useState(false);
+  const [debugMode, setDebugMode] = useState<'recurring' | 'minimal'>('recurring');
 
-  const handleStartTrial = async () => {
+  const handleStartTrial = async (mode: 'recurring' | 'minimal' = 'recurring') => {
     if (!userId || loading) return;
 
     try {
@@ -54,9 +55,10 @@ export default function SubscriptionClient() {
       }
 
       // Prepare request details
-      const requestUrl = `/api/robokassa/create-trial?telegramUserId=${userData.telegram_id}`;
+      const requestUrl = `/api/robokassa/create-trial?telegramUserId=${userData.telegram_id}&mode=${mode}`;
       const requestPayload = {
         telegramUserId: userData.telegram_id,
+        mode,
       };
 
       // Create trial payment
@@ -108,9 +110,9 @@ export default function SubscriptionClient() {
       setError(errorMsg);
       setDebugData({
         request: {
-          url: `/api/robokassa/create-trial?telegramUserId=${userId}`,
+          url: `/api/robokassa/create-trial?telegramUserId=${userId}&mode=${mode}`,
           method: 'POST',
-          payload: { telegramUserId: userId },
+          payload: { telegramUserId: userId, mode },
         },
         response: null,
         error: {
@@ -144,6 +146,35 @@ export default function SubscriptionClient() {
           </div>
         </div>
 
+        {/* Debug Mode Toggle (temporary) */}
+        <div className="mb-4 p-3 bg-yellow-50 border border-yellow-200 rounded-lg">
+          <label className="block text-sm font-semibold text-yellow-800 mb-2">
+            Debug Mode (temporary):
+          </label>
+          <div className="flex gap-2">
+            <button
+              onClick={() => setDebugMode('recurring')}
+              className={`flex-1 px-3 py-2 rounded text-sm font-medium ${
+                debugMode === 'recurring'
+                  ? 'bg-blue-600 text-white'
+                  : 'bg-gray-200 text-gray-700'
+              }`}
+            >
+              Recurring (with Receipt)
+            </button>
+            <button
+              onClick={() => setDebugMode('minimal')}
+              className={`flex-1 px-3 py-2 rounded text-sm font-medium ${
+                debugMode === 'minimal'
+                  ? 'bg-blue-600 text-white'
+                  : 'bg-gray-200 text-gray-700'
+              }`}
+            >
+              Minimal (no Receipt)
+            </button>
+          </div>
+        </div>
+
         {error && (
           <div className="mb-4 p-4 bg-red-50 border border-red-200 rounded-lg">
             <p className="text-red-800 font-semibold">{error}</p>
@@ -151,11 +182,11 @@ export default function SubscriptionClient() {
         )}
 
         <button
-          onClick={handleStartTrial}
+          onClick={() => handleStartTrial(debugMode)}
           disabled={loading}
           className="w-full bg-blue-600 hover:bg-blue-700 text-white font-semibold py-3 px-6 rounded-lg disabled:opacity-50 disabled:cursor-not-allowed mb-4"
         >
-          {loading ? 'Обработка...' : 'Start trial for 1 ₽'}
+          {loading ? 'Обработка...' : `Start trial for 1 ₽ (${debugMode})`}
         </button>
 
         {showDebug && debugData && (
