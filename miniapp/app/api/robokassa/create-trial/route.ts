@@ -39,8 +39,9 @@ async function generateUniqueInvId(
 
 /**
  * Store payment attempt in DB (non-blocking)
- * Uses schema: user_id (UUID), telegram_id (bigint), inv_id, out_sum, mode, status, etc.
+ * Uses schema: user_id (UUID), telegram_user_id (bigint), inv_id, out_sum, mode, status
  * Returns debug info about the operation
+ * IMPORTANT: This must NOT fail the payment flow if DB insert fails
  */
 async function storePaymentAttempt(
   supabase: any,
@@ -58,22 +59,22 @@ async function storePaymentAttempt(
   try {
     const insertPayload = {
       user_id: userId,
-      telegram_id: telegramUserId,
+      telegram_user_id: telegramUserId,
       inv_id: invId,
       out_sum: parseFloat(outSum),
       mode: mode,
       status: 'created' as const,
-      description: description,
+      description: description || null,
       receipt_json: receiptJson || null,
       receipt_encoded: receiptEncoded || null,
       signature_base: signatureBase || null,
-      signature_value: signatureValue || null,
+      robokassa_signature: signatureValue || null, // Using robokassa_signature column name
     };
 
     // TEMP DEBUG: Log insert payload (without sensitive data)
     console.log('[robokassa/create-trial] TEMP DEBUG: DB insert payload:', {
       user_id: insertPayload.user_id,
-      telegram_id: insertPayload.telegram_id,
+      telegram_user_id: insertPayload.telegram_user_id,
       inv_id: insertPayload.inv_id,
       out_sum: insertPayload.out_sum,
       mode: insertPayload.mode,
@@ -82,7 +83,7 @@ async function storePaymentAttempt(
       receipt_json_length: insertPayload.receipt_json?.length || 0,
       receipt_encoded_length: insertPayload.receipt_encoded?.length || 0,
       signature_base: insertPayload.signature_base,
-      signature_value_length: insertPayload.signature_value?.length || 0,
+      robokassa_signature_length: insertPayload.robokassa_signature?.length || 0,
     });
 
     const { error: insertError, data } = await supabase
@@ -92,7 +93,7 @@ async function storePaymentAttempt(
       .single();
 
     if (insertError) {
-      // Log full PostgREST error details
+      // Log full PostgREST error details (safe - no passwords)
       console.error('[robokassa/create-trial] ❌ DB insert error:', {
         code: insertError.code,
         message: insertError.message,
@@ -245,7 +246,11 @@ export async function POST(req: Request) {
       debug.robokassaTestMode = process.env.ROBOKASSA_TEST_MODE;
       
       // TEMP DEBUG: Log merchantLogin value (not masked) for error 26 diagnosis
+      // IMPORTANT: Must be exactly "steopone" (case-sensitive)
       console.log('[robokassa/create-trial] TEMP DEBUG: merchantLogin:', config.merchantLogin);
+      if (config.merchantLogin !== 'steopone') {
+        console.warn('[robokassa/create-trial] ⚠️ WARNING: merchantLogin is not "steopone"! Current value:', config.merchantLogin);
+      }
       console.log('[robokassa/create-trial] Robokassa config loaded, merchant:', config.merchantLogin);
       console.log('[robokassa/create-trial] Test mode:', config.isTest);
     } catch (configError: any) {
@@ -307,7 +312,7 @@ export async function POST(req: Request) {
     // Always use debug mode (no auto-submit) for easier debugging
     const debugMode = true; // Always true to show debug page
 
-    // Generate payment form
+    // Generate payment form - IMPORTANT: pass telegramUserId so Shp_userId is included in signature
     const { html, debug: formDebug } = generatePaymentForm(
       config,
       outSum,
@@ -315,12 +320,13 @@ export async function POST(req: Request) {
       description,
       modeParam,
       receipt,
-      telegramUserId,
+      telegramUserId, // Pass telegramUserId so Shp_userId is included in form AND signature
       debugMode
     );
 
     // TEMP DEBUG: Log signature base and first 120 chars of HTML for error 26 diagnosis
     console.log('[robokassa/create-trial] TEMP DEBUG: signatureBaseWithoutPassword:', formDebug.signatureBaseWithoutPassword);
+    console.log('[robokassa/create-trial] TEMP DEBUG: customParams in signature:', formDebug.customParams || []);
     console.log('[robokassa/create-trial] TEMP DEBUG: HTML form (first 120 chars):', html.substring(0, 120));
 
     // Store payment attempt in DB (non-blocking - do not fail request if this fails)
@@ -340,6 +346,7 @@ export async function POST(req: Request) {
     );
     debug.dbStore = dbStoreResult;
     
+    // IMPORTANT: Do NOT fail the payment flow if DB insert fails
     if (!dbStoreResult.ok) {
       console.warn('[robokassa/create-trial] ⚠️ DB store failed, but continuing payment flow');
       console.warn('[robokassa/create-trial] DB error details:', dbStoreResult.error);
@@ -358,6 +365,7 @@ export async function POST(req: Request) {
     console.log('[robokassa/create-trial] InvId:', invId);
     console.log('[robokassa/create-trial] OutSum:', outSum);
     console.log('[robokassa/create-trial] Signature base (no password):', formDebug.signatureBaseWithoutPassword);
+    console.log('[robokassa/create-trial] Custom params in signature:', formDebug.customParams || []);
     console.log('[robokassa/create-trial] Form fields (safe):', Object.keys(formDebug.formFields));
     console.log('[robokassa/create-trial] DB store result:', dbStoreResult.ok ? 'OK' : 'FAILED');
     console.log('[robokassa/create-trial] Debug mode:', debugMode);
@@ -378,6 +386,7 @@ export async function POST(req: Request) {
         debugModeEnabled: debug.debugModeEnabled,
         signatureBaseWithoutPassword: formDebug.signatureBaseWithoutPassword,
         signatureValue: formDebug.signatureValue, // Will be masked in UI
+        customParams: formDebug.customParams || [], // Show which Shp_* params were included
         formFields: formDebug.formFields,
         receiptRawLength: formDebug.receiptRawLength,
         receiptEncodedLength: formDebug.receiptEncodedLength,
