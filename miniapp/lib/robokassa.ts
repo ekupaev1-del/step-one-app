@@ -659,6 +659,9 @@ export function generatePaymentForm(
     console.log('[robokassa] signatureIsHex:', /^[0-9a-f]{32}$/.test(signatureResult.signatureValue));
     console.log('[robokassa] finalFormFields:', JSON.stringify(formFields, null, 2));
     console.log('[robokassa] formFieldsWithoutSignature:', JSON.stringify(formFieldsWithoutSignature, null, 2));
+    console.log('[robokassa] IsTest in formFieldsWithoutSignature:', 'IsTest' in formFieldsWithoutSignature);
+    console.log('[robokassa] IsTest value:', formFieldsWithoutSignature.IsTest || 'NOT_PRESENT');
+    console.log('[robokassa] config.isTest:', config.isTest);
     console.log('[robokassa] customParams:', customParams);
     console.log('[robokassa] customParamsSorted:', JSON.stringify(customParams) === JSON.stringify([...customParams].sort()));
     console.log('[robokassa] signatureParts count:', signatureResult.signatureParts.length);
@@ -670,6 +673,41 @@ export function generatePaymentForm(
       isShp: typeof p === 'string' && p.startsWith('Shp_'),
       isReceipt: typeof p === 'string' && p === receiptEncoded,
     })));
+    
+    // CRITICAL: Verify exact field-by-field match for Error 29
+    console.log('[robokassa] ========== FIELD-BY-FIELD VERIFICATION (Error 29) ==========');
+    console.log('[robokassa] Form field MerchantLogin:', formFieldsWithoutSignature.MerchantLogin);
+    console.log('[robokassa] Signature MerchantLogin:', signatureResult.signatureParts[0]);
+    console.log('[robokassa] Match:', formFieldsWithoutSignature.MerchantLogin === signatureResult.signatureParts[0]);
+    
+    console.log('[robokassa] Form field OutSum:', formFieldsWithoutSignature.OutSum);
+    console.log('[robokassa] Signature OutSum:', signatureResult.signatureParts[1]);
+    console.log('[robokassa] Match:', formFieldsWithoutSignature.OutSum === signatureResult.signatureParts[1]);
+    
+    console.log('[robokassa] Form field InvId:', formFieldsWithoutSignature.InvId);
+    console.log('[robokassa] Signature InvId:', signatureResult.signatureParts[2]);
+    console.log('[robokassa] Match:', formFieldsWithoutSignature.InvId === String(signatureResult.signatureParts[2]));
+    
+    if (mode === 'recurring' && receiptEncoded) {
+      console.log('[robokassa] Form field Receipt (length):', formFieldsWithoutSignature.Receipt?.length);
+      console.log('[robokassa] Signature Receipt (length):', receiptEncoded?.length);
+      const receiptInSignature = signatureResult.signatureParts.find(p => typeof p === 'string' && p === receiptEncoded);
+      console.log('[robokassa] Receipt in signature:', !!receiptInSignature);
+      console.log('[robokassa] Receipt exact match:', formFieldsWithoutSignature.Receipt === receiptEncoded);
+      console.log('[robokassa] Receipt in signature exact match:', receiptInSignature === receiptEncoded);
+    }
+    
+    const password1Index = signatureResult.signatureParts.findIndex(p => typeof p === 'string' && p === config.password1);
+    console.log('[robokassa] Password1 index in signature:', password1Index);
+    
+    if (customParams.length > 0) {
+      console.log('[robokassa] Shp_* params after Password1:');
+      const shpInSignature = signatureResult.signatureParts.slice(password1Index + 1).filter(p => typeof p === 'string' && p.startsWith('Shp_'));
+      console.log('[robokassa] Shp_* in signature:', shpInSignature);
+      console.log('[robokassa] Shp_* from form:', customParams);
+      console.log('[robokassa] Shp_* match:', JSON.stringify(shpInSignature.sort()) === JSON.stringify(customParams.sort()));
+    }
+    
     console.log('[robokassa] validationChecks:', JSON.stringify(validationChecks, null, 2));
     console.log('[robokassa] ============================================================');
   }
@@ -1016,8 +1054,18 @@ Match: ${receipt?.items[0]?.sum === parseFloat(outSumFormatted) ? '✅ YES' : '�
       // Render validation checks
       const validationChecks = ${JSON.stringify(debugInfo.validationChecks)};
       const checksHtml = Object.entries(validationChecks).map(([key, value]) => {
-        const className = value === true || (typeof value === 'number' && value > 0) || (typeof value === 'string' && value.length > 0) ? 'check-ok' : 'check-fail';
-        const icon = value === true || (typeof value === 'number' && value > 0) || (typeof value === 'string' && value.length > 0) ? '✅' : '❌';
+        // Special handling for isTestCorrect - it's correct if true (test mode with IsTest) OR false (production without IsTest)
+        if (key === 'isTestCorrect') {
+          const className = value === true ? 'check-ok' : 'check-fail';
+          const icon = value === true ? '✅' : '❌';
+          const explanation = value === true 
+            ? '✅ Правильно: IsTest присутствует в test mode ИЛИ отсутствует в production' 
+            : '❌ ОШИБКА: IsTest должен быть в test mode, но отсутствует в production';
+          return \`<div class="check-item \${className}">\${icon} <strong>\${key}:</strong> \${value} (\${explanation})</div>\`;
+        }
+        // For other checks: true/positive numbers/non-empty strings = OK
+        const className = value === true || (typeof value === 'number' && value > 0) || (typeof value === 'string' && value.length > 0 && value !== 'NOT_PRESENT') ? 'check-ok' : 'check-fail';
+        const icon = value === true || (typeof value === 'number' && value > 0) || (typeof value === 'string' && value.length > 0 && value !== 'NOT_PRESENT') ? '✅' : '❌';
         const displayValue = value === null ? 'N/A' : value;
         return \`<div class="check-item \${className}">\${icon} <strong>\${key}:</strong> \${displayValue}</div>\`;
       }).join('');
