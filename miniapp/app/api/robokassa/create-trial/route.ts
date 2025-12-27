@@ -59,11 +59,17 @@ async function storePaymentAttempt(
   try {
     // Build insert payload matching EXACT column names in DB
     // Include debug field (jsonb) - migration should add this column
+    // CRITICAL: Use 'amount' if it exists, otherwise use 'out_sum'
+    // Also handle 'invoice_id' vs 'inv_id' mismatch
     const insertPayload: any = {
       user_id: userId,
       telegram_user_id: telegramUserId,
+      // Try both inv_id and invoice_id to handle schema mismatch
       inv_id: invId,
-      out_sum: parseFloat(outSum),
+      invoice_id: invId, // Also set invoice_id in case it exists
+      // Try both amount and out_sum to handle schema mismatch
+      amount: parseFloat(outSum), // Use 'amount' if it exists (NOT NULL constraint)
+      out_sum: parseFloat(outSum), // Also set out_sum in case it exists
       mode: mode,
       status: 'created',
       description: description || null,
