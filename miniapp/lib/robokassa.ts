@@ -37,15 +37,17 @@ function calculateSignature(...args: (string | number)[]): string {
 /**
  * Build custom parameters (Shp_*) for signature and form
  * Returns array of strings in format "Shp_key=value" sorted alphabetically
+ * IMPORTANT: NO URL encoding - use raw format "Shp_userId=497201688"
  */
 function buildCustomParams(formFields: Record<string, string>): string[] {
   const customParams: string[] = [];
   for (const [key, value] of Object.entries(formFields)) {
     if (key.startsWith('Shp_')) {
+      // Format: "Shp_key=value" (NO URL encoding)
       customParams.push(`${key}=${value}`);
     }
   }
-  // Sort alphabetically for stable order
+  // Sort lexicographically by key for stable order
   return customParams.sort();
 }
 
@@ -73,84 +75,51 @@ export function generateReceipt(amount: number): Receipt {
 }
 
 /**
- * Sign minimal payment (no Receipt, no Recurring)
- * Signature: MD5(MerchantLogin:OutSum:InvId:Password1:Shp_userId=<value>)
- * Shp_* params are included ONLY if present in formFields
- */
-export function signMinimal(
-  config: RobokassaConfig,
-  outSum: string,
-  invId: number,
-  customParams: string[] = []
-): { signature: string; signatureBase: string; signatureFull: string } {
-  // Build signature parts
-  const parts: (string | number)[] = [
-    config.merchantLogin,
-    outSum,
-    invId,
-    config.password1,
-  ];
-  
-  // Append custom params (Shp_*) if any
-  if (customParams.length > 0) {
-    parts.push(...customParams);
-  }
-  
-  const signatureBase = customParams.length > 0
-    ? `${config.merchantLogin}:${outSum}:${invId}:${customParams.join(':')}`
-    : `${config.merchantLogin}:${outSum}:${invId}`;
-  
-  const signatureFull = customParams.length > 0
-    ? `${signatureBase}:${config.password1}`
-    : `${signatureBase}:${config.password1}`;
-  
-  const signature = calculateSignature(...parts);
-  
-  return { signature, signatureBase, signatureFull };
-}
-
-/**
- * Sign payment with Receipt (recurring mode)
- * Signature: MD5(MerchantLogin:OutSum:InvId:ReceiptEncoded:Password1:Shp_userId=<value>)
- * Shp_* params are included ONLY if present in formFields
+ * Unified signature generator for both minimal and recurring modes
+ * Signature rule: MD5(MerchantLogin:OutSum:InvId[:ReceiptEncoded][:Shp_* params]:Password1)
  * 
  * @param config - Robokassa configuration
  * @param outSum - Payment amount as string (e.g., "1.00")
  * @param invId - Unique InvId (integer)
- * @param receiptEncoded - Receipt JSON stringified and encoded with encodeURIComponent ONCE
- * @param customParams - Array of custom params in format "Shp_key=value"
- * @returns Signature and signature base (without password)
+ * @param receiptEncoded - Receipt encoded (only for recurring mode, optional)
+ * @param customParams - Array of custom params in format "Shp_key=value" (sorted)
+ * @returns Signature, signature base (without password), and full signature string
  */
-export function signWithReceipt(
+function calculateRobokassaSignature(
   config: RobokassaConfig,
   outSum: string,
   invId: number,
-  receiptEncoded: string,
+  receiptEncoded?: string,
   customParams: string[] = []
 ): { signature: string; signatureBase: string; signatureFull: string } {
-  // Build signature parts
-  const parts: (string | number)[] = [
+  // Build signature parts in correct order:
+  // MerchantLogin:OutSum:InvId[:ReceiptEncoded][:Shp_* params]:Password1
+  const signatureParts: (string | number)[] = [
     config.merchantLogin,
     outSum,
     invId,
-    receiptEncoded,
-    config.password1,
   ];
   
-  // Append custom params (Shp_*) if any
-  if (customParams.length > 0) {
-    parts.push(...customParams);
+  // Add ReceiptEncoded if present (recurring mode)
+  if (receiptEncoded) {
+    signatureParts.push(receiptEncoded);
   }
   
-  const signatureBase = customParams.length > 0
-    ? `${config.merchantLogin}:${outSum}:${invId}:${receiptEncoded}:${customParams.join(':')}`
-    : `${config.merchantLogin}:${outSum}:${invId}:${receiptEncoded}`;
+  // Add custom params (Shp_*) if any - BEFORE Password1
+  if (customParams.length > 0) {
+    signatureParts.push(...customParams);
+  }
   
-  const signatureFull = customParams.length > 0
-    ? `${signatureBase}:${config.password1}`
-    : `${signatureBase}:${config.password1}`;
+  // Add Password1 LAST
+  signatureParts.push(config.password1);
   
-  const signature = calculateSignature(...parts);
+  // Build signature base (without password) for logging
+  const baseParts = signatureParts.slice(0, -1); // All except password
+  const signatureBase = baseParts.join(':');
+  const signatureFull = signatureParts.join(':');
+  
+  // Calculate MD5 signature
+  const signature = calculateSignature(...signatureParts);
   
   return { signature, signatureBase, signatureFull };
 }
@@ -199,7 +168,7 @@ export function generatePaymentForm(
   let receiptJson: string | undefined;
   
   // Build form fields - CRITICAL: Use exact parameter names Robokassa expects
-  // IMPORTANT: MerchantLogin must be exactly "steopone" (case-sensitive)
+  // IMPORTANT: MerchantLogin must be read from ENV and match exactly "steopone" (case-sensitive)
   const formFields: Record<string, string> = {
     MerchantLogin: config.merchantLogin, // Must match exactly from Robokassa cabinet
     OutSum: outSum, // Must be "1.00" (string)
@@ -212,12 +181,18 @@ export function generatePaymentForm(
     formFields.Shp_userId = String(telegramUserId);
   }
   
-  // Build custom params array for signature (sorted alphabetically)
+  // Build custom params array for signature (sorted lexicographically)
   const customParams = buildCustomParams(formFields);
   
   if (mode === 'minimal') {
     // Minimal mode: no Receipt, no Recurring
-    const signResult = signMinimal(config, outSum, invId, customParams);
+    const signResult = calculateRobokassaSignature(
+      config,
+      outSum,
+      invId,
+      undefined, // No receipt
+      customParams
+    );
     signature = signResult.signature;
     signatureBase = signResult.signatureBase;
     signatureFull = signResult.signatureFull;
@@ -227,20 +202,26 @@ export function generatePaymentForm(
       throw new Error('Receipt is required for recurring mode');
     }
     
-    // Step 1: JSON.stringify receipt
+    // Step 1: JSON.stringify receipt ONCE
     receiptJson = JSON.stringify(receipt);
     
     // Step 2: encodeURIComponent ONCE (no double encoding)
     encodedReceipt = encodeURIComponent(receiptJson);
     
     // Step 3: Sign with encoded receipt and custom params
-    const signResult = signWithReceipt(config, outSum, invId, encodedReceipt, customParams);
+    const signResult = calculateRobokassaSignature(
+      config,
+      outSum,
+      invId,
+      encodedReceipt, // Include receipt in signature
+      customParams
+    );
     signature = signResult.signature;
     signatureBase = signResult.signatureBase;
     signatureFull = signResult.signatureFull;
     
     // Add Receipt and Recurring to form
-    formFields.Receipt = encodedReceipt;
+    formFields.Receipt = encodedReceipt; // Use the SAME encoded string
     formFields.Recurring = 'true';
   }
   
@@ -254,6 +235,7 @@ export function generatePaymentForm(
   const debugInfo = {
     mode,
     merchantLogin: config.merchantLogin,
+    merchantLoginIsSteopone: config.merchantLogin === 'steopone', // Strict check
     outSum,
     outSumType: typeof outSum,
     invId,
@@ -480,13 +462,20 @@ export function generatePaymentForm(
         </div>`;
   }
   
-  const signatureFormula = mode === 'minimal'
-    ? (customParams.length > 0 
-        ? `MD5(MerchantLogin:OutSum:InvId:Password1:${customParams.join(':')})`
-        : 'MD5(MerchantLogin:OutSum:InvId:Password1)')
-    : (customParams.length > 0
-        ? `MD5(MerchantLogin:OutSum:InvId:ReceiptEncoded:Password1:${customParams.join(':')})`
-        : 'MD5(MerchantLogin:OutSum:InvId:ReceiptEncoded:Password1)');
+  // Build signature formula for display
+  const signatureFormulaParts = [
+    'MerchantLogin',
+    'OutSum',
+    'InvId',
+  ];
+  if (mode === 'recurring' && encodedReceipt) {
+    signatureFormulaParts.push('ReceiptEncoded');
+  }
+  if (customParams.length > 0) {
+    signatureFormulaParts.push(...customParams);
+  }
+  signatureFormulaParts.push('Password1');
+  const signatureFormula = `MD5(${signatureFormulaParts.join(':')})`;
   
   formHtml += `
       </div>
@@ -505,10 +494,8 @@ ${customParams.length > 0 ? customParams.join(', ') : 'None'}
 Signature Value:
 ${signature}
 
-Parts:
-${mode === 'minimal' 
-  ? `- MerchantLogin: ${config.merchantLogin}\n- OutSum: ${outSum}\n- InvId: ${invId}${customParams.length > 0 ? '\n- ' + customParams.join('\n- ') : ''}`
-  : `- MerchantLogin: ${config.merchantLogin}\n- OutSum: ${outSum}\n- InvId: ${invId}\n- ReceiptEncoded: ${encodedReceipt?.substring(0, 100)}...${customParams.length > 0 ? '\n- ' + customParams.join('\n- ') : ''}`}
+Parts in order:
+${signatureFormulaParts.map((p, i) => `${i + 1}. ${p === 'MerchantLogin' ? config.merchantLogin : p === 'OutSum' ? outSum : p === 'InvId' ? invId : p === 'ReceiptEncoded' ? (encodedReceipt?.substring(0, 100) + '...') : p === 'Password1' ? '[HIDDEN]' : p}`).join('\n')}
 </pre>
     </div>`;
   
@@ -596,6 +583,7 @@ Match: ${receipt?.items[0]?.sum === parseFloat(outSum) ? '✅ YES' : '❌ NO'}
 /**
  * Get Robokassa config from environment variables
  * IMPORTANT: MerchantLogin must be exactly "steopone" (case-sensitive)
+ * Always read from ENV - never hardcode
  */
 export function getRobokassaConfig(): RobokassaConfig {
   const merchantLogin = process.env.ROBOKASSA_MERCHANT_LOGIN;
@@ -610,6 +598,12 @@ export function getRobokassaConfig(): RobokassaConfig {
 
   // TEMP DEBUG: Log merchantLogin to verify it's "steopone"
   console.log('[robokassa] TEMP DEBUG: merchantLogin from env:', merchantLogin);
+  
+  // Strict check: merchantLogin must be exactly "steopone"
+  if (merchantLogin !== 'steopone') {
+    console.error('[robokassa] ❌ CRITICAL: merchantLogin is not "steopone"! Current value:', merchantLogin);
+    console.error('[robokassa] ❌ This will cause Robokassa Error 26!');
+  }
 
   return {
     merchantLogin, // Use exactly as from env (must be "steopone")

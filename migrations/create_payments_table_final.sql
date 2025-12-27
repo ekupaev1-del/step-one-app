@@ -3,6 +3,9 @@
 -- Run this SQL in Supabase SQL editor
 -- IMPORTANT: This matches the schema expected by the API route
 
+-- Drop table if exists (for clean migration)
+-- DROP TABLE IF EXISTS public.payments CASCADE;
+
 create table if not exists public.payments (
   id uuid primary key default gen_random_uuid(),
   user_id uuid references public.users(id) on delete cascade,
@@ -12,10 +15,7 @@ create table if not exists public.payments (
   mode text not null check (mode in ('minimal','recurring')),
   status text not null default 'created' check (status in ('created','paid','failed','canceled')),
   description text,
-  receipt_json text,
-  receipt_encoded text,
-  signature_base text,
-  robokassa_signature text,
+  debug jsonb,
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now()
 );
@@ -33,4 +33,3 @@ create index if not exists payments_status_idx on public.payments(status);
 --   for insert with check (true);
 -- create policy "Service role can select payments" on public.payments
 --   for select using (true);
-

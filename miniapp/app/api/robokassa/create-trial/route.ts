@@ -57,18 +57,22 @@ async function storePaymentAttempt(
   signatureValue?: string
 ): Promise<{ ok: boolean; error?: any; debug?: any }> {
   try {
-    const insertPayload = {
+    // Build insert payload matching EXACT column names in DB
+    const insertPayload: any = {
       user_id: userId,
       telegram_user_id: telegramUserId,
       inv_id: invId,
       out_sum: parseFloat(outSum),
       mode: mode,
-      status: 'created' as const,
+      status: 'created',
       description: description || null,
-      receipt_json: receiptJson || null,
-      receipt_encoded: receiptEncoded || null,
-      signature_base: signatureBase || null,
-      robokassa_signature: signatureValue || null, // Using robokassa_signature column name
+      debug: {
+        receipt_json_length: receiptJson?.length || 0,
+        receipt_encoded_length: receiptEncoded?.length || 0,
+        signature_base: signatureBase || null,
+        signature_value_length: signatureValue?.length || 0,
+        timestamp: new Date().toISOString(),
+      },
     };
 
     // TEMP DEBUG: Log insert payload (without sensitive data)
@@ -80,10 +84,7 @@ async function storePaymentAttempt(
       mode: insertPayload.mode,
       status: insertPayload.status,
       description: insertPayload.description,
-      receipt_json_length: insertPayload.receipt_json?.length || 0,
-      receipt_encoded_length: insertPayload.receipt_encoded?.length || 0,
-      signature_base: insertPayload.signature_base,
-      robokassa_signature_length: insertPayload.robokassa_signature?.length || 0,
+      debug_keys: Object.keys(insertPayload.debug || {}),
     });
 
     const { error: insertError, data } = await supabase
@@ -249,7 +250,8 @@ export async function POST(req: Request) {
       // IMPORTANT: Must be exactly "steopone" (case-sensitive)
       console.log('[robokassa/create-trial] TEMP DEBUG: merchantLogin:', config.merchantLogin);
       if (config.merchantLogin !== 'steopone') {
-        console.warn('[robokassa/create-trial] ⚠️ WARNING: merchantLogin is not "steopone"! Current value:', config.merchantLogin);
+        console.error('[robokassa/create-trial] ❌ CRITICAL: merchantLogin is not "steopone"! Current value:', config.merchantLogin);
+        console.error('[robokassa/create-trial] ❌ This will cause Robokassa Error 26!');
       }
       console.log('[robokassa/create-trial] Robokassa config loaded, merchant:', config.merchantLogin);
       console.log('[robokassa/create-trial] Test mode:', config.isTest);
@@ -349,7 +351,14 @@ export async function POST(req: Request) {
     // IMPORTANT: Do NOT fail the payment flow if DB insert fails
     if (!dbStoreResult.ok) {
       console.warn('[robokassa/create-trial] ⚠️ DB store failed, but continuing payment flow');
-      console.warn('[robokassa/create-trial] DB error details:', dbStoreResult.error);
+      console.warn('[robokassa/create-trial] DB error details:', JSON.stringify(dbStoreResult.error, null, 2));
+      // Return debug info about DB failure but still return success
+      debug.dbInsertError = {
+        stage: 'db_insert',
+        message: dbStoreResult.error?.message || 'DB insert failed',
+        details: dbStoreResult.error?.details,
+        hint: dbStoreResult.error?.hint,
+      };
     } else {
       console.log('[robokassa/create-trial] ✅ Payment stored in DB');
     }
@@ -377,6 +386,7 @@ export async function POST(req: Request) {
         stage: debug.stage,
         mode: debug.mode,
         merchantLogin: debug.merchantLogin,
+        merchantLoginIsSteopone: formDebug.merchantLoginIsSteopone,
         outSum: debug.outSum,
         invId: debug.invId,
         description: debug.description,
@@ -393,6 +403,7 @@ export async function POST(req: Request) {
         receiptEncodedPreview: formDebug.receiptEncodedPreview,
         dbInsertOk: dbStoreResult.ok,
         dbError: dbStoreResult.error || undefined,
+        dbInsertError: debug.dbInsertError || undefined,
       },
     });
   } catch (error: any) {
