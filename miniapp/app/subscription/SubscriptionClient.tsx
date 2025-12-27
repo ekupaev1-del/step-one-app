@@ -6,7 +6,8 @@ import { useSearchParams } from 'next/navigation';
 interface CreateTrialResponse {
   ok: boolean;
   html?: string;
-  error?: string;
+  stage?: string;
+  message?: string;
   debug?: any;
 }
 
@@ -46,41 +47,40 @@ export default function SubscriptionClient() {
       
       const data: CreateTrialResponse = await response.json();
       
-      // Always show debug data
-      setDebugData(data.debug || { responseStatus: response.status, responseData: data });
+      // Save full response to Debug JSON panel
+      setDebugData({
+        responseStatus: response.status,
+        responseData: data,
+        timestamp: new Date().toISOString(),
+      });
       setShowDebug(true);
 
+      // If ok=false → show error + debug JSON
       if (!response.ok || !data.ok) {
-        const errorMsg = data.error || 'Payment creation failed';
+        const errorMsg = data.message || 'Payment creation failed';
         setError(errorMsg);
         return;
       }
 
-      if (!data.html) {
+      // If ok=true → replace document with formHtml
+      if (data.html) {
+        // Replace entire document with form HTML
+        document.open();
+        document.write(data.html);
+        document.close();
+      } else {
         const errorMsg = 'Payment creation failed: No HTML form returned';
         setError(errorMsg);
-        return;
-      }
-
-      // Open payment form in new window
-      const newWindow = window.open('', '_blank');
-      if (newWindow) {
-        newWindow.document.write(data.html);
-        newWindow.document.close();
-      } else {
-        // Fallback: create iframe
-        const iframe = document.createElement('iframe');
-        iframe.style.width = '100%';
-        iframe.style.height = '600px';
-        iframe.style.border = 'none';
-        iframe.srcdoc = data.html;
-        document.body.appendChild(iframe);
       }
     } catch (error: any) {
       console.error('Error starting trial:', error);
       const errorMsg = 'Payment creation failed';
       setError(errorMsg);
-      setDebugData({ error: error.message, stack: error.stack });
+      setDebugData({
+        error: error.message,
+        stack: error.stack,
+        timestamp: new Date().toISOString(),
+      });
       setShowDebug(true);
     } finally {
       setLoading(false);
@@ -149,4 +149,3 @@ export default function SubscriptionClient() {
     </div>
   );
 }
-

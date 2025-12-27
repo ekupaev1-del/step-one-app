@@ -40,9 +40,9 @@ export async function POST(req: Request) {
       console.error('[robokassa/create-trial] ❌ telegramUserId missing');
       return NextResponse.json({
         ok: false,
-        error: 'telegramUserId is required in query string',
-        debug: { ...debug, error: 'telegramUserId missing' },
-      }, { status: 400 });
+        stage: 'validate_input',
+        message: 'telegramUserId is required in query string',
+      }, { status: 500 });
     }
 
     const telegramUserId = Number(telegramUserIdParam);
@@ -50,9 +50,9 @@ export async function POST(req: Request) {
       console.error('[robokassa/create-trial] ❌ Invalid telegramUserId:', telegramUserIdParam);
       return NextResponse.json({
         ok: false,
-        error: 'telegramUserId must be a positive number',
-        debug: { ...debug, error: 'Invalid telegramUserId', value: telegramUserIdParam },
-      }, { status: 400 });
+        stage: 'validate_input',
+        message: 'telegramUserId must be a positive number',
+      }, { status: 500 });
     }
 
     debug.telegramUserId = telegramUserId;
@@ -75,23 +75,20 @@ export async function POST(req: Request) {
 
     if (userError) {
       console.error('[robokassa/create-trial] ❌ Supabase error:', userError);
-      debug.step = 'user_error';
-      debug.userError = userError.message;
       return NextResponse.json({
         ok: false,
-        error: 'Database error',
-        debug,
+        stage: 'check_user',
+        message: 'Database error',
       }, { status: 500 });
     }
 
     if (!user) {
       console.error('[robokassa/create-trial] ❌ User not found:', telegramUserId);
-      debug.step = 'user_not_found';
       return NextResponse.json({
         ok: false,
-        error: 'User not found. Please use /start in bot first.',
-        debug,
-      }, { status: 404 });
+        stage: 'check_user',
+        message: 'User not found. Please use /start in bot first.',
+      }, { status: 500 });
     }
 
     debug.userId = user.id;
@@ -108,12 +105,10 @@ export async function POST(req: Request) {
       console.log('[robokassa/create-trial] Robokassa config loaded, merchant:', config.merchantLogin);
     } catch (configError: any) {
       console.error('[robokassa/create-trial] ❌ Config error:', configError.message);
-      debug.step = 'config_error';
-      debug.configError = configError.message;
       return NextResponse.json({
         ok: false,
-        error: 'Robokassa configuration error',
-        debug,
+        stage: 'get_config',
+        message: 'Robokassa configuration error',
       }, { status: 500 });
     }
 
@@ -164,20 +159,15 @@ export async function POST(req: Request) {
     return NextResponse.json({
       ok: true,
       html,
-      debug,
     });
   } catch (error: any) {
     console.error('[robokassa/create-trial] ❌ CRITICAL ERROR:', error);
     console.error('[robokassa/create-trial] Error stack:', error.stack);
 
-    debug.step = 'critical_error';
-    debug.error = error.message;
-    debug.errorStack = error.stack;
-
     return NextResponse.json({
       ok: false,
-      error: error.message || 'Internal server error',
-      debug,
+      stage: 'critical_error',
+      message: error.message || 'Internal server error',
     }, { status: 500 });
   }
 }
