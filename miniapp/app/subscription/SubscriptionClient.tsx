@@ -35,22 +35,52 @@ export default function SubscriptionClient() {
       if (!userData.ok || !userData.telegram_id) {
         const errorMsg = 'Ошибка: не удалось получить данные пользователя';
         setError(errorMsg);
-        setDebugData({ userResponse: userData });
+        setDebugData({
+          request: {
+            url: `/api/user?id=${userId}`,
+            method: 'GET',
+            payload: null,
+          },
+          response: {
+            status: userResponse.status,
+            body: userData,
+          },
+          error: {
+            message: 'Failed to get user telegram_id',
+          },
+        });
         setShowDebug(true);
         return;
       }
 
+      // Prepare request details
+      const requestUrl = `/api/robokassa/create-trial?telegramUserId=${userData.telegram_id}`;
+      const requestPayload = {
+        telegramUserId: userData.telegram_id,
+      };
+
       // Create trial payment
-      const response = await fetch(
-        `/api/robokassa/create-trial?telegramUserId=${userData.telegram_id}`
-      );
+      const response = await fetch(requestUrl, {
+        method: 'POST',
+      });
       
       const data: CreateTrialResponse = await response.json();
       
-      // Save full response to Debug JSON panel
+      // Save full response to Debug JSON panel with request details
       setDebugData({
-        responseStatus: response.status,
-        responseData: data,
+        request: {
+          url: requestUrl,
+          method: 'POST',
+          payload: requestPayload,
+        },
+        response: {
+          status: response.status,
+          body: data,
+        },
+        error: !response.ok || !data.ok ? {
+          message: data.message || 'Payment creation failed',
+          stage: data.stage,
+        } : null,
         timestamp: new Date().toISOString(),
       });
       setShowDebug(true);
@@ -77,8 +107,16 @@ export default function SubscriptionClient() {
       const errorMsg = 'Payment creation failed';
       setError(errorMsg);
       setDebugData({
-        error: error.message,
-        stack: error.stack,
+        request: {
+          url: `/api/robokassa/create-trial?telegramUserId=${userId}`,
+          method: 'POST',
+          payload: { telegramUserId: userId },
+        },
+        response: null,
+        error: {
+          message: error.message,
+          stack: error.stack,
+        },
         timestamp: new Date().toISOString(),
       });
       setShowDebug(true);
