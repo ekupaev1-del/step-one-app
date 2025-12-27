@@ -11,6 +11,17 @@ interface CreateTrialResponse {
   debug?: any;
 }
 
+/**
+ * Mask signature value for safe display
+ * Shows first 6 and last 6 characters
+ */
+function maskSignature(signature: string): string {
+  if (!signature || signature.length <= 12) {
+    return signature;
+  }
+  return `${signature.substring(0, 6)}...${signature.substring(signature.length - 6)}`;
+}
+
 export default function SubscriptionClient() {
   const searchParams = useSearchParams();
   const userId = searchParams.get('id');
@@ -68,6 +79,12 @@ export default function SubscriptionClient() {
       
       const data: CreateTrialResponse = await response.json();
       
+      // Prepare debug data with masked signature
+      const safeDebug = data.debug ? {
+        ...data.debug,
+        signatureValue: data.debug.signatureValue ? maskSignature(data.debug.signatureValue) : undefined,
+      } : undefined;
+      
       // Save full response to Debug JSON panel with request details
       setDebugData({
         request: {
@@ -77,13 +94,16 @@ export default function SubscriptionClient() {
         },
         response: {
           status: response.status,
-          body: data,
+          body: {
+            ...data,
+            debug: safeDebug, // Use masked debug
+          },
         },
         error: !response.ok || !data.ok ? {
           message: data.message || 'Payment creation failed',
           stage: data.stage,
         } : null,
-        debug: data.debug || undefined, // Include API debug info
+        debug: safeDebug, // Include API debug info (masked)
         timestamp: new Date().toISOString(),
       });
       setShowDebug(true);
@@ -92,15 +112,27 @@ export default function SubscriptionClient() {
       if (!response.ok || !data.ok) {
         const errorMsg = data.message || 'Payment creation failed';
         setError(errorMsg);
+        // Show alert for errors
+        alert(`Ошибка: ${errorMsg}\n\nПроверьте Debug JSON панель для деталей.`);
         return;
       }
 
-      // If ok=true → replace document with formHtml
+      // If ok=true → open HTML in new window/iframe
       if (data.html) {
-        // Replace entire document with form HTML
-        document.open();
-        document.write(data.html);
-        document.close();
+        // Open in new window (better for debugging)
+        const newWindow = window.open('', '_blank');
+        if (newWindow) {
+          newWindow.document.write(data.html);
+          newWindow.document.close();
+        } else {
+          // Fallback: create iframe
+          const iframe = document.createElement('iframe');
+          iframe.style.width = '100%';
+          iframe.style.height = '600px';
+          iframe.style.border = 'none';
+          iframe.srcdoc = data.html;
+          document.body.appendChild(iframe);
+        }
       } else {
         const errorMsg = 'Payment creation failed: No HTML form returned';
         setError(errorMsg);
@@ -123,6 +155,8 @@ export default function SubscriptionClient() {
         timestamp: new Date().toISOString(),
       });
       setShowDebug(true);
+      // Show alert for errors
+      alert(`Ошибка: ${errorMsg}\n\nПроверьте Debug JSON панель для деталей.`);
     } finally {
       setLoading(false);
     }
@@ -190,30 +224,34 @@ export default function SubscriptionClient() {
           {loading ? 'Обработка...' : `Start trial for 1 ₽ (${debugMode})`}
         </button>
 
-        {showDebug && debugData && (
-          <div className="mt-4 bg-gray-900 rounded-lg p-4">
-            <div className="flex justify-between items-center mb-2">
-              <h3 className="text-white font-semibold">Debug JSON</h3>
-              <button
-                onClick={() => setShowDebug(false)}
-                className="text-gray-400 hover:text-white"
-              >
-                ✕
-              </button>
-            </div>
-            <pre className="text-xs text-green-400 overflow-auto max-h-96">
-              {JSON.stringify(debugData, null, 2)}
-            </pre>
+        {/* TEMP DEBUG: Collapsible Debug JSON panel */}
+        {debugData && (
+          <div className="mt-4">
+            <button
+              onClick={() => setShowDebug(!showDebug)}
+              className="w-full bg-gray-800 hover:bg-gray-700 text-white font-semibold py-2 px-4 rounded-lg mb-2 flex items-center justify-between"
+            >
+              <span>🔍 Debug JSON {showDebug ? '(скрыть)' : '(показать)'}</span>
+              <span>{showDebug ? '▲' : '▼'}</span>
+            </button>
+            
+            {showDebug && (
+              <div className="bg-gray-900 rounded-lg p-4">
+                <div className="mb-2">
+                  <p className="text-xs text-gray-400 mb-1">
+                    {debugData.error 
+                      ? '❌ Error Response (ok=false)' 
+                      : debugData.response?.body?.ok 
+                        ? '✅ Success Response (ok=true)' 
+                        : '⚠️ Response Data'}
+                  </p>
+                </div>
+                <pre className="text-xs text-green-400 overflow-auto max-h-96 bg-black p-3 rounded">
+                  {JSON.stringify(debugData, null, 2)}
+                </pre>
+              </div>
+            )}
           </div>
-        )}
-
-        {!showDebug && debugData && (
-          <button
-            onClick={() => setShowDebug(true)}
-            className="w-full text-sm text-gray-600 hover:text-gray-800"
-          >
-            Show Debug JSON
-          </button>
         )}
       </div>
     </div>

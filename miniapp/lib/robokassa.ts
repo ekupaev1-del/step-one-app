@@ -150,11 +150,12 @@ export function generatePaymentForm(
   let encodedReceipt: string | undefined;
   let receiptJson: string | undefined;
   
+  // Build form fields - CRITICAL: Use exact parameter names Robokassa expects
   const formFields: Record<string, string> = {
-    MerchantLogin: config.merchantLogin,
-    OutSum: outSum,
-    InvId: String(invId), // Use InvId, not InvoiceID
-    Description: description,
+    MerchantLogin: config.merchantLogin, // Must match exactly from Robokassa cabinet
+    OutSum: outSum, // Must be "1.00" (string)
+    InvId: String(invId), // Use InvId (NOT InvoiceID), must be integer <= 2_000_000_000
+    Description: description, // ASCII, no emojis
   };
   
   if (mode === 'minimal') {
@@ -196,9 +197,8 @@ export function generatePaymentForm(
     formFields.Shp_userId = String(telegramUserId);
   }
   
-  // Build comprehensive debug info for error 26 diagnosis
+  // Build comprehensive debug info
   const debugInfo = {
-    timestamp: new Date().toISOString(),
     mode,
     merchantLogin: config.merchantLogin,
     outSum,
@@ -211,60 +211,25 @@ export function generatePaymentForm(
     isTestIncluded: config.isTest,
     robokassaTestMode: process.env.ROBOKASSA_TEST_MODE,
     baseUrl,
-    
-    // Signature calculation details
-    signatureCalculation: {
-      formula: mode === 'minimal' 
-        ? 'MD5(MerchantLogin:OutSum:InvId:Password1)'
-        : 'MD5(MerchantLogin:OutSum:InvId:ReceiptEncoded:Password1)',
-      signatureBase: signatureBase,
-      signatureBaseParts: mode === 'minimal'
-        ? [config.merchantLogin, outSum, String(invId)]
-        : [config.merchantLogin, outSum, String(invId), encodedReceipt],
-      signatureValue: signature,
-      signatureLength: signature.length,
-      expectedLength: 32, // MD5 hash length
-    },
-    
-    // Form fields (all values for debugging)
-    formFields: formFields,
-    formFieldsCount: Object.keys(formFields).length,
-    
-    // Receipt details (for recurring mode)
-    receipt: mode === 'recurring' ? {
-      raw: receiptJson,
-      rawLength: receiptJson?.length || 0,
-      encoded: encodedReceipt,
-      encodedLength: encodedReceipt?.length || 0,
-      encodedPreview: encodedReceipt ? encodedReceipt.substring(0, 150) + '...' : undefined,
-      object: receipt,
-      itemSum: receipt?.items[0]?.sum,
-      itemSumMatchesOutSum: receipt?.items[0]?.sum === parseFloat(outSum),
-    } : null,
-    
+    signatureBaseWithoutPassword: signatureBase,
+    signatureFullWithPassword: signatureFull.replace(config.password1, '[PASSWORD1_HIDDEN]'),
+    signatureValue: signature,
+    signatureLength: signature.length,
+    formFields: Object.fromEntries(
+      Object.entries(formFields).map(([k, v]) => [
+        k,
+        k === 'Receipt' ? `[encoded, length: ${v.length}, preview: ${v.substring(0, 100)}...]` : v
+      ])
+    ),
+    formFieldsRaw: formFields, // Full raw values for debugging
+    receiptRaw: receiptJson,
+    receiptRawLength: receiptJson?.length || 0,
+    receiptEncoded: encodedReceipt,
+    receiptEncodedLength: encodedReceipt?.length || 0,
+    receiptEncodedPreview: encodedReceipt ? encodedReceipt.substring(0, 100) + '...' : undefined,
+    receiptFull: receipt,
     telegramUserId: telegramUserId || undefined,
-    
-    // Robokassa error 26 diagnosis info
-    error26Diagnosis: {
-      commonCauses: [
-        'Incorrect signature calculation',
-        'Wrong parameter names (should be InvId, not InvoiceID)',
-        'Receipt encoding issues (double encoding or wrong format)',
-        'OutSum format mismatch (should be "1.00" not "1.000000")',
-        'Missing required fields',
-        'Password1 mismatch',
-      ],
-      checks: {
-        invIdIsNumber: typeof invId === 'number',
-        invIdWithinRange: invId <= 2000000000,
-        outSumIsString: typeof outSum === 'string',
-        outSumFormat: outSum === '1.00',
-        signatureLength: signature.length === 32,
-        receiptEncodedOnce: mode === 'minimal' || (encodedReceipt && !encodedReceipt.includes('%25')),
-        formHasInvId: 'InvId' in formFields,
-        formHasSignatureValue: 'SignatureValue' in formFields,
-      },
-    },
+    timestamp: new Date().toISOString(),
   };
   
   // Build debug JSON string for copying
@@ -425,6 +390,7 @@ export function generatePaymentForm(
         <li>Несоответствие формата OutSum (должно быть "1.00", не "1.000000")</li>
         <li>Отсутствие обязательных полей</li>
         <li>Несоответствие Password1</li>
+        <li>MerchantLogin не совпадает с идентификатором в кабинете Robokassa (case-sensitive)</li>
       </ul>
       <p><strong>Проверки:</strong></p>
       <div id="checks"></div>
@@ -507,7 +473,17 @@ Match: ${receipt?.items[0]?.sum === parseFloat(outSum) ? '✅ YES' : '❌ NO'}
     
     <script>
       // Render checks
-      const checks = ${JSON.stringify(debugInfo.error26Diagnosis.checks)};
+      const checks = ${JSON.stringify({
+        invIdIsNumber: typeof invId === 'number',
+        invIdWithinRange: invId <= 2000000000,
+        outSumIsString: typeof outSum === 'string',
+        outSumFormat: outSum === '1.00',
+        signatureLength: signature.length === 32,
+        receiptEncodedOnce: mode === 'minimal' || (encodedReceipt && !encodedReceipt.includes('%25')),
+        formHasInvId: 'InvId' in formFields,
+        formHasSignatureValue: 'SignatureValue' in formFields,
+        merchantLoginSet: config.merchantLogin && config.merchantLogin.length > 0,
+      })};
       const checksHtml = Object.entries(checks).map(([key, value]) => {
         const className = value ? 'check-ok' : 'check-fail';
         const icon = value ? '✅' : '❌';
