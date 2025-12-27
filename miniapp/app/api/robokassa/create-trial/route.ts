@@ -58,6 +58,7 @@ async function storePaymentAttempt(
 ): Promise<{ ok: boolean; error?: any; debug?: any }> {
   try {
     // Build insert payload matching EXACT column names in DB
+    // Include debug field (jsonb) - migration should add this column
     const insertPayload: any = {
       user_id: userId,
       telegram_user_id: telegramUserId,
@@ -67,6 +68,8 @@ async function storePaymentAttempt(
       status: 'created',
       description: description || null,
       debug: {
+        receipt_raw: receiptJson || null,
+        receipt_encoded: receiptEncoded || null,
         receipt_json_length: receiptJson?.length || 0,
         receipt_encoded_length: receiptEncoded?.length || 0,
         signature_base: signatureBase || null,

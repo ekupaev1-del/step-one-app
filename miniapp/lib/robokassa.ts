@@ -79,6 +79,49 @@ function validateCustomParamsInSignature(
 }
 
 /**
+ * Build signature base parts in correct order
+ * Returns array of parts for signature calculation
+ * Order: MerchantLogin:OutSum:InvId[:ReceiptEncoded]:Password1[:Shp_* params]
+ * 
+ * @param merchantLogin - Merchant login
+ * @param outSum - Payment amount as string (e.g., "1.00")
+ * @param invId - Unique InvId (integer)
+ * @param encodedReceipt - Receipt encoded (only for recurring mode, optional)
+ * @param password1 - Password1 for signature
+ * @param customParams - Array of custom params in format "Shp_key=value" (sorted alphabetically)
+ * @returns Array of signature parts in correct order
+ */
+function buildSignatureBaseParts(
+  merchantLogin: string,
+  outSum: string,
+  invId: number,
+  encodedReceipt: string | undefined,
+  password1: string,
+  customParams: string[]
+): (string | number)[] {
+  const parts: (string | number)[] = [
+    merchantLogin,
+    outSum,
+    invId,
+  ];
+  
+  // Add ReceiptEncoded if present (recurring mode) - BEFORE Password1
+  if (encodedReceipt) {
+    parts.push(encodedReceipt);
+  }
+  
+  // Add Password1 BEFORE custom params
+  parts.push(password1);
+  
+  // Add custom params (Shp_*) AFTER Password1 - sorted alphabetically
+  if (customParams.length > 0) {
+    parts.push(...customParams);
+  }
+  
+  return parts;
+}
+
+/**
  * Generate Receipt for fiscalization (54-FZ)
  * For Robocheki SMZ, use "npd" (налог на профессиональный доход)
  * 
@@ -118,29 +161,18 @@ function calculateRobokassaSignature(
   config: RobokassaConfig,
   outSum: string,
   invId: number,
-  receiptEncoded?: string,
+  receiptEncoded: string | undefined,
   customParams: string[] = []
-): { signature: string; signatureBase: string; signatureFull: string } {
-  // Build signature parts in CORRECT order:
-  // MerchantLogin:OutSum:InvId[:ReceiptEncoded]:Password1[:Shp_* params]
-  const signatureParts: (string | number)[] = [
+): { signature: string; signatureBase: string; signatureBaseFull: string; signatureParts: (string | number)[] } {
+  // Build signature parts in CORRECT order using helper
+  const signatureParts = buildSignatureBaseParts(
     config.merchantLogin,
     outSum,
     invId,
-  ];
-  
-  // Add ReceiptEncoded if present (recurring mode) - BEFORE Password1
-  if (receiptEncoded) {
-    signatureParts.push(receiptEncoded);
-  }
-  
-  // Add Password1 BEFORE custom params
-  signatureParts.push(config.password1);
-  
-  // Add custom params (Shp_*) AFTER Password1 - sorted alphabetically
-  if (customParams.length > 0) {
-    signatureParts.push(...customParams);
-  }
+    receiptEncoded,
+    config.password1,
+    customParams
+  );
   
   // Build signature base (without password and custom params) for logging
   const baseParts = [
@@ -153,7 +185,7 @@ function calculateRobokassaSignature(
   }
   const signatureBase = baseParts.join(':');
   
-  // Build full signature string (with password masked) for debug
+  // Build full signature string (with password masked and custom params) for debug
   const fullParts = [
     config.merchantLogin,
     outSum,
@@ -166,12 +198,12 @@ function calculateRobokassaSignature(
   if (customParams.length > 0) {
     fullParts.push(...customParams);
   }
-  const signatureFull = fullParts.join(':');
+  const signatureBaseFull = fullParts.join(':');
   
-  // Calculate MD5 signature
+  // Calculate MD5 signature over EXACT string Robokassa expects
   const signature = calculateSignature(...signatureParts);
   
-  return { signature, signatureBase, signatureFull };
+  return { signature, signatureBase, signatureBaseFull, signatureParts };
 }
 
 /**
@@ -189,7 +221,7 @@ export function signMinimal(
   outSum: string,
   invId: number,
   customParams: string[] = []
-): { signature: string; signatureBase: string; signatureFull: string } {
+): { signature: string; signatureBase: string; signatureBaseFull: string; signatureParts: (string | number)[] } {
   return calculateRobokassaSignature(
     config,
     outSum,
@@ -216,7 +248,7 @@ export function signWithReceipt(
   invId: number,
   receiptEncoded: string,
   customParams: string[] = []
-): { signature: string; signatureBase: string; signatureFull: string } {
+): { signature: string; signatureBase: string; signatureBaseFull: string; signatureParts: (string | number)[] } {
   return calculateRobokassaSignature(
     config,
     outSum,
@@ -265,7 +297,8 @@ export function generatePaymentForm(
   
   let signature: string;
   let signatureBase: string;
-  let signatureFull: string;
+  let signatureBaseFull: string;
+  let signatureParts: (string | number)[];
   let encodedReceipt: string | undefined;
   let receiptJson: string | undefined;
   
@@ -297,7 +330,8 @@ export function generatePaymentForm(
     const signResult = signMinimal(config, outSum, invId, customParams);
     signature = signResult.signature;
     signatureBase = signResult.signatureBase;
-    signatureFull = signResult.signatureFull;
+    signatureBaseFull = signResult.signatureBaseFull;
+    signatureParts = signResult.signatureParts;
   } else {
     // Recurring mode: with Receipt and Recurring=true
     if (!receipt) {
@@ -311,14 +345,16 @@ export function generatePaymentForm(
     encodedReceipt = encodeURIComponent(receiptJson);
     
     // Step 3: Sign with encoded receipt and custom params
+    // IMPORTANT: Use the SAME encodedReceipt string in form field AND signature
     const signResult = signWithReceipt(config, outSum, invId, encodedReceipt, customParams);
     signature = signResult.signature;
     signatureBase = signResult.signatureBase;
-    signatureFull = signResult.signatureFull;
+    signatureBaseFull = signResult.signatureBaseFull;
+    signatureParts = signResult.signatureParts;
     
     // Add Receipt and Recurring to form
     formFields.Receipt = encodedReceipt; // Use the SAME encoded string
-    formFields.Recurring = 'true';
+    formFields.Recurring = 'true'; // Do NOT include in signature (Robokassa doesn't require it)
   }
   
   formFields.SignatureValue = signature;
@@ -343,9 +379,18 @@ export function generatePaymentForm(
     robokassaTestMode: process.env.ROBOKASSA_TEST_MODE,
     baseUrl,
     signatureBaseWithoutPassword: signatureBase, // Base without password and custom params
-    signatureFullWithPassword: signatureFull, // Full with password masked and custom params
+    signatureBaseFull: signatureBaseFull, // Full with password masked and custom params
     signatureValue: signature,
     signatureLength: signature.length,
+    signatureParts: signatureParts.map((p, i) => ({
+      index: i + 1,
+      part: typeof p === 'string' && p === config.password1 ? '[PASSWORD1_HIDDEN]' : String(p),
+      type: typeof p,
+    })),
+    exactSignatureString: signatureParts.map(p => String(p)).join(':'),
+    exactSignatureStringMasked: signatureParts.map(p => 
+      typeof p === 'string' && p === config.password1 ? '[PASSWORD1_HIDDEN]' : String(p)
+    ).join(':'),
     customParams: customParams, // Show which Shp_* params were included in signature (after Password1)
     customParamsSorted: customParams, // Confirmed sorted alphabetically
     customParamsValid: customParamsValid, // Validation result
@@ -520,6 +565,7 @@ export function generatePaymentForm(
       <ul>
         <li>Неправильный порядок параметров в подписи (Shp_* должны быть ПОСЛЕ Password1)</li>
         <li>Shp_* параметры не отсортированы алфавитно</li>
+        <li>Shp_* параметры не включены в подпись, хотя присутствуют в форме</li>
         <li>Неправильные имена параметров (должно быть InvId, не InvoiceID)</li>
         <li>Проблемы с кодированием Receipt (двойное кодирование или неправильный формат)</li>
         <li>Несоответствие формата OutSum (должно быть "1.00", не "1.000000")</li>
@@ -589,20 +635,29 @@ Custom Params (Shp_*) - appended AFTER Password1, sorted alphabetically:
 ${customParams.length > 0 ? customParams.join(', ') : 'None'}
 
 Signature Full (with password masked):
-${signatureFull}
+${signatureBaseFull}
 
-Signature Value:
+EXACT String Used for MD5 (with password masked):
+${debugInfo.exactSignatureStringMasked}
+
+Signature Value (MD5 hash):
 ${signature}
 
 Parts in order:
-${signatureFormulaParts.map((p, i) => {
-  if (p === 'MerchantLogin') return `${i + 1}. MerchantLogin: ${config.merchantLogin}`;
-  if (p === 'OutSum') return `${i + 1}. OutSum: ${outSum}`;
-  if (p === 'InvId') return `${i + 1}. InvId: ${invId}`;
-  if (p === 'ReceiptEncoded') return `${i + 1}. ReceiptEncoded: ${encodedReceipt?.substring(0, 100)}...`;
-  if (p === 'Password1') return `${i + 1}. Password1: [HIDDEN]`;
-  if (p.startsWith('Shp_')) return `${i + 1}. ${p}`;
-  return `${i + 1}. ${p}`;
+${signatureParts.map((p, i) => {
+  if (typeof p === 'string' && p === config.password1) {
+    return `${i + 1}. Password1: [HIDDEN]`;
+  }
+  if (typeof p === 'number') {
+    if (i === 2) return `${i + 1}. InvId: ${p}`;
+  }
+  if (typeof p === 'string') {
+    if (p === config.merchantLogin) return `${i + 1}. MerchantLogin: ${p}`;
+    if (p === outSum) return `${i + 1}. OutSum: ${p}`;
+    if (p === encodedReceipt) return `${i + 1}. ReceiptEncoded: ${p.substring(0, 100)}...`;
+    if (p.startsWith('Shp_')) return `${i + 1}. ${p}`;
+  }
+  return `${i + 1}. ${String(p)}`;
 }).join('\n')}
 </pre>
     </div>`;
@@ -649,6 +704,7 @@ Match: ${receipt?.items[0]?.sum === parseFloat(outSum) ? '✅ YES' : '❌ NO'}
         customParamsSorted: customParams.length === 0 || JSON.stringify(customParams) === JSON.stringify([...customParams].sort()),
         customParamsValid: customParamsValid,
         shpParamsAfterPassword1: true, // Confirmed by implementation
+        allShpParamsInSignature: customParams.length > 0 && customParams.every(p => signatureParts.some(sp => String(sp) === p)),
       })};
       const checksHtml = Object.entries(checks).map(([key, value]) => {
         const className = value ? 'check-ok' : 'check-fail';
