@@ -165,17 +165,11 @@ export async function GET(req: Request) {
     console.log("[/api/report/calendar] Получено записей из БД:", meals?.length || 0);
 
     // Агрегируем калории по дням
-    // ВАЖНО: Используем локальное время для правильной группировки по дням
-    // toISOString() возвращает UTC, что может сдвигать дату для пользователей в отрицательных часовых поясах
     const caloriesByDate = new Map<string, number>();
     
     (meals || []).forEach(meal => {
       const mealDate = new Date(meal.created_at);
-      // Используем локальное время для получения правильной даты
-      const year = mealDate.getFullYear();
-      const month = String(mealDate.getMonth() + 1).padStart(2, '0');
-      const day = String(mealDate.getDate()).padStart(2, '0');
-      const dayKey = `${year}-${month}-${day}`; // YYYY-MM-DD в локальном времени
+      const dayKey = mealDate.toISOString().split("T")[0]; // YYYY-MM-DD
       const mealCalories = Number(meal.calories || 0);
       
       if (mealCalories > 0) {

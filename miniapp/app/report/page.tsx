@@ -1,7 +1,7 @@
 "use client";
 
 import { useSearchParams } from "next/navigation";
-import { useState, useEffect, Suspense, useRef } from "react";
+import { useState, useEffect, Suspense, useRef, type ReactElement } from "react";
 import "../globals.css";
 import AppLayout from "../components/AppLayout";
 import DayNutritionInfographic from "../components/DayNutritionInfographic";
@@ -58,7 +58,7 @@ function LoadingFallback() {
   );
 }
 
-function ReportPageContent() {
+function ReportPageContent(): ReactElement {
   const searchParams = useSearchParams();
   const userIdParam = searchParams.get("id");
   
@@ -76,6 +76,7 @@ function ReportPageContent() {
   const [dayReport, setDayReport] = useState<DayReport | null>(null);
   const [loadingDayReport, setLoadingDayReport] = useState(false);
   const [refreshKey, setRefreshKey] = useState(0); // Ключ для принудительного re-render
+  const [showCalendar, setShowCalendar] = useState(false); // Показывать ли календарь
 
   // Таймер для предотвращения слишком частых обновлений
   const lastUpdateRef = useRef<number>(0);
@@ -84,8 +85,27 @@ function ReportPageContent() {
   // Редактирование
   const [editingMeal, setEditingMeal] = useState<Meal | null>(null);
 
+  // Проверка согласия с политикой конфиденциальности
+  const [checkingPrivacy, setCheckingPrivacy] = useState(false);
+  const [privacyAccepted, setPrivacyAccepted] = useState<boolean | null>(null);
+
   // Инициализация userId
+  // Инициализация userId - оптимизировано для быстрой загрузки
   useEffect(() => {
+    // Сначала пробуем получить из URL напрямую для быстрой загрузки
+    if (typeof window !== "undefined" && !userIdParam) {
+      const urlParams = new URLSearchParams(window.location.search);
+      const fallbackUserId = urlParams.get("id");
+      if (fallbackUserId) {
+        const n = Number(fallbackUserId);
+        if (Number.isFinite(n) && n > 0) {
+          setUserId(n);
+          setError(null);
+          return;
+        }
+      }
+    }
+
     if (userIdParam) {
       const n = Number(userIdParam);
       if (Number.isFinite(n) && n > 0) {
@@ -99,12 +119,56 @@ function ReportPageContent() {
     }
   }, [userIdParam]);
 
+  // Проверка согласия с политикой конфиденциальности
+  useEffect(() => {
+    if (!userId) return;
+
+    const checkPrivacy = async () => {
+      setCheckingPrivacy(true);
+      try {
+        const response = await fetch(`/api/privacy/check?userId=${userId}`);
+        const data = await response.json();
+
+        if (response.ok && data.ok) {
+          if (!data.all_accepted) {
+            // Пользователь не дал согласие (хотя бы одно из двух) - редирект на экран согласия
+            window.location.href = `/privacy/consent?id=${userId}`;
+            return;
+          }
+          setPrivacyAccepted(true);
+        } else {
+          // Если ошибка, разрешаем продолжить (на случай проблем с API)
+          console.warn("[ReportPage] Ошибка проверки согласия:", data.error);
+          setPrivacyAccepted(true);
+        }
+      } catch (err) {
+        console.error("[ReportPage] Ошибка проверки согласия:", err);
+        // При ошибке разрешаем продолжить
+        setPrivacyAccepted(true);
+      } finally {
+        setCheckingPrivacy(false);
+      }
+    };
+
+    checkPrivacy();
+  }, [userId]);
+
   // Загрузка календаря при изменении месяца
   useEffect(() => {
     if (userId) {
       loadCalendar();
     }
   }, [userId, currentMonth]);
+
+  // Автоматически загружаем отчёт за сегодня при первом открытии
+  useEffect(() => {
+    if (userId && !selectedDate) {
+      const today = new Date();
+      const todayKey = today.toISOString().split("T")[0];
+      setSelectedDate(todayKey);
+      loadDayReport(todayKey, true);
+    }
+  }, [userId]);
 
   // УМНОЕ АВТОМАТИЧЕСКОЕ ОБНОВЛЕНИЕ: только при реальном переключении на окно
   useEffect(() => {
@@ -531,6 +595,30 @@ function ReportPageContent() {
   };
 
   /**
+   * Переключение дня (для навигации в детальном отчёте)
+   */
+  const changeDay = (delta: number) => {
+    if (!selectedDate) return;
+    
+    const currentDate = new Date(selectedDate);
+    currentDate.setDate(currentDate.getDate() + delta);
+    const newDateKey = currentDate.toISOString().split("T")[0];
+    
+    // Обновляем месяц календаря, если перешли в другой месяц
+    const newMonth = new Date(currentDate);
+    newMonth.setDate(1);
+    setCurrentMonth(newMonth);
+    
+    // Загружаем отчёт за новый день
+    setDayReport(null);
+    setError(null);
+    setEditingMeal(null);
+    loadDayReport(newDateKey, true);
+    loadCalendar();
+  };
+
+
+  /**
    * Генерация календаря
    */
   const getCalendarDays = () => {
@@ -571,6 +659,14 @@ function ReportPageContent() {
     return `${year}-${String(month).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
   };
 
+  if (checkingPrivacy) {
+    return (
+      <div className="min-h-screen flex items-center justify-center p-4 bg-background">
+        <div className="text-textSecondary">Загрузка...</div>
+      </div>
+    );
+  }
+
   if (error && !userId) {
     return (
       <div className="min-h-screen flex items-center justify-center p-4 bg-background">
@@ -588,136 +684,243 @@ function ReportPageContent() {
       <AppLayout>
         <div key={`report-${selectedDate}-${refreshKey}`} className="min-h-screen bg-background p-4 py-8">
         <div className="max-w-md mx-auto bg-white rounded-2xl shadow-soft p-8">
-          <div className="flex items-center justify-between mb-6">
-            <h2 className="text-xl font-bold text-textPrimary">
-              📋 Отчёт за {new Date(selectedDate).toLocaleDateString("ru-RU", {
+          {/* Навигация по дням с стрелками */}
+          <div className="flex items-center justify-between mb-2">
+            <button
+              onClick={() => changeDay(-1)}
+              disabled={loadingDayReport || loading}
+              className="px-4 py-2 bg-accent/20 text-accent font-medium rounded-lg hover:bg-accent/30 transition-colors disabled:opacity-50"
+              title="Предыдущий день"
+            >
+              ←
+            </button>
+            
+            <button
+              onClick={() => setShowCalendar(true)}
+              className="flex-1 mx-4 px-4 py-2 bg-accent/20 text-accent font-medium rounded-lg hover:bg-accent/30 transition-colors"
+              title="Выбрать дату"
+            >
+              {new Date(selectedDate).toLocaleDateString("ru-RU", {
                 day: "numeric",
                 month: "long",
                 year: "numeric"
               })}
-            </h2>
-            <div className="flex items-center gap-2">
-              <button
-                onClick={() => {
-                  console.log("[manual-refresh] Ручное обновление отчёта");
-                  setDayReport(null);
-                  setLoadingDayReport(true);
-                  loadDayReport(selectedDate);
-                  loadCalendar();
-                }}
-                disabled={loadingDayReport || loading}
-                className="px-3 py-1.5 text-sm bg-accent/20 text-accent font-medium rounded-lg hover:bg-accent/30 transition-colors disabled:opacity-50"
-                title="Обновить отчёт"
-              >
-                🔄
-              </button>
-              <button
-                onClick={() => {
-                  setSelectedDate(null);
-                  setDayReport(null);
-                  setEditingMeal(null);
-                  // Обновляем календарь при возврате
-                  loadCalendar();
-                }}
-                className="text-textSecondary hover:text-textPrimary"
-              >
-                ← Назад
-              </button>
-            </div>
+            </button>
+            
+            <button
+              onClick={() => changeDay(1)}
+              disabled={loadingDayReport || loading}
+              className="px-4 py-2 bg-accent/20 text-accent font-medium rounded-lg hover:bg-accent/30 transition-colors disabled:opacity-50"
+              title="Следующий день"
+            >
+              →
+            </button>
           </div>
-
-          {error && (
-            <div className="p-4 bg-red-50 border border-red-200 rounded-lg text-red-700 text-sm mb-4">
-              {error}
-            </div>
+          
+          {dayReport && dayReport.radarData && (
+            <DayNutritionInfographic
+              stats={{
+                caloriesEaten: dayReport.totals.calories,
+                caloriesGoal: dayReport.radarData?.caloriesGoal || null,
+                proteinEaten: dayReport.totals.protein,
+                proteinGoal: dayReport.radarData?.proteinGoal || null,
+                fatEaten: dayReport.totals.fat,
+                fatGoal: dayReport.radarData?.fatGoal || null,
+                carbsEaten: dayReport.totals.carbs,
+                carbsGoal: dayReport.radarData?.carbsGoal || null
+              }}
+            />
           )}
 
-          {loading && (
-            <div className="p-4 bg-blue-50 border border-blue-200 rounded-lg text-blue-700 text-sm mb-4">
-              ⏳ Обновление данных...
-            </div>
-          )}
-
-          {loadingDayReport ? (
-            <div className="text-center text-textSecondary py-8">Загрузка отчёта...</div>
-          ) : dayReport ? (
-            <>
-              {editingMeal ? (
-                <EditMealForm
-                  meal={editingMeal}
-                  onSave={(updates) => updateMeal(editingMeal.id, updates)}
-                  onCancel={() => setEditingMeal(null)}
-                  onDelete={() => deleteMeal(editingMeal.id)}
-                />
-              ) : (
-                <div className="space-y-6">
-                  {/* Инфографика по питанию */}
-                  <DayNutritionInfographic
-                    stats={{
-                      caloriesEaten: dayReport.totals.calories,
-                      caloriesGoal: dayReport.radarData?.caloriesGoal || null,
-                      proteinEaten: dayReport.totals.protein,
-                      proteinGoal: dayReport.radarData?.proteinGoal || null,
-                      fatEaten: dayReport.totals.fat,
-                      fatGoal: dayReport.radarData?.fatGoal || null,
-                      carbsEaten: dayReport.totals.carbs,
-                      carbsGoal: dayReport.radarData?.carbsGoal || null
-                    }}
-                  />
-
-                  {/* Список приёмов пищи */}
-                  <div className="space-y-3">
-                    <h3 className="font-semibold text-textPrimary">Приемы пищи:</h3>
-                    {dayReport.meals.length === 0 ? (
-                      <div className="text-center text-textSecondary py-8">
-                        Нет записей за этот день
-                      </div>
-                    ) : (
-                      <div key={`meals-list-${refreshKey}-${dayReport.mealsCount}`}>
-                        {dayReport.meals.map((meal, index) => {
-                          const mealDate = new Date(meal.created_at);
-                          return (
-                            <div key={`meal-${meal.id}-${index}-${refreshKey}`} className="p-4 border border-gray-200 rounded-xl hover:border-accent transition-colors">
-                              <div className="flex justify-between items-start mb-2">
-                                <div className="flex-1">
-                                  <div className="font-medium text-textPrimary">{meal.meal_text}</div>
-                                  <div className="text-xs text-textSecondary mt-1">
-                                    {mealDate.toLocaleTimeString("ru-RU", {
-                                      hour: "2-digit",
-                                      minute: "2-digit"
-                                    })}
-                                  </div>
-                                </div>
-                              </div>
-                              <div className="text-sm text-textSecondary mb-3">
-                                🔥 {meal.calories} ккал | 🥚 {Number(meal.protein).toFixed(1)}г | 🥥 {Number(meal.fat).toFixed(1)}г | 🍚 {Number(meal.carbs || 0).toFixed(1)}г
-                              </div>
-                              <div className="flex gap-2">
-                                <button
-                                  onClick={() => setEditingMeal(meal)}
-                                  className="flex-1 py-2 px-4 bg-accent/20 text-accent font-medium rounded-lg hover:bg-accent/30 transition-colors text-sm"
-                                >
-                                  ✏️ Редактировать
-                                </button>
-                                <button
-                                  onClick={() => deleteMeal(meal.id)}
-                                  className="flex-1 py-2 px-4 bg-red-100 text-red-700 font-medium rounded-lg hover:bg-red-200 transition-colors text-sm"
-                                >
-                                  🗑️ Удалить
-                                </button>
+          {dayReport && (
+            <div className="mt-6">
+              {/* Список приёмов пищи */}
+              <div className="space-y-3">
+                <h3 className="font-semibold text-textPrimary">Приемы пищи:</h3>
+                {dayReport.meals.length === 0 ? (
+                  <div className="text-center text-textSecondary py-8">
+                    Нет записей за этот день
+                  </div>
+                ) : (
+                  <div key={`meals-list-${refreshKey}-${dayReport.mealsCount}`}>
+                    {dayReport.meals.map((meal, index) => {
+                      const mealDate = new Date(meal.created_at);
+                      return (
+                        <div key={`meal-${meal.id}-${index}-${refreshKey}`} className="p-4 border border-gray-200 rounded-xl hover:border-accent transition-colors">
+                          <div className="flex justify-between items-start mb-2">
+                            <div className="flex-1">
+                              <div className="font-medium text-textPrimary">{meal.meal_text}</div>
+                              <div className="text-xs text-textSecondary mt-1">
+                                {mealDate.toLocaleTimeString("ru-RU", {
+                                  hour: "2-digit",
+                                  minute: "2-digit"
+                                })}
                               </div>
                             </div>
-                          );
-                        })}
-                      </div>
-                    )}
+                          </div>
+                          <div className="text-sm text-textSecondary mb-3">
+                            🔥 {meal.calories} ккал | 🥚 {Number(meal.protein).toFixed(1)}г | 🥑 {Number(meal.fat).toFixed(1)}г | 🍚 {Number(meal.carbs || 0).toFixed(1)}г
+                          </div>
+                          <div className="flex gap-2">
+                            <button
+                              onClick={() => setEditingMeal(meal)}
+                              className="flex-1 py-2 px-4 bg-accent/20 text-accent font-medium rounded-lg hover:bg-accent/30 transition-colors text-sm"
+                            >
+                              ✏️ Редактировать
+                            </button>
+                            <button
+                              onClick={() => deleteMeal(meal.id)}
+                              className="flex-1 py-2 px-4 bg-red-100 text-red-700 font-medium rounded-lg hover:bg-red-200 transition-colors text-sm"
+                            >
+                              🗑️ Удалить
+                            </button>
+                          </div>
+                        </div>
+                      );
+                    })}
                   </div>
-                </div>
-              )}
-            </>
-          ) : null}
+                )}
+              </div>
+            </div>
+          )}
         </div>
       </div>
+      
+      {/* Модальное окно редактирования приёма пищи */}
+      {editingMeal && (
+        <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4" onClick={() => setEditingMeal(null)}>
+          <div className="bg-white rounded-2xl shadow-soft p-6 max-w-md w-full max-h-[90vh] overflow-y-auto" onClick={(e) => e.stopPropagation()}>
+            <EditMealForm
+              meal={editingMeal}
+              onSave={async (updates) => {
+                if (editingMeal) {
+                  await updateMeal(editingMeal.id, updates);
+                }
+              }}
+              onCancel={() => setEditingMeal(null)}
+              onDelete={async () => {
+                if (editingMeal) {
+                  await deleteMeal(editingMeal.id);
+                }
+              }}
+            />
+          </div>
+        </div>
+      )}
+
+      {/* Модальное окно календаря */}
+      {showCalendar && (
+        <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4" onClick={() => setShowCalendar(false)}>
+          <div className="bg-white rounded-2xl shadow-soft p-6 max-w-md w-full max-h-[90vh] overflow-y-auto" onClick={(e) => e.stopPropagation()}>
+            <div className="flex items-center justify-between mb-4">
+              <h2 className="text-xl font-bold text-textPrimary">📅 Выберите день</h2>
+              <button
+                onClick={() => setShowCalendar(false)}
+                className="text-textSecondary hover:text-textPrimary text-2xl"
+              >
+                ✕
+              </button>
+            </div>
+
+            {/* Переключение месяцев */}
+            <div className="flex items-center justify-between mb-4">
+              <button
+                onClick={() => changeMonth(-1)}
+                disabled={loadingCalendar}
+                className="px-4 py-2 bg-accent/20 text-accent font-medium rounded-lg hover:bg-accent/30 transition-colors disabled:opacity-50"
+              >
+                ←
+              </button>
+              <h3 className="text-lg font-semibold text-textPrimary">
+                {currentMonth.toLocaleDateString("ru-RU", { month: "long", year: "numeric" })}
+              </h3>
+              <button
+                onClick={() => changeMonth(1)}
+                disabled={loadingCalendar}
+                className="px-4 py-2 bg-accent/20 text-accent font-medium rounded-lg hover:bg-accent/30 transition-colors disabled:opacity-50"
+              >
+                →
+              </button>
+            </div>
+
+            {/* Календарь */}
+            <div className="mb-4">
+              <div className="grid grid-cols-7 gap-2 mb-2">
+                {["Пн", "Вт", "Ср", "Чт", "Пт", "Сб", "Вс"].map((day) => (
+                  <div key={day} className="text-center text-sm font-medium text-textSecondary py-2">
+                    {day}
+                  </div>
+                ))}
+              </div>
+              <div className="grid grid-cols-7 gap-2">
+                {getCalendarDays().map((day, index) => {
+                  if (day === null) {
+                    return <div key={`empty-${index}`} className="aspect-square" />;
+                  }
+
+                  const dateKey = getDateKey(day);
+                  const dayData = calendarDays.find(d => d.date === dateKey);
+                  const isToday = dateKey === new Date().toISOString().split("T")[0];
+                  const isSelected = dateKey === selectedDate;
+
+                  // Определяем классы в зависимости от статуса
+                  let dayClasses = 'aspect-square rounded-lg font-medium text-sm transition-colors ';
+                  
+                  if (dayData && dayData.status !== 'none') {
+                    switch (dayData.status) {
+                      case 'green':
+                        dayClasses += 'bg-green-500 text-white hover:bg-green-600 ';
+                        break;
+                      case 'yellow':
+                        dayClasses += 'bg-yellow-500 text-white hover:bg-yellow-600 ';
+                        break;
+                      case 'red':
+                        dayClasses += 'bg-red-500 text-white hover:bg-red-600 ';
+                        break;
+                      default:
+                        dayClasses += 'bg-gray-100 text-textPrimary hover:bg-gray-200 ';
+                    }
+                  } else {
+                    dayClasses += 'bg-gray-100 text-textPrimary hover:bg-gray-200 ';
+                  }
+
+                  if (isToday) {
+                    dayClasses += 'ring-2 ring-accent ring-offset-2 ';
+                  }
+                  
+                  if (isSelected) {
+                    dayClasses += 'ring-2 ring-blue-500 ring-offset-2 ';
+                  }
+
+                  return (
+                    <button
+                      key={day}
+                      onClick={async () => {
+                        setShowCalendar(false);
+                        setDayReport(null);
+                        setError(null);
+                        setEditingMeal(null);
+                        await loadCalendar();
+                        await loadDayReport(dateKey, true);
+                      }}
+                      className={dayClasses.trim()}
+                      title={dayData ? `${dayData.actualCalories.toFixed(0)} / ${dayData.targetCalories.toFixed(0)} ккал` : undefined}
+                    >
+                      {day}
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+
+            {loadingCalendar && (
+              <div className="text-center text-textSecondary text-sm py-2">
+                Загрузка...
+              </div>
+            )}
+          </div>
+        </div>
+      )}
       </AppLayout>
     );
   }
@@ -837,7 +1040,6 @@ function ReportPageContent() {
     </AppLayout>
   );
 }
-
 function EditMealForm({
   meal,
   onSave,
@@ -902,7 +1104,7 @@ function EditMealForm({
         </div>
 
         <div>
-          <label className="block text-sm font-medium text-textPrimary mb-2">🥥 Жиры (г)</label>
+          <label className="block text-sm font-medium text-textPrimary mb-2">🥑 Жиры (г)</label>
           <input
             type="number"
             step="0.1"

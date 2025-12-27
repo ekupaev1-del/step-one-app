@@ -47,10 +47,10 @@ function validateEnv(): EnvConfig {
   }
 
   return {
-    telegramBotToken,
-    supabaseUrl,
-    supabaseServiceRoleKey,
-    openaiApiKey,
+    telegramBotToken: telegramBotToken!,
+    supabaseUrl: supabaseUrl!,
+    supabaseServiceRoleKey: supabaseServiceRoleKey!,
+    openaiApiKey: openaiApiKey!,
   };
 }
 

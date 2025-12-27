@@ -7,6 +7,7 @@ import { openai } from "./services/openai.js";
 import { isWaterRequest, logWaterIntake, getDailyWaterSummary } from "./services/water.js";
 import { createReminder, getUserReminders, deleteReminder, validateTime, type ReminderType } from "./services/reminders.js";
 import { startReminderScheduler } from "./services/reminderScheduler.js";
+import { startInactivityNotificationScheduler } from "./services/inactivityNotifications.js";
 
 // Инициализация бота
 const bot = new Telegraf(env.telegramBotToken);
@@ -16,7 +17,7 @@ const bot = new Telegraf(env.telegramBotToken);
 // Preview деплои создают разные домены каждый раз - это ломает web_app URLs
 const MINIAPP_BASE_URL =
   process.env.MINIAPP_BASE_URL ||
-  "https://step-one-app.vercel.app";
+  "https://step-one-app-git-dev-emins-projects-4717eabc.vercel.app";
 
 // ░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░
 //      ЕДИНАЯ ФУНКЦИЯ ГЛАВНОГО МЕНЮ
@@ -40,13 +41,14 @@ const MINIAPP_BASE_URL =
 function getMainMenuKeyboard(userId: number | null = null): any {
   // ВАЖНО: Используем ТОЛЬКО production URL для стабильности
   // Preview деплои создают разные домены - это ломает web_app URLs в Telegram
-  const baseUrl = (MINIAPP_BASE_URL || "https://step-one-app.vercel.app").trim().replace(/\/$/, '');
+  const baseUrl = (MINIAPP_BASE_URL || "https://step-one-app-git-dev-emins-projects-4717eabc.vercel.app").trim().replace(/\/$/, '');
   
   // ВАЖНО: URL должны быть правильными - /profile и /report (не /reports!)
   const reportUrl = userId ? `${baseUrl}/report?id=${userId}` : undefined;
   const profileUrl = userId ? `${baseUrl}/profile?id=${userId}` : undefined;
+  const subscriptionUrl = userId ? `${baseUrl}/subscription?id=${userId}` : undefined;
 
-  // ЕДИНСТВЕННОЕ правильное меню - 4 кнопки с правильными URL
+  // ЕДИНСТВЕННОЕ правильное меню - 5 кнопок с правильными URL
   // Кнопки с web_app открывают Mini App напрямую
   const keyboard = {
     keyboard: [
@@ -57,10 +59,13 @@ function getMainMenuKeyboard(userId: number | null = null): any {
         { text: "📊 Получить отчёт", web_app: reportUrl ? { url: reportUrl } : undefined }
       ],
       [
+        { text: "💳 Subscription", web_app: subscriptionUrl ? { url: subscriptionUrl } : undefined }
+      ],
+      [
         { text: "⏰ Напомнить о приёме пищи" }
       ],
       [
-        { text: "💡 Рекомендации" }
+        { text: "💬 Служба заботы" }
       ]
     ],
     resize_keyboard: true,
@@ -70,7 +75,6 @@ function getMainMenuKeyboard(userId: number | null = null): any {
   // Логируем для отладки
   console.log("[getMainMenuKeyboard] userId:", userId);
   console.log("[getMainMenuKeyboard] baseUrl:", baseUrl);
-  console.log("[getMainMenuKeyboard] profileUrl:", profileUrl);
   console.log("[getMainMenuKeyboard] reportUrl:", reportUrl);
 
   return keyboard;
@@ -192,8 +196,6 @@ bot.start(async (ctx) => {
     if (!isQuestionnaireFilled) {
       const url = `${MINIAPP_BASE_URL}/registration?id=${userId}`;
       console.log(`[bot] Показываю приветствие для нового пользователя`);
-
-      // Отправляем приветственное сообщение с картинкой
       // Используем оптимизированную версию для быстрой отправки
       const welcomeImageUrl = `${MINIAPP_BASE_URL}/images/welcome-optimized.png`;
       
@@ -201,13 +203,11 @@ bot.start(async (ctx) => {
       const welcomeText = `💪 <b>Добро пожаловать в Step One.</b>
 Самое тяжелое вы уже сделали - первый шаг
 
-<u>Я помогу вам настроить питание под вашу цель:</u>
-- похудеть,
-- набрать вес
-- или просто чувствовать себя лучше и легче.
+<u>Я помогу вам настроить питание, чтобы чувствовать себя лучше и легче.</u>
 
 Чтобы мне определить, как вам правильно питаться,
 ответьте на пару вопросов↓`;
+
       
       // Кнопка под постом (inline) как в требуемом макете
       const registrationInlineKeyboard = {
@@ -274,8 +274,11 @@ bot.start(async (ctx) => {
         } catch (replyError: any) {
           console.error("[bot] Ошибка отправки сообщения без картинки:", replyError);
           // Последняя попытка - без форматирования
+          const fallbackText = "💪 Добро пожаловать в Step One.\n\nСамое тяжелое вы уже сделали - первый шаг\n\nЯ помогу вам настроить питание, чтобы чувствовать себя лучше и легче.\n\nЧтобы мне определить, как вам правильно питаться,\nответьте на пару вопросов↓";
+          
+          
           await ctx.reply(
-            "💪 Добро пожаловать в Step One.\n\nСамое тяжелое вы уже сделали - первый шаг\n\nЯ помогу вам настроить питание под вашу цель:\n- похудеть,\n- набрать вес\n- или просто чувствовать себя лучше и легче.\n\nЧтобы мне определить, как вам правильно питаться,\nответьте на пару вопросов↓",
+            fallbackText,
             {
               reply_markup: registrationInlineKeyboard
             }
@@ -285,16 +288,14 @@ bot.start(async (ctx) => {
       return;
     }
 
-    // Если анкета заполнена - показываем единое главное меню
-    // ВАЖНО: Отправляем ОДНО сообщение с текстом и меню вместе
+    // Если анкета заполнена - показываем меню
     console.log("[bot] /start: отправка меню для пользователя с id:", userId);
-    console.log("[bot] /start: MINIAPP_BASE_URL:", MINIAPP_BASE_URL);
     
     // Используем getMainMenuKeyboard для получения меню
     const menu = getMainMenuKeyboard(userId);
-    const welcomeMessage = "Добро пожаловать! Выберите действие:";
+    const welcomeMessage = "Выберите действие:";
     
-    // Отправляем ОДНО сообщение с текстом и меню вместе
+    // Отправляем меню
     await ctx.reply(welcomeMessage, {
       reply_markup: {
         ...menu,
@@ -342,18 +343,16 @@ async function handleQuestionnaireSaved(
     ctx.chat?.id ||
     (ctx.callbackQuery as any)?.message?.chat?.id ||
     telegram_id;
-
   if (!telegram_id) {
     console.log("[bot] ❌ Нет telegram_id, пропускаем обработку questionnaire_saved");
     return;
   }
-
   if (!rawData) {
     console.log("[bot] ❌ Нет данных в web_app_data, пропускаем");
     return;
   }
-
-  let parsedData;
+  
+  let parsedData: any;
   try {
     parsedData = JSON.parse(rawData);
     console.log("[bot] Распарсенные данные:", JSON.stringify(parsedData, null, 2));
@@ -411,7 +410,7 @@ async function handleQuestionnaireSaved(
   console.log("[bot] Chat ID:", chat_id);
   console.log("[bot] Telegram ID:", telegram_id);
 
-  const confirmationMessage = "Спасибо! Мы сохранили твои данные. Теперь ты можешь отправлять фото, текст или аудио своих блюд — я всё проанализирую.";
+  const confirmationMessage = "Спасибо! Мы сохранили твои данные.";
   const targetChatId = chat_id || telegram_id;
 
   // ШАГ 1: Отправляем подтверждение
@@ -429,49 +428,12 @@ async function handleQuestionnaireSaved(
     });
   }
   
-  // ШАГ 2: Отправляем главное меню
-  let menuSent = false;
-  try {
-    await sendMainMenu(ctx, userIdToUse, "Выберите действие:", targetChatId);
-    menuSent = true;
-    console.log("[bot] ✅ Меню после регистрации отправлено успешно через sendMainMenu");
-  } catch (menuError: any) {
-    console.error("[bot] ❌ Ошибка отправки меню через sendMainMenu:", menuError);
-    console.error("[bot] Menu error details:", {
-      message: menuError?.message,
-      code: menuError?.response?.error_code,
-      description: menuError?.response?.description
-    });
-    
-    // Пробуем отправить меню еще раз с задержкой
-    try {
-      await new Promise(resolve => setTimeout(resolve, 500));
-      await sendMainMenu(ctx, userIdToUse, undefined, targetChatId);
-      menuSent = true;
-      console.log("[bot] ✅ Меню отправлено после повторной попытки");
-    } catch (retryError: any) {
-      console.error("[bot] ❌ Ошибка отправки меню после повтора:", retryError);
-      // Последняя попытка - через прямой API вызов
-      try {
-        const menu = getMainMenuKeyboard(userIdToUse);
-        await ctx.telegram.sendMessage(targetChatId, "Выберите действие:", {
-          reply_markup: { ...menu, replace_keyboard: true }
-        });
-        menuSent = true;
-        console.log("[bot] ✅ Меню отправлено через прямой API вызов");
-      } catch (finalError: any) {
-        console.error("[bot] ❌ ФИНАЛЬНАЯ ошибка отправки меню:", finalError);
-      }
-    }
-  }
+  // Небольшая задержка между сообщениями
+  await new Promise(resolve => setTimeout(resolve, 500));
   
-  // Финальная проверка: если ничего не отправилось, логируем критическую ошибку
-  if (!confirmationSent && !menuSent) {
-    console.error("[bot] ❌ КРИТИЧЕСКАЯ ОШИБКА: Не удалось отправить ни подтверждение, ни меню!");
-  } else if (!confirmationSent) {
-    console.warn("[bot] ⚠️ Предупреждение: Подтверждение не отправлено, но меню отправлено");
-  } else if (!menuSent) {
-    console.warn("[bot] ⚠️ Предупреждение: Меню не отправлено, но подтверждение отправлено");
+  // Финальная проверка
+  if (!confirmationSent) {
+    console.error("[bot] ❌ КРИТИЧЕСКАЯ ОШИБКА: Не удалось отправить подтверждение!");
   }
 }
 
@@ -575,14 +537,59 @@ interface NotFoodResponse {
   message: string;
 }
 
+// Общий системный промпт для всех типов анализа еды
+const FOOD_ANALYSIS_SYSTEM_PROMPT = `You are a professional nutritionist with real-world experience.
+Your task is to estimate calories and macros as realistically as possible,
+based on typical household portions and common eating habits.
+
+Rules:
+- Never assume minimal or ideal portions.
+- If weight is not provided, use realistic average portions.
+- Think like a human nutritionist, not a calculator.
+- Use plates, bowls, pieces, spoons as portion references.
+- Do not hallucinate exact precision.
+- If information is incomplete, make reasonable assumptions and say so.
+
+Portion Reference Guide:
+- Plate (main dish): 300–400 g
+- Bowl (porridge/soup): 250–350 g
+- Tablespoon: ~15 g
+- Teaspoon: ~5 g
+- Piece of meat/fish: 100–150 g cooked
+- Handful (nuts): 25–30 g
+
+Always estimate:
+- total weight in grams
+- calories (kcal)
+- proteins (g)
+- fats (g)
+- carbohydrates (g)
+
+If the dish is vague (e.g. 'plate of buckwheat with meat'),
+estimate a realistic average portion. Use rounded realistic values.
+Always state that estimates are approximate if exact weight is unknown.`;
+
 async function analyzeFoodWithOpenAI(userInput: string): Promise<MealAnalysis | NotFoodResponse | null> {
   try {
     console.log(`[OpenAI] Начинаю анализ: "${userInput}"`);
     
-    const prompt = `Ты — эксперт по питанию. Проанализируй текст пользователя и определи:
+    const prompt = `Проанализируй текст пользователя и определи:
 
 1. Говорит ли пользователь про ЕДУ? (блюда, продукты питания, напитки)
 2. Если НЕТ — о чем идет речь?
+
+ВАЖНО ДЛЯ ОЦЕНКИ ПОРЦИЙ:
+- "тарелка" = стандартная тарелка ~300-400 г еды
+- "обычная порция" = средняя порция взрослого человека
+- "немного", "чуть-чуть" = все равно используй реалистичные средние порции
+- Если вес не указан, оценивай на основе типичных домашних порций
+- Гречка (вареная): ~180-220 г на тарелку
+- Мясо: ~100-150 г приготовленного
+- Если тип мяса не указан, используй среднюю жирность
+
+Примеры реалистичных оценок:
+- "тарелка гречки с мясом" = гречка 200г (220 ккал, 7г белка, 1г жира, 44г углеводов) + мясо 120г (250 ккал, 25г белка, 15г жира, 0г углеводов) = ИТОГО: 470 ккал, 32г белка, 16г жира, 44г углеводов
+- "омлет из 2 яиц" = 2 яйца (140 ккал, 12г белка, 10г жира, 1г углеводов) + масло для жарки 5г (45 ккал, 0г белка, 5г жира, 0г углеводов) = ИТОГО: 185 ккал, 12г белка, 15г жира, 1г углеводов
 
 Верни ТОЛЬКО JSON в одном из двух форматов:
 
@@ -590,10 +597,10 @@ async function analyzeFoodWithOpenAI(userInput: string): Promise<MealAnalysis | 
 {
   "isFood": true,
   "description": "краткое название блюда на русском",
-  "calories": число (ккал),
-  "protein": число (граммы),
-  "fat": число (граммы),
-  "carbs": число (граммы)
+  "calories": число (ккал, округленное),
+  "protein": число (граммы, округленное до 0.1),
+  "fat": число (граммы, округленное до 0.1),
+  "carbs": число (граммы, округленное до 0.1)
 }
 
 Если пользователь НЕ описал еду:
@@ -605,7 +612,10 @@ async function analyzeFoodWithOpenAI(userInput: string): Promise<MealAnalysis | 
 
 Текст от пользователя: "${userInput}"
 
-ВАЖНО: Если текст не про еду, верни isFood: false с описанием и дружелюбным сообщением. Если это еда — оцени количество и определи калорийность и макроэлементы.`;
+ВАЖНО: 
+- Если текст не про еду, верни isFood: false с описанием и дружелюбным сообщением.
+- Если это еда — оцени РЕАЛИСТИЧНОЕ количество на основе типичных порций и определи калорийность и макроэлементы.
+- Не занижай порции! Используй средние реалистичные значения.`;
 
     console.log("[OpenAI] Отправляю запрос к OpenAI (модель: gpt-4o)...");
     let response;
@@ -615,7 +625,7 @@ async function analyzeFoodWithOpenAI(userInput: string): Promise<MealAnalysis | 
         messages: [
           {
             role: "system",
-            content: "Ты — помощник по анализу питания. Всегда возвращай валидный JSON без дополнительного текста."
+            content: FOOD_ANALYSIS_SYSTEM_PROMPT + "\n\nAlways return valid JSON without additional text."
           },
           {
             role: "user",
@@ -779,7 +789,7 @@ function formatProgressMessage(
   let message = "";
   
   if (!norm) {
-    message = `Вы уже съели сегодня:\n🔥 ${eaten.calories} ккал\n🥚 ${eaten.protein.toFixed(1)} г белков\n🥥 ${eaten.fat.toFixed(1)} г жиров\n🍚 ${eaten.carbs.toFixed(1)} г углеводов\n\n⚠️ Пройдите анкету, чтобы увидеть дневную норму.`;
+    message = `Вы уже съели сегодня:\n🔥 ${eaten.calories} ккал\n🥚 ${eaten.protein.toFixed(1)} г белков\n🥑 ${eaten.fat.toFixed(1)} г жиров\n🍚 ${eaten.carbs.toFixed(1)} г углеводов\n\n⚠️ Пройдите анкету, чтобы увидеть дневную норму.`;
   } else {
     const remaining = {
       calories: Math.max(0, norm.calories - eaten.calories),
@@ -788,7 +798,7 @@ function formatProgressMessage(
       carbs: Math.max(0, norm.carbs - eaten.carbs)
     };
 
-    message = `Вы уже съели сегодня:\n🔥 ${eaten.calories} / ${norm.calories} ккал (осталось: ${remaining.calories})\n🥚 ${eaten.protein.toFixed(1)} / ${norm.protein.toFixed(1)} г белков (осталось: ${remaining.protein.toFixed(1)})\n🥥 ${eaten.fat.toFixed(1)} / ${norm.fat.toFixed(1)} г жиров (осталось: ${remaining.fat.toFixed(1)})\n🍚 ${eaten.carbs.toFixed(1)} / ${norm.carbs.toFixed(1)} г углеводов (осталось: ${remaining.carbs.toFixed(1)})`;
+    message = `Вы уже съели сегодня:\n🔥 ${eaten.calories} / ${norm.calories} ккал (осталось: ${remaining.calories})\n🥚 ${eaten.protein.toFixed(1)} / ${norm.protein.toFixed(1)} г белков (осталось: ${remaining.protein.toFixed(1)})\n🥑 ${eaten.fat.toFixed(1)} / ${norm.fat.toFixed(1)} г жиров (осталось: ${remaining.fat.toFixed(1)})\n🍚 ${eaten.carbs.toFixed(1)} / ${norm.carbs.toFixed(1)} г углеводов (осталось: ${remaining.carbs.toFixed(1)})`;
   }
 
   // Добавляем информацию о воде, если она передана
@@ -802,6 +812,25 @@ function formatProgressMessage(
   }
 
   return message;
+}
+
+
+async function getWaterProgressByTelegram(telegramId: number): Promise<{ totalMl: number; goalMl: number | null } | null> {
+  try {
+    const { data: user } = await supabase
+      .from("users")
+      .select("id")
+      .eq("telegram_id", telegramId)
+      .maybeSingle();
+
+    if (!user?.id) return null;
+
+    const { totalMl, goalMl } = await getDailyWaterSummary(user.id);
+    return { totalMl, goalMl };
+  } catch (e) {
+    console.error("[getWaterProgressByTelegram] error", e);
+    return null;
+  }
 }
 
 // ░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░
@@ -895,7 +924,8 @@ bot.on("text", async (ctx) => {
         const dailyNorm = await getUserDailyNorm(telegram_id);
 
         // Формируем ответ с общим отчетом
-        const response = `✅ Добавлено:\nвода\n🔥 0 ккал | 🥚 0.0г | 🥥 0.0г | 🍚 0.0г\n\n${formatProgressMessage(todayMeals, dailyNorm, { totalMl, goalMl })}`;
+        const waterInfo = await getWaterProgressByTelegram(telegram_id);
+    const response = `✅ Добавлено:\nвода\n🔥 0 ккал | 🥚 0.0г | 🥑 0.0г | 🍚 0.0г\n\n${formatProgressMessage(todayMeals, dailyNorm, { totalMl, goalMl })}`;
 
         return ctx.reply(response);
       } catch (error: any) {
@@ -947,6 +977,7 @@ bot.on("text", async (ctx) => {
 
       const todayMeals = await getTodayMeals(telegram_id);
       const dailyNorm = await getUserDailyNorm(telegram_id);
+      const waterInfo = await getWaterProgressByTelegram(telegram_id);
 
       // Получаем userId для создания ссылок на Mini App
       const { data: user } = await supabase
@@ -959,7 +990,7 @@ bot.on("text", async (ctx) => {
       await sendMainMenu(
         ctx,
         user?.id || null,
-        `✅ Удалено: ${lastMeal.meal_text} (${lastMeal.calories} ккал)\n\n${formatProgressMessage(todayMeals, dailyNorm)}`
+        `✅ Удалено: ${lastMeal.meal_text} (${lastMeal.calories} ккал)\n\n${formatProgressMessage(todayMeals, dailyNorm, waterInfo || undefined)}`
       );
       return;
     }
@@ -1070,6 +1101,46 @@ bot.on("text", async (ctx) => {
     // Обработчик "👤 Личный кабинет" удален - теперь это WebApp кнопка в меню
     // Telegram автоматически откроет Mini App при нажатии на кнопку
 
+    if (text === "💬 Служба заботы") {
+      console.log("[bot] Обработка кнопки Служба заботы для telegram_id:", telegram_id);
+      try {
+        const supportKeyboard = {
+          inline_keyboard: [
+            [
+              {
+                text: "💬 Написать в телеграм",
+                url: "https://t.me/step0ne11"
+              }
+            ]
+          ]
+        };
+
+        console.log("[bot] Отправка сообщения Служба заботы...");
+        await ctx.reply(
+          "💬 <b>Служба заботы</b>\n\nВыберите способ связи:\n\n📧 Email: steponehub@yandex.com\n💬 Telegram: @step0ne11",
+          {
+            parse_mode: "HTML",
+            reply_markup: supportKeyboard
+          }
+        );
+        console.log("[bot] ✅ Сообщение Служба заботы отправлено успешно");
+        return;
+      } catch (error: any) {
+        console.error("[bot] ❌ Ошибка обработки Служба заботы:", error);
+        console.error("[bot] Ошибка детали:", {
+          message: error?.message,
+          stack: error?.stack,
+          response: error?.response
+        });
+        try {
+          await ctx.reply("❌ Ошибка при открытии службы заботы. Попробуйте позже.");
+        } catch (replyError: any) {
+          console.error("[bot] ❌ Не удалось отправить сообщение об ошибке:", replyError);
+        }
+        return;
+      }
+    }
+
     if (text === "⏰ Напомнить о приёме пищи") {
       // Получаем userId для показа экрана уведомлений
       const { data: user, error: userError } = await supabase
@@ -1145,140 +1216,8 @@ bot.on("text", async (ctx) => {
       return;
     }
 
-    if (text === "💡 Рекомендации") {
-      const processingMsg = await ctx.reply("🤔 Анализирую ваше питание и готовлю рекомендации...");
+    // блок рекомендаций скрыт в боте
 
-      // Получаем данные пользователя
-      const { data: userData } = await supabase
-        .from("users")
-        .select("calories, protein, fat, carbs, goal")
-        .eq("telegram_id", telegram_id)
-        .maybeSingle();
-
-      if (!userData || !userData.calories) {
-        await ctx.telegram.editMessageText(
-          ctx.chat!.id,
-          processingMsg.message_id,
-          undefined,
-          "❌ Сначала пройдите анкету, чтобы получить рекомендации."
-        );
-        return;
-      }
-
-      // Получаем все данные о питании за последние 30 дней для полного анализа
-      const monthAgo = new Date();
-      monthAgo.setDate(monthAgo.getDate() - 30);
-      const monthAgoISO = monthAgo.toISOString();
-
-      const { data: allMeals } = await supabase
-        .from("diary")
-        .select("calories, protein, fat, carbs, created_at")
-        .eq("user_id", telegram_id)
-        .gte("created_at", monthAgoISO)
-        .order("created_at", { ascending: false });
-
-      // Подсчитываем статистику
-      const totals = (allMeals || []).reduce(
-        (acc, meal) => ({
-          calories: acc.calories + Number(meal.calories || 0),
-          protein: acc.protein + Number(meal.protein || 0),
-          fat: acc.fat + Number(meal.fat || 0),
-          carbs: acc.carbs + Number(meal.carbs || 0)
-        }),
-        { calories: 0, protein: 0, fat: 0, carbs: 0 }
-      );
-
-      const daysWithMeals = new Set((allMeals || []).map(m => new Date(m.created_at).toDateString())).size;
-      const avgDaily = daysWithMeals > 0 ? {
-        calories: totals.calories / daysWithMeals,
-        protein: totals.protein / daysWithMeals,
-        fat: totals.fat / daysWithMeals,
-        carbs: totals.carbs / daysWithMeals
-      } : { calories: 0, protein: 0, fat: 0, carbs: 0 };
-
-      // Получаем данные пользователя из анкеты
-      const { data: userProfile } = await supabase
-        .from("users")
-        .select("gender, age, weight, height, activity, goal")
-        .eq("telegram_id", telegram_id)
-        .maybeSingle();
-
-      const goalText = userData.goal === "lose" ? "похудение" : userData.goal === "gain" ? "набор веса" : "поддержание веса";
-      const genderText = userProfile?.gender === "male" ? "мужчина" : "женщина";
-      const activityText = userProfile?.activity === "low" ? "низкая" : 
-                          userProfile?.activity === "moderate" ? "умеренная" :
-                          userProfile?.activity === "high" ? "высокая" : "очень высокая";
-      
-      const prompt = `Ты — персональный тренер по питанию. Проанализируй данные и дай КРАТКИЕ, структурированные рекомендации.
-
-ДАННЫЕ:
-- Цель: ${goalText}
-- Норма: ${userData.calories} ккал, Б: ${userData.protein}г, Ж: ${userData.fat}г, У: ${userData.carbs}г
-- Факт (среднее за ${daysWithMeals} дней): ${avgDaily.calories.toFixed(0)} ккал (${((avgDaily.calories / userData.calories) * 100).toFixed(0)}%), Б: ${avgDaily.protein.toFixed(1)}г, Ж: ${avgDaily.fat.toFixed(1)}г, У: ${avgDaily.carbs.toFixed(1)}г
-
-ВАЖНО:
-- Ответ должен быть КРАТКИМ (максимум 400 слов)
-- Используй markdown форматирование для Telegram: **жирный**, *курсив*
-- Добавь смайлики по теме (но умеренно, 5-8 штук на весь текст)
-- Структура: 3-4 коротких раздела с заголовками
-- Без воды, только конкретика
-
-Формат ответа:
-**1. Оценка** (2-3 предложения с смайликами)
-**2. Рекомендации** (конкретные цифры и продукты)
-**3. Что изменить** (краткий список)`;
-
-      try {
-        const response = await openai.chat.completions.create({
-          model: "gpt-4o",
-          messages: [
-            {
-              role: "system",
-              content: "Ты — персональный тренер по питанию. Дай КРАТКИЕ, структурированные рекомендации с умеренным использованием смайликов. Используй markdown для форматирования."
-            },
-            {
-              role: "user",
-              content: prompt
-            }
-          ],
-          temperature: 0.7,
-          max_tokens: 500
-        });
-
-        const recommendations = response.choices[0]?.message?.content || "Не удалось сгенерировать рекомендации.";
-
-        // Форматируем ответ для Telegram
-        const formattedText = `💡 *Рекомендации по питанию*\n\n${recommendations}`;
-
-        try {
-          await ctx.telegram.editMessageText(
-            ctx.chat!.id,
-            processingMsg.message_id,
-            undefined,
-            formattedText,
-            { parse_mode: "Markdown" }
-          );
-        } catch (markdownError: any) {
-          // Если markdown не работает (спецсимволы), отправляем без форматирования
-          console.error("[bot] Ошибка markdown, отправляю без форматирования:", markdownError);
-          await ctx.telegram.editMessageText(
-            ctx.chat!.id,
-            processingMsg.message_id,
-            undefined,
-            `💡 Рекомендации по питанию:\n\n${recommendations}`
-          );
-        }
-      } catch (error) {
-        console.error("[bot] Ошибка генерации рекомендаций:", error);
-        await ctx.telegram.editMessageText(
-          ctx.chat!.id,
-          processingMsg.message_id,
-          undefined,
-          "❌ Не удалось сгенерировать рекомендации. Попробуйте позже."
-        );
-      }
-      return;
-    }
 
     console.log(`[bot] Текстовое сообщение от ${telegram_id}: ${text}`);
 
@@ -1364,7 +1303,8 @@ bot.on("text", async (ctx) => {
     const dailyNorm = await getUserDailyNorm(telegram_id);
 
     // Формируем ответ
-    const response = `✅ Добавлено:\n${mealAnalysis.description}\n🔥 ${mealAnalysis.calories} ккал | 🥚 ${mealAnalysis.protein.toFixed(1)}г | 🥥 ${mealAnalysis.fat.toFixed(1)}г | 🍚 ${mealAnalysis.carbs.toFixed(1)}г\n\n${formatProgressMessage(todayMeals, dailyNorm)}`;
+    const waterInfo = await getWaterProgressByTelegram(telegram_id);
+    const response = `✅ Добавлено:\n${mealAnalysis.description}\n🔥 ${mealAnalysis.calories} ккал | 🥚 ${mealAnalysis.protein.toFixed(1)}г | 🥑 ${mealAnalysis.fat.toFixed(1)}г | 🍚 ${mealAnalysis.carbs.toFixed(1)}г\n\n${formatProgressMessage(todayMeals, dailyNorm, waterInfo || undefined)}`;
 
     await ctx.telegram.editMessageText(
       ctx.chat!.id,
@@ -1462,10 +1402,11 @@ bot.on("callback_query", async (ctx) => {
       return ctx.answerCbQuery("Ошибка: не удалось определить ваш ID");
     }
 
-    const data = ctx.callbackQuery.data;
+    const data = (ctx.callbackQuery as any).data;
     if (!data) {
       return ctx.answerCbQuery();
     }
+
 
     // Обработка кнопок уведомлений
     if (data === "notifications") {
@@ -1609,7 +1550,7 @@ bot.on("callback_query", async (ctx) => {
         const dailyNorm = await getUserDailyNorm(telegram_id);
 
         // Формируем ответ с общим отчетом
-        const response = `✅ Добавлено:\nвода\n🔥 0 ккал | 🥚 0.0г | 🥥 0.0г | 🍚 0.0г\n\n${formatProgressMessage(todayMeals, dailyNorm, { totalMl, goalMl })}`;
+    const response = `✅ Добавлено:\nвода\n🔥 0 ккал | 🥚 0.0г | 🥑 0.0г | 🍚 0.0г\n\n${formatProgressMessage(todayMeals, dailyNorm, { totalMl, goalMl })}`;
 
         return ctx.editMessageText(response);
       } catch (error: any) {
@@ -1675,9 +1616,10 @@ bot.command("отменить", async (ctx) => {
     // Получаем обновлённую статистику
     const todayMeals = await getTodayMeals(telegram_id);
     const dailyNorm = await getUserDailyNorm(telegram_id);
+    const waterInfo = await getWaterProgressByTelegram(telegram_id);
 
     ctx.reply(
-      `✅ Удалено: ${lastMeal.meal_text} (${lastMeal.calories} ккал)\n\n${formatProgressMessage(todayMeals, dailyNorm)}`
+      `✅ Удалено: ${lastMeal.meal_text} (${lastMeal.calories} ккал)\n\n${formatProgressMessage(todayMeals, dailyNorm, waterInfo || undefined)}`
     );
   } catch (error) {
     console.error("[bot] Ошибка /отменить:", error);
@@ -1718,6 +1660,7 @@ bot.command("отчет", async (ctx) => {
 
     const todayMeals = await getTodayMeals(telegram_id);
     const dailyNorm = await getUserDailyNorm(telegram_id);
+    const waterInfo = await getWaterProgressByTelegram(telegram_id);
 
     let report = "📋 Отчёт за сегодня:\n\n";
     meals.forEach((meal, index) => {
@@ -1725,10 +1668,10 @@ bot.command("отчет", async (ctx) => {
         hour: "2-digit",
         minute: "2-digit"
       });
-      report += `${index + 1}. ${meal.meal_text} (${time})\n   🔥 ${meal.calories} ккал | 🥚 ${Number(meal.protein).toFixed(1)}г | 🥥 ${Number(meal.fat).toFixed(1)}г | 🍚 ${Number(meal.carbs || 0).toFixed(1)}г\n\n`;
+      report += `${index + 1}. ${meal.meal_text} (${time})\n   🔥 ${meal.calories} ккал | 🥚 ${Number(meal.protein).toFixed(1)}г | 🥑 ${Number(meal.fat).toFixed(1)}г | 🍚 ${Number(meal.carbs || 0).toFixed(1)}г\n\n`;
     });
 
-    report += `\n${formatProgressMessage(todayMeals, dailyNorm)}`;
+    report += `\n${formatProgressMessage(todayMeals, dailyNorm, waterInfo || undefined)}`;
 
     ctx.reply(report);
   } catch (error) {
@@ -1753,17 +1696,30 @@ async function analyzePhotoWithOpenAI(photoUrl: string): Promise<MealAnalysis | 
       messages: [
         {
           role: "system",
-          content: "Ты — помощник по анализу питания. Всегда возвращай валидный JSON без дополнительного текста."
+          content: FOOD_ANALYSIS_SYSTEM_PROMPT + "\n\nAlways return valid JSON without additional text."
         },
         {
           role: "user",
           content: [
             {
               type: "text",
-              text: `Ты — эксперт по питанию. Проанализируй фото и определи:
+              text: `Проанализируй фото и определи:
 
 1. Есть ли на фото ЕДА? (блюда, продукты питания, напитки)
 2. Если НЕТ еды — что именно изображено? (животное, предмет, человек, пейзаж и т.д.)
+
+ВАЖНО ДЛЯ ОЦЕНКИ ПОРЦИЙ ПО ФОТО:
+- Оценивай порции на основе визуального объема и размера тарелки/блюда
+- НЕ занижай порции! Если не уверен, выбирай среднее реалистичное значение
+- Предполагай домашнюю еду, если не видно явно ресторанную порцию
+- Стандартная тарелка = ~300-400 г еды
+- Глубокая тарелка/миска = ~250-350 г
+- Маленькая тарелка = ~150-200 г
+
+Включи в ответ:
+- примерный вес каждого ингредиента
+- общие ккал / белки / жиры / углеводы
+- краткое объяснение визуальной оценки
 
 Верни ТОЛЬКО JSON в одном из двух форматов:
 
@@ -1771,10 +1727,10 @@ async function analyzePhotoWithOpenAI(photoUrl: string): Promise<MealAnalysis | 
 {
   "isFood": true,
   "description": "краткое название блюда на русском",
-  "calories": число (ккал),
-  "protein": число (граммы),
-  "fat": число (граммы),
-  "carbs": число (граммы)
+  "calories": число (ккал, округленное),
+  "protein": число (граммы, округленное до 0.1),
+  "fat": число (граммы, округленное до 0.1),
+  "carbs": число (граммы, округленное до 0.1)
 }
 
 Если на фото НЕТ еды:
@@ -1784,7 +1740,9 @@ async function analyzePhotoWithOpenAI(photoUrl: string): Promise<MealAnalysis | 
   "message": "дружелюбное сообщение на русском с эмодзи, объясняющее что это не еда (например: 'это не еда, это котик 😺' или 'это не еда, это красивый пейзаж 🌄')"
 }
 
-ВАЖНО: Если на фото нет еды, верни isFood: false с описанием что это и дружелюбным сообщением.`
+ВАЖНО: 
+- Если на фото нет еды, верни isFood: false с описанием что это и дружелюбным сообщением.
+- Если это еда — оцени РЕАЛИСТИЧНО на основе визуального объема, не занижай порции!`
             },
             {
               type: "image_url",
@@ -1943,7 +1901,8 @@ bot.on("photo", async (ctx) => {
     const dailyNorm = await getUserDailyNorm(telegram_id);
 
     // Формируем ответ
-    const response = `✅ Добавлено:\n${mealAnalysis.description}\n🔥 ${mealAnalysis.calories} ккал | 🥚 ${mealAnalysis.protein.toFixed(1)}г | 🥥 ${mealAnalysis.fat.toFixed(1)}г | 🍚 ${mealAnalysis.carbs.toFixed(1)}г\n\n${formatProgressMessage(todayMeals, dailyNorm)}`;
+    const waterInfo = await getWaterProgressByTelegram(telegram_id);
+    const response = `✅ Добавлено:\n${mealAnalysis.description}\n🔥 ${mealAnalysis.calories} ккал | 🥚 ${mealAnalysis.protein.toFixed(1)}г | 🥑 ${mealAnalysis.fat.toFixed(1)}г | 🍚 ${mealAnalysis.carbs.toFixed(1)}г\n\n${formatProgressMessage(todayMeals, dailyNorm, waterInfo || undefined)}`;
 
     await ctx.telegram.editMessageText(
       ctx.chat!.id,
@@ -2007,6 +1966,7 @@ bot.on("voice", async (ctx) => {
     }
 
     console.log(`[bot] Получено голосовое сообщение от ${telegram_id}`);
+
 
     // Показываем, что обрабатываем
     const processingMsg = await ctx.reply("🎤 Расшифровываю голосовое сообщение...");
@@ -2116,7 +2076,8 @@ bot.on("voice", async (ctx) => {
     const dailyNorm = await getUserDailyNorm(telegram_id);
 
     // Формируем ответ
-    const response = `✅ Добавлено:\n${mealAnalysis.description}\n🔥 ${mealAnalysis.calories} ккал | 🥚 ${mealAnalysis.protein.toFixed(1)}г | 🥥 ${mealAnalysis.fat.toFixed(1)}г | 🍚 ${mealAnalysis.carbs.toFixed(1)}г\n\n${formatProgressMessage(todayMeals, dailyNorm)}`;
+    const waterInfo = await getWaterProgressByTelegram(telegram_id);
+    const response = `✅ Добавлено:\n${mealAnalysis.description}\n🔥 ${mealAnalysis.calories} ккал | 🥚 ${mealAnalysis.protein.toFixed(1)}г | 🥑 ${mealAnalysis.fat.toFixed(1)}г | 🍚 ${mealAnalysis.carbs.toFixed(1)}г\n\n${formatProgressMessage(todayMeals, dailyNorm, waterInfo || undefined)}`;
 
     await ctx.telegram.editMessageText(
       ctx.chat!.id,
@@ -2155,3 +2116,7 @@ console.log("🤖 Бот запущен");
 // Запускаем scheduler для напоминаний
 startReminderScheduler(bot);
 console.log("⏰ Scheduler напоминаний запущен");
+
+// Запускаем scheduler для уведомлений о неактивности
+startInactivityNotificationScheduler(bot);
+console.log("📢 Scheduler уведомлений о неактивности запущен");
