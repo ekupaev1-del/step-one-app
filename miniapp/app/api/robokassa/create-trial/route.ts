@@ -38,6 +38,69 @@ async function generateUniqueInvId(
 }
 
 /**
+ * Store payment attempt in DB (non-blocking)
+ * Returns debug info about the operation
+ */
+async function storePaymentAttempt(
+  supabase: any,
+  telegramUserId: number,
+  invId: number,
+  outSum: string,
+  mode: PaymentMode
+): Promise<{ ok: boolean; error?: any; debug?: any }> {
+  try {
+    const { error: insertError, data } = await supabase
+      .from('payments')
+      .insert({
+        telegram_user_id: telegramUserId,
+        inv_id: invId,
+        out_sum: parseFloat(outSum),
+        mode: mode,
+        status: 'created',
+      })
+      .select()
+      .single();
+
+    if (insertError) {
+      // Log full PostgREST error details
+      console.error('[robokassa/create-trial] ❌ DB insert error:', {
+        code: insertError.code,
+        message: insertError.message,
+        details: insertError.details,
+        hint: insertError.hint,
+        fullError: insertError,
+      });
+      
+      return {
+        ok: false,
+        error: {
+          code: insertError.code,
+          message: insertError.message,
+          details: insertError.details,
+          hint: insertError.hint,
+        },
+      };
+    }
+
+    return { ok: true, debug: { inserted: data } };
+  } catch (dbError: any) {
+    console.error('[robokassa/create-trial] ❌ DB insert exception:', {
+      message: dbError.message,
+      stack: dbError.stack,
+      fullError: dbError,
+    });
+    
+    return {
+      ok: false,
+      error: {
+        message: dbError.message,
+        stack: dbError.stack,
+      },
+    };
+  }
+}
+
+/**
  * POST /api/robokassa/create-trial
  * 
  * Creates trial payment (1 RUB) with optional Receipt and Recurring
@@ -149,7 +212,9 @@ export async function POST(req: Request) {
       config = getRobokassaConfig();
       debug.merchantLogin = config.merchantLogin;
       debug.isTest = config.isTest;
+      debug.robokassaTestMode = process.env.ROBOKASSA_TEST_MODE;
       console.log('[robokassa/create-trial] Robokassa config loaded, merchant:', config.merchantLogin);
+      console.log('[robokassa/create-trial] Test mode:', config.isTest);
     } catch (configError: any) {
       console.error('[robokassa/create-trial] ❌ Config error:', configError.message);
       return NextResponse.json({
@@ -186,25 +251,21 @@ export async function POST(req: Request) {
     debug.outSum = outSum;
     debug.description = description;
 
-    // Store payment attempt in DB
-    try {
-      const { error: insertError } = await supabase
-        .from('payments')
-        .insert({
-          telegram_user_id: telegramUserId,
-          inv_id: invId,
-          out_sum: 1.00,
-          mode: modeParam,
-          status: 'created',
-        });
-
-      if (insertError) {
-        console.error('[robokassa/create-trial] ❌ Failed to store payment:', insertError);
-        // Continue anyway, but log the error
-      }
-    } catch (dbError: any) {
-      console.error('[robokassa/create-trial] ❌ DB insert error:', dbError);
-      // Continue anyway
+    // Store payment attempt in DB (non-blocking)
+    debug.stage = 'store_payment';
+    const dbStoreResult = await storePaymentAttempt(
+      supabase,
+      telegramUserId,
+      invId,
+      outSum,
+      modeParam
+    );
+    debug.dbStore = dbStoreResult;
+    
+    if (!dbStoreResult.ok) {
+      console.warn('[robokassa/create-trial] ⚠️ DB store failed, but continuing payment flow');
+    } else {
+      console.log('[robokassa/create-trial] ✅ Payment stored in DB');
     }
 
     debug.stage = 'generate_form';
@@ -218,6 +279,9 @@ export async function POST(req: Request) {
       debug.receiptMatchesOutSum = receipt.items[0].sum === 1.00;
     }
 
+    // Check if debug mode is enabled
+    const debugMode = process.env.ROBOKASSA_DEBUG_FORM === 'true';
+
     // Generate payment form
     const { html, debug: formDebug } = generatePaymentForm(
       config,
@@ -226,12 +290,14 @@ export async function POST(req: Request) {
       description,
       modeParam,
       receipt,
-      telegramUserId
+      telegramUserId,
+      debugMode
     );
 
     // Merge debug info
     debug.stage = 'success';
     debug.formGeneration = formDebug;
+    debug.debugModeEnabled = debugMode;
 
     // Log signature base WITHOUT password (safe logging)
     console.log('[robokassa/create-trial] ========== SUCCESS ==========');
@@ -239,20 +305,34 @@ export async function POST(req: Request) {
     console.log('[robokassa/create-trial] InvId:', invId);
     console.log('[robokassa/create-trial] OutSum:', outSum);
     console.log('[robokassa/create-trial] Signature base (no password):', formDebug.signatureBaseWithoutPassword);
-    console.log('[robokassa/create-trial] Form fields:', Object.keys(formDebug.formFields));
+    console.log('[robokassa/create-trial] Form fields (safe):', Object.keys(formDebug.formFields));
+    console.log('[robokassa/create-trial] DB store result:', dbStoreResult.ok ? 'OK' : 'FAILED');
+    console.log('[robokassa/create-trial] Debug mode:', debugMode);
 
     return NextResponse.json({
       ok: true,
       html,
       debug: {
         stage: debug.stage,
+        mode: debug.mode,
         merchantLogin: debug.merchantLogin,
         outSum: debug.outSum,
         invId: debug.invId,
         description: debug.description,
         isTest: debug.isTest,
-        mode: debug.mode,
-        ...formDebug,
+        isTestIncluded: debug.isTest,
+        robokassaTestMode: debug.robokassaTestMode,
+        debugModeEnabled: debug.debugModeEnabled,
+        signatureBaseWithoutPassword: formDebug.signatureBaseWithoutPassword,
+        signatureValue: formDebug.signatureValue,
+        formFields: formDebug.formFields,
+        receiptRawLength: formDebug.receiptRawLength,
+        receiptEncodedLength: formDebug.receiptEncodedLength,
+        receiptEncodedPreview: formDebug.receiptEncodedPreview,
+        dbStore: {
+          ok: dbStoreResult.ok,
+          error: dbStoreResult.error || undefined,
+        },
       },
     });
   } catch (error: any) {

@@ -83,6 +83,7 @@ export default function SubscriptionClient() {
           message: data.message || 'Payment creation failed',
           stage: data.stage,
         } : null,
+        debug: data.debug || undefined, // Include API debug info
         timestamp: new Date().toISOString(),
       });
       setShowDebug(true);

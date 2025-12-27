@@ -106,7 +106,19 @@ export function signWithReceipt(
 }
 
 /**
- * Generate auto-submitting HTML form for Robokassa payment
+ * HTML escape for attribute values (does NOT re-encode URL-encoded strings)
+ */
+function escapeHtmlAttribute(value: string): string {
+  return value
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
+}
+
+/**
+ * Generate HTML form for Robokassa payment
  * 
  * @param config - Robokassa configuration
  * @param outSum - Payment amount as string (e.g., "1.00")
@@ -115,6 +127,7 @@ export function signWithReceipt(
  * @param mode - Payment mode: 'minimal' or 'recurring'
  * @param receipt - Receipt object (only used in recurring mode)
  * @param telegramUserId - Telegram user ID (for Shp_userId)
+ * @param debugMode - If true, return debug HTML instead of auto-submitting
  * @returns HTML form and debug info
  */
 export function generatePaymentForm(
@@ -124,7 +137,8 @@ export function generatePaymentForm(
   description: string,
   mode: PaymentMode,
   receipt?: Receipt,
-  telegramUserId?: number
+  telegramUserId?: number,
+  debugMode: boolean = false
 ): { html: string; debug: any } {
   const baseUrl = 'https://auth.robokassa.ru/Merchant/Index.aspx';
   
@@ -177,23 +191,104 @@ export function generatePaymentForm(
     formFields.Shp_userId = String(telegramUserId);
   }
   
-  // Build form HTML with proper HTML escaping
-  let formHtml = `<form id="robokassa-form" method="POST" action="${baseUrl}">`;
+  // Build form HTML
+  let formHtml = '';
   
-  for (const [name, value] of Object.entries(formFields)) {
-    // HTML escape the value for attribute
-    const escapedValue = value
-      .replace(/&/g, '&amp;')
-      .replace(/</g, '&lt;')
-      .replace(/>/g, '&gt;')
-      .replace(/"/g, '&quot;')
-      .replace(/'/g, '&#39;');
+  if (debugMode) {
+    // Debug mode: show form with submit button and debug info
+    const debugJson = JSON.stringify({
+      mode,
+      merchantLogin: config.merchantLogin,
+      outSum,
+      invId,
+      description,
+      isTest: config.isTest,
+      isTestIncluded: config.isTest,
+      signatureBaseWithoutPassword: signatureBase,
+      signatureValue: signature,
+      formFields: Object.fromEntries(
+        Object.entries(formFields).map(([k, v]) => [
+          k,
+          k === 'Receipt' ? `[encoded, length: ${v.length}, preview: ${v.substring(0, 80)}...]` : v
+        ])
+      ),
+      receiptRawLength: receiptJson?.length || 0,
+      receiptEncodedLength: encodedReceipt?.length || 0,
+      receiptEncodedPreview: encodedReceipt ? encodedReceipt.substring(0, 80) + '...' : undefined,
+    }, null, 2);
     
-    formHtml += `<input type="hidden" name="${name}" value="${escapedValue}">`;
+    formHtml = `<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Robokassa Payment Debug</title>
+  <style>
+    body { font-family: monospace; padding: 20px; background: #1a1a1a; color: #00ff00; }
+    .container { max-width: 800px; margin: 0 auto; }
+    button { background: #0066cc; color: white; padding: 15px 30px; font-size: 16px; border: none; border-radius: 5px; cursor: pointer; margin: 10px 0; }
+    button:hover { background: #0052a3; }
+    .debug-section { background: #2a2a2a; padding: 15px; margin: 10px 0; border-radius: 5px; border: 1px solid #444; }
+    .debug-section h3 { margin-top: 0; color: #00ff00; }
+    pre { background: #000; padding: 10px; border-radius: 3px; overflow-x: auto; font-size: 12px; }
+    .copy-btn { background: #333; padding: 5px 10px; font-size: 12px; margin-left: 10px; }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <h1>🔍 Robokassa Payment Debug Mode</h1>
+    
+    <div class="debug-section">
+      <h3>Payment Form</h3>
+      <form id="robokassa-form" method="POST" action="${baseUrl}">`;
+    
+    for (const [name, value] of Object.entries(formFields)) {
+      // For Receipt, use the raw encoded value (already URL-encoded)
+      // For other fields, escape HTML
+      const escapedValue = name === 'Receipt' ? value : escapeHtmlAttribute(value);
+      formHtml += `\n        <input type="hidden" name="${name}" value="${escapedValue}">`;
+    }
+    
+    formHtml += `
+      </form>
+      <button onclick="document.getElementById('robokassa-form').submit()">💳 Pay Now</button>
+    </div>
+    
+    <div class="debug-section">
+      <h3>Debug JSON <button class="copy-btn" onclick="copyToClipboard('debug-json')">Copy</button></h3>
+      <pre id="debug-json">${escapeHtmlAttribute(debugJson)}</pre>
+    </div>
+    
+    <div class="debug-section">
+      <h3>Signature Base (without password) <button class="copy-btn" onclick="copyToClipboard('signature-base')">Copy</button></h3>
+      <pre id="signature-base">${escapeHtmlAttribute(signatureBase)}</pre>
+    </div>
+    
+    <script>
+      function copyToClipboard(id) {
+        const text = document.getElementById(id).textContent;
+        navigator.clipboard.writeText(text).then(() => {
+          alert('Copied to clipboard!');
+        });
+      }
+    </script>
+  </div>
+</body>
+</html>`;
+  } else {
+    // Production mode: auto-submit
+    formHtml = `<form id="robokassa-form" method="POST" action="${baseUrl}">`;
+    
+    for (const [name, value] of Object.entries(formFields)) {
+      // For Receipt, use the raw encoded value (already URL-encoded, don't HTML escape it)
+      // For other fields, escape HTML attributes
+      const escapedValue = name === 'Receipt' ? value : escapeHtmlAttribute(value);
+      formHtml += `<input type="hidden" name="${name}" value="${escapedValue}">`;
+    }
+    
+    formHtml += `</form>`;
+    formHtml += `<script>document.getElementById('robokassa-form').submit();</script>`;
   }
-  
-  formHtml += `</form>`;
-  formHtml += `<script>document.getElementById('robokassa-form').submit();</script>`;
   
   return {
     html: formHtml,
@@ -204,15 +299,18 @@ export function generatePaymentForm(
       invId,
       description,
       isTest: config.isTest,
+      isTestIncluded: config.isTest,
       receiptRaw: receiptJson,
+      receiptRawLength: receiptJson?.length || 0,
       receiptEncoded: encodedReceipt,
       receiptEncodedLength: encodedReceipt?.length || 0,
+      receiptEncodedPreview: encodedReceipt ? encodedReceipt.substring(0, 80) + '...' : undefined,
       signatureBaseWithoutPassword: signatureBase,
       signatureValue: signature,
       formFields: Object.fromEntries(
         Object.entries(formFields).map(([k, v]) => [
           k,
-          k === 'Receipt' ? `[encoded, length: ${v.length}]` : v
+          k === 'Receipt' ? `[encoded, length: ${v.length}, preview: ${v.substring(0, 80)}...]` : v
         ])
       ),
     },
