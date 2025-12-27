@@ -574,11 +574,14 @@ export function generatePaymentForm(
     formHasSignatureValue: 'SignatureValue' in formFields,
     formHasReceipt: 'Receipt' in formFields,
     formHasRecurring: 'Recurring' in formFields,
-    // IsTest check - should be present if config.isTest is true
+    // IsTest check - should be present ONLY if config.isTest is true (test mode)
+    // In production (config.isTest === false), IsTest should NOT be present - this is CORRECT
     configIsTest: config.isTest,
     formHasIsTest: 'IsTest' in formFields,
     formIsTestValue: formFields.IsTest || 'NOT_PRESENT',
     isTestInFormFieldsWithoutSignature: 'IsTest' in formFieldsWithoutSignature,
+    // IsTest validation: should be present if test mode, absent if production (both are correct)
+    isTestCorrect: config.isTest ? ('IsTest' in formFields && formFields.IsTest === '1') : !('IsTest' in formFields),
     
     // Field value consistency
     formOutSumMatchesSignature: formFields.OutSum === outSumFormatted,
@@ -1069,7 +1072,9 @@ export function getRobokassaConfig(): RobokassaConfig {
   const password2 = process.env.ROBOKASSA_PASSWORD2;
   const vercelEnv = process.env.VERCEL_ENV || 'unknown';
   const nodeEnv = process.env.NODE_ENV || 'unknown';
-  const isTest = process.env.ROBOKASSA_TEST_MODE === 'true';
+  // Parse ROBOKASSA_TEST_MODE - can be 'true' or '1'
+  const testModeEnv = process.env.ROBOKASSA_TEST_MODE;
+  const isTest = testModeEnv === 'true' || testModeEnv === '1';
 
   // STRICT RUNTIME CHECK: Log environment variables (server-side only, never in client)
   if (typeof window === 'undefined') {
@@ -1079,7 +1084,8 @@ export function getRobokassaConfig(): RobokassaConfig {
     console.log('[robokassa] ROBOKASSA_MERCHANT_LOGIN:', merchantLogin || '[NOT SET]');
     console.log('[robokassa] ROBOKASSA_PASSWORD1:', password1 ? maskPassword(password1) : '[NOT SET]');
     console.log('[robokassa] ROBOKASSA_PASSWORD2:', password2 ? maskPassword(password2) : '[NOT SET]');
-    console.log('[robokassa] ROBOKASSA_TEST_MODE:', isTest);
+    console.log('[robokassa] ROBOKASSA_TEST_MODE (raw):', testModeEnv || '[NOT SET]');
+    console.log('[robokassa] ROBOKASSA_TEST_MODE (parsed):', isTest);
     console.log('[robokassa] ========================================');
   }
 
