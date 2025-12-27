@@ -347,7 +347,8 @@ function buildRobokassaFields(payload: {
   }
   
   // Add IsTest if test mode
-  if (payload.isTest) {
+  // IMPORTANT: Robokassa requires IsTest='1' in test mode
+  if (payload.isTest === true) {
     fields.IsTest = '1';
   }
   
@@ -573,7 +574,11 @@ export function generatePaymentForm(
     formHasSignatureValue: 'SignatureValue' in formFields,
     formHasReceipt: 'Receipt' in formFields,
     formHasRecurring: 'Recurring' in formFields,
+    // IsTest check - should be present if config.isTest is true
+    configIsTest: config.isTest,
     formHasIsTest: 'IsTest' in formFields,
+    formIsTestValue: formFields.IsTest || 'NOT_PRESENT',
+    isTestInFormFieldsWithoutSignature: 'IsTest' in formFieldsWithoutSignature,
     
     // Field value consistency
     formOutSumMatchesSignature: formFields.OutSum === outSumFormatted,
