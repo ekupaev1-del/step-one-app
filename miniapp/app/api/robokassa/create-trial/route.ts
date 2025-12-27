@@ -318,6 +318,9 @@ export async function POST(req: Request) {
     const debugMode = true; // Always true to show debug page
 
     // Generate payment form - IMPORTANT: pass telegramUserId so Shp_userId is included in signature
+    // #region agent log
+    fetch('http://127.0.0.1:7242/ingest/43e8883f-375d-4d43-af6f-fef79b5ebbe3',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'create-trial/route.ts:POST',message:'Before generatePaymentForm',data:{configMerchantLogin:config.merchantLogin,configIsTest:config.isTest,outSum:outSum,outSumType:typeof outSum,invId:invId,invIdType:typeof invId,description:description,modeParam:modeParam,hasReceipt:!!receipt,telegramUserId:telegramUserId,telegramUserIdType:typeof telegramUserId},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'J'})}).catch(()=>{});
+    // #endregion
     const { html, debug: formDebug } = generatePaymentForm(
       config,
       outSum,
@@ -328,6 +331,9 @@ export async function POST(req: Request) {
       telegramUserId, // Pass telegramUserId so Shp_userId is included in form AND signature
       debugMode
     );
+    // #region agent log
+    fetch('http://127.0.0.1:7242/ingest/43e8883f-375d-4d43-af6f-fef79b5ebbe3',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'create-trial/route.ts:POST',message:'After generatePaymentForm',data:{formDebugSignatureValue:formDebug.signatureValue,formDebugSignatureLength:formDebug.signatureLength,formDebugMerchantLoginIsSteopone:formDebug.merchantLoginIsSteopone,formDebugOutSum:formDebug.outSum,formDebugCustomParams:formDebug.customParams,formDebugFormFieldsKeys:Object.keys(formDebug.finalFormFields||{})},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'G'})}).catch(()=>{});
+    // #endregion
 
     // ========== DETAILED DEBUG FOR ERROR 29 ==========
     console.log('[robokassa/create-trial] ========== ERROR 29 DIAGNOSTICS ==========');

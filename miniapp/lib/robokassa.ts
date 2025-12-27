@@ -43,9 +43,21 @@ function maskPassword(password: string): string {
  * Calculate MD5 signature for Robokassa
  * CRITICAL: Returns lowercase hex (Robokassa requirement)
  */
-function calculateSignature(...args: (string | number)[]): string {
-  const signatureString = args.map(arg => String(arg)).join(':');
-  return createHash('md5').update(signatureString).digest('hex').toLowerCase();
+function calculateSignature(...args: string[]): string {
+  const signatureString = args.join(':');
+  // #region agent log
+  if (typeof window === 'undefined') {
+    fetch('http://127.0.0.1:7242/ingest/43e8883f-375d-4d43-af6f-fef79b5ebbe3',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'robokassa.ts:calculateSignature',message:'MD5 signature calculation',data:{signatureStringLength:signatureString.length,signatureStringPreview:signatureString.substring(0,200),argsCount:args.length,argsTypes:args.map(a=>typeof a)},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'A'})}).catch(()=>{});
+  }
+  // #endregion
+  const hash = createHash('md5').update(signatureString).digest('hex');
+  const hashLowercase = hash.toLowerCase();
+  // #region agent log
+  if (typeof window === 'undefined') {
+    fetch('http://127.0.0.1:7242/ingest/43e8883f-375d-4d43-af6f-fef79b5ebbe3',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'robokassa.ts:calculateSignature',message:'MD5 hash result',data:{hashOriginal:hash,hashLowercase:hashLowercase,isLowercase:hashLowercase===hash.toLowerCase(),length:hashLowercase.length},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'A'})}).catch(()=>{});
+  }
+  // #endregion
+  return hashLowercase;
 }
 
 /**
@@ -112,11 +124,12 @@ function buildSignatureBaseParts(
   encodedReceipt: string | undefined,
   password1: string,
   customParams: string[]
-): (string | number)[] {
-  const parts: (string | number)[] = [
+): string[] {
+  // CRITICAL: Convert invId to string to match Robokassa's exact format
+  const parts: string[] = [
     merchantLogin,
     outSum,
-    invId,
+    String(invId), // Convert to string
   ];
   
   // Add ReceiptEncoded if present (recurring mode) - BEFORE Password1
@@ -177,7 +190,7 @@ function calculateRobokassaSignature(
   invId: number,
   receiptEncoded: string | undefined,
   customParams: string[] = []
-): { signature: string; signatureBase: string; signatureBaseFull: string; signatureParts: (string | number)[] } {
+): { signature: string; signatureBase: string; signatureBaseFull: string; signatureParts: string[] } {
   // Build signature parts in CORRECT order using helper
   const signatureParts = buildSignatureBaseParts(
     config.merchantLogin,
@@ -189,10 +202,11 @@ function calculateRobokassaSignature(
   );
   
   // Build signature base (without password and custom params) for logging
+  const invIdStr = String(invId);
   const baseParts = [
     config.merchantLogin,
     outSum,
-    invId,
+    invIdStr,
   ];
   if (receiptEncoded) {
     baseParts.push(receiptEncoded);
@@ -203,7 +217,7 @@ function calculateRobokassaSignature(
   const fullParts = [
     config.merchantLogin,
     outSum,
-    invId,
+    invIdStr,
   ];
   if (receiptEncoded) {
     fullParts.push(receiptEncoded);
@@ -235,7 +249,7 @@ export function signMinimal(
   outSum: string,
   invId: number,
   customParams: string[] = []
-): { signature: string; signatureBase: string; signatureBaseFull: string; signatureParts: (string | number)[] } {
+): { signature: string; signatureBase: string; signatureBaseFull: string; signatureParts: string[] } {
   return calculateRobokassaSignature(
     config,
     outSum,
@@ -259,10 +273,10 @@ export function signMinimal(
 export function signWithReceipt(
   config: RobokassaConfig,
   outSum: string,
-  invId: number,
   receiptEncoded: string,
+  invId: number,
   customParams: string[] = []
-): { signature: string; signatureBase: string; signatureBaseFull: string; signatureParts: (string | number)[] } {
+): { signature: string; signatureBase: string; signatureBaseFull: string; signatureParts: string[] } {
   return calculateRobokassaSignature(
     config,
     outSum,
@@ -314,8 +328,19 @@ function buildRobokassaFields(payload: {
   telegramUserId?: number;
   isTest?: boolean;
 }): Record<string, string> {
+  // #region agent log
+  if (typeof window === 'undefined') {
+    fetch('http://127.0.0.1:7242/ingest/43e8883f-375d-4d43-af6f-fef79b5ebbe3',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'robokassa.ts:buildRobokassaFields',message:'Function entry',data:{merchantLogin:payload.merchantLogin,merchantLoginIsSteopone:payload.merchantLogin==='steopone',outSum:payload.outSum,outSumType:typeof payload.outSum,invId:payload.invId,invIdType:typeof payload.invId,mode:payload.mode,hasReceipt:!!payload.receipt,telegramUserId:payload.telegramUserId,isTest:payload.isTest},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'E'})}).catch(()=>{});
+  }
+  // #endregion
   // Format OutSum to stable string format (always 2 decimals)
   const outSumFormatted = formatOutSum(payload.outSum);
+  
+  // #region agent log
+  if (typeof window === 'undefined') {
+    fetch('http://127.0.0.1:7242/ingest/43e8883f-375d-4d43-af6f-fef79b5ebbe3',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'robokassa.ts:buildRobokassaFields',message:'OutSum formatted',data:{outSumFormatted:outSumFormatted,outSumFormattedType:typeof outSumFormatted,outSumIs100:outSumFormatted==='1.00',outSumHasTwoDecimals:/^\d+\.\d{2}$/.test(outSumFormatted)},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'C'})}).catch(()=>{});
+  }
+  // #endregion
   
   // Build base fields
   const fields: Record<string, string> = {
@@ -342,6 +367,12 @@ function buildRobokassaFields(payload: {
     // encodeURIComponent ONCE (no double encoding)
     const receiptEncoded = encodeURIComponent(receiptJson);
     
+    // #region agent log
+    if (typeof window === 'undefined') {
+      fetch('http://127.0.0.1:7242/ingest/43e8883f-375d-4d43-af6f-fef79b5ebbe3',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'robokassa.ts:buildRobokassaFields',message:'Receipt encoding',data:{receiptJsonLength:receiptJson.length,receiptEncodedLength:receiptEncoded.length,receiptEncodedPreview:receiptEncoded.substring(0,100),hasDoubleEncoding:receiptEncoded.includes('%25')},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'I'})}).catch(()=>{});
+    }
+    // #endregion
+    
     fields.Receipt = receiptEncoded;
     fields.Recurring = 'true';
   }
@@ -351,6 +382,12 @@ function buildRobokassaFields(payload: {
   if (payload.isTest === true) {
     fields.IsTest = '1';
   }
+  
+  // #region agent log
+  if (typeof window === 'undefined') {
+    fetch('http://127.0.0.1:7242/ingest/43e8883f-375d-4d43-af6f-fef79b5ebbe3',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'robokassa.ts:buildRobokassaFields',message:'Final fields',data:{fieldsKeys:Object.keys(fields),fieldsCount:Object.keys(fields).length,hasIsTest:'IsTest' in fields,isTestValue:fields.IsTest||'NOT_PRESENT',hasReceipt:'Receipt' in fields,hasRecurring:'Recurring' in fields,hasShpUserId:'Shp_userId' in fields},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'G'})}).catch(()=>{});
+  }
+  // #endregion
   
   return fields;
 }
@@ -378,19 +415,32 @@ function buildRobokassaSignature(
   signatureValue: string;
   exactSignatureString: string;
   exactSignatureStringMasked: string;
-  signatureParts: (string | number)[];
+  signatureParts: string[];
 } {
+  // #region agent log
+  if (typeof window === 'undefined') {
+    fetch('http://127.0.0.1:7242/ingest/43e8883f-375d-4d43-af6f-fef79b5ebbe3',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'robokassa.ts:buildRobokassaSignature',message:'Function entry',data:{fieldsKeys:Object.keys(fields),fieldsCount:Object.keys(fields).length,hasMerchantLogin:'MerchantLogin' in fields,hasOutSum:'OutSum' in fields,hasInvId:'InvId' in fields,hasReceipt:'Receipt' in fields,hasShpParams:Object.keys(fields).some(k=>k.startsWith('Shp_'))},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'B'})}).catch(()=>{});
+  }
+  // #endregion
   // Extract values in correct order
+  // CRITICAL: Use exact string values from fields to match what's sent in form
   const merchantLogin = fields.MerchantLogin;
   const outSum = fields.OutSum;
-  const invId = Number(fields.InvId);
+  const invId = fields.InvId; // Keep as string to match form field exactly
   const receipt = fields.Receipt; // May be undefined
   
+  // #region agent log
+  if (typeof window === 'undefined') {
+    fetch('http://127.0.0.1:7242/ingest/43e8883f-375d-4d43-af6f-fef79b5ebbe3',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'robokassa.ts:buildRobokassaSignature',message:'Extracted values',data:{merchantLogin:merchantLogin,merchantLoginIsSteopone:merchantLogin==='steopone',outSum:outSum,outSumType:typeof outSum,outSumIs100:outSum==='1.00',invId:invId,invIdType:typeof invId,receiptPresent:!!receipt,receiptLength:receipt?.length||0},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'C'})}).catch(()=>{});
+  }
+  // #endregion
+  
   // Build signature parts in correct order
-  const signatureParts: (string | number)[] = [
+  // CRITICAL: All parts must be strings to match Robokassa's exact format
+  const signatureParts: string[] = [
     merchantLogin,
     outSum,
-    invId,
+    invId, // String, not number
   ];
   
   // Add Receipt ONLY if it's present in fields
@@ -410,24 +460,57 @@ function buildRobokassaSignature(
     }
   }
   
+  // #region agent log
+  if (typeof window === 'undefined') {
+    fetch('http://127.0.0.1:7242/ingest/43e8883f-375d-4d43-af6f-fef79b5ebbe3',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'robokassa.ts:buildRobokassaSignature',message:'Shp params before sort',data:{shpParamsBeforeSort:[...shpParams],shpParamsCount:shpParams.length},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'F'})}).catch(()=>{});
+  }
+  // #endregion
+  
   // Sort alphabetically by parameter name (case-sensitive)
   shpParams.sort();
+  
+  // #region agent log
+  if (typeof window === 'undefined') {
+    fetch('http://127.0.0.1:7242/ingest/43e8883f-375d-4d43-af6f-fef79b5ebbe3',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'robokassa.ts:buildRobokassaSignature',message:'Shp params after sort',data:{shpParamsAfterSort:[...shpParams],isSorted:JSON.stringify(shpParams)===JSON.stringify([...shpParams].sort()),password1Index:signatureParts.length-1},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'F'})}).catch(()=>{});
+  }
+  // #endregion
   
   // Add Shp_* params AFTER Password1
   if (shpParams.length > 0) {
     signatureParts.push(...shpParams);
   }
   
+  // #region agent log
+  if (typeof window === 'undefined') {
+    const password1Index = signatureParts.findIndex(p => p === password1);
+    const shpAfterPassword1 = signatureParts.slice(password1Index + 1).filter(p => p.startsWith('Shp_'));
+    fetch('http://127.0.0.1:7242/ingest/43e8883f-375d-4d43-af6f-fef79b5ebbe3',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'robokassa.ts:buildRobokassaSignature',message:'Signature parts order check',data:{signaturePartsCount:signatureParts.length,password1Index:password1Index,shpAfterPassword1:shpAfterPassword1,shpAfterPassword1Count:shpAfterPassword1.length,partsOrder:signatureParts.map((p,i)=>({index:i,value:typeof p==='string'&&p===password1?'[PASSWORD1]':p.substring(0,50),isPassword:p===password1,isShp:p.startsWith('Shp_'),isReceipt:p===receipt}))},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'B'})}).catch(()=>{});
+  }
+  // #endregion
+  
   // Build exact signature string
-  const exactSignatureString = signatureParts.map(p => String(p)).join(':');
+  // All parts are already strings, so just join them
+  const exactSignatureString = signatureParts.join(':');
   
   // Build masked signature string (for debug)
   const exactSignatureStringMasked = signatureParts.map(p => 
-    typeof p === 'string' && p === password1 ? '[PASSWORD1_HIDDEN]' : String(p)
+    p === password1 ? '[PASSWORD1_HIDDEN]' : p
   ).join(':');
+  
+  // #region agent log
+  if (typeof window === 'undefined') {
+    fetch('http://127.0.0.1:7242/ingest/43e8883f-375d-4d43-af6f-fef79b5ebbe3',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'robokassa.ts:buildRobokassaSignature',message:'Exact signature string before MD5',data:{exactSignatureStringLength:exactSignatureString.length,exactSignatureStringPreview:exactSignatureString.substring(0,300),exactSignatureStringMasked:exactSignatureStringMasked},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'B'})}).catch(()=>{});
+  }
+  // #endregion
   
   // Calculate MD5 signature (lowercase)
   const signatureValue = calculateSignature(...signatureParts);
+  
+  // #region agent log
+  if (typeof window === 'undefined') {
+    fetch('http://127.0.0.1:7242/ingest/43e8883f-375d-4d43-af6f-fef79b5ebbe3',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'robokassa.ts:buildRobokassaSignature',message:'Signature value result',data:{signatureValue:signatureValue,signatureValueLength:signatureValue.length,signatureValueIsLowercase:signatureValue===signatureValue.toLowerCase(),signatureValueIsHex:/^[0-9a-f]{32}$/.test(signatureValue)},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'A'})}).catch(()=>{});
+  }
+  // #endregion
   
   return {
     signatureValue,
@@ -474,17 +557,35 @@ export function generatePaymentForm(
     isTest: config.isTest,
   });
   
+  // #region agent log
+  if (typeof window === 'undefined') {
+    fetch('http://127.0.0.1:7242/ingest/43e8883f-375d-4d43-af6f-fef79b5ebbe3',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'robokassa.ts:generatePaymentForm',message:'Form fields without signature',data:{formFieldsWithoutSignatureKeys:Object.keys(formFieldsWithoutSignature),formFieldsWithoutSignatureCount:Object.keys(formFieldsWithoutSignature).length,merchantLogin:formFieldsWithoutSignature.MerchantLogin,outSum:formFieldsWithoutSignature.OutSum,invId:formFieldsWithoutSignature.InvId,hasReceipt:'Receipt' in formFieldsWithoutSignature,hasRecurring:'Recurring' in formFieldsWithoutSignature,hasIsTest:'IsTest' in formFieldsWithoutSignature,hasShpUserId:'Shp_userId' in formFieldsWithoutSignature},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'G'})}).catch(()=>{});
+  }
+  // #endregion
+  
   // Step 2: Calculate signature based on exact fields
   const signatureResult = buildRobokassaSignature(
     formFieldsWithoutSignature,
     config.password1
   );
   
+  // #region agent log
+  if (typeof window === 'undefined') {
+    fetch('http://127.0.0.1:7242/ingest/43e8883f-375d-4d43-af6f-fef79b5ebbe3',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'robokassa.ts:generatePaymentForm',message:'Signature result',data:{signatureValue:signatureResult.signatureValue,signatureValueLength:signatureResult.signatureValue.length,signaturePartsCount:signatureResult.signatureParts.length,exactSignatureStringLength:signatureResult.exactSignatureString.length},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'B'})}).catch(()=>{});
+  }
+  // #endregion
+  
   // Step 3: Add SignatureValue to form fields
   const formFields: Record<string, string> = {
     ...formFieldsWithoutSignature,
     SignatureValue: signatureResult.signatureValue,
   };
+  
+  // #region agent log
+  if (typeof window === 'undefined') {
+    fetch('http://127.0.0.1:7242/ingest/43e8883f-375d-4d43-af6f-fef79b5ebbe3',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'robokassa.ts:generatePaymentForm',message:'Final form fields',data:{formFieldsKeys:Object.keys(formFields),formFieldsCount:Object.keys(formFields).length,hasSignatureValue:'SignatureValue' in formFields,signatureValueInForm:formFields.SignatureValue,formFieldsMatch:Object.keys(formFieldsWithoutSignature).every(k=>formFields[k]===formFieldsWithoutSignature[k])},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'G'})}).catch(()=>{});
+  }
+  // #endregion
   
   // Extract receipt info for debug (if present)
   let receiptJson: string | undefined;
