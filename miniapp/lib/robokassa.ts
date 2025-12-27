@@ -452,8 +452,11 @@ function buildRobokassaSignature(
   signatureParts.push(password1);
   
   // Extract and sort Shp_* parameters alphabetically
+  // CRITICAL: Only include Shp_* parameters in signature, NOT Description, Recurring, IsTest, etc.
   const shpParams: string[] = [];
   for (const [key, value] of Object.entries(fields)) {
+    // Only include Shp_* parameters in signature
+    // Exclude: Description, Recurring, IsTest, SignatureValue (not yet added)
     if (key.startsWith('Shp_')) {
       // Format: "Shp_key=value" (NO URL encoding)
       shpParams.push(`${key}=${value}`);
