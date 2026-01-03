@@ -20,9 +20,9 @@ async function generateUniqueInvId(
   for (let attempt = 0; attempt < maxAttempts; attempt++) {
     const invId = generateSafeInvId();
     
-    // Check if invId already exists
+    // Check if invId already exists in public.payments (default schema)
     const { data: existing } = await supabase
-      .from('payments')
+      .from('payments') // This targets public.payments (default schema)
       .select('inv_id')
       .eq('inv_id', invId)
       .maybeSingle();
@@ -102,8 +102,10 @@ async function storePaymentAttempt(
       debug_keys: Object.keys(insertPayload.debug || {}),
     });
 
+    // Insert into public.payments (default schema, no need to specify)
+    // Supabase client uses 'public' schema by default
     const { error: insertError, data } = await supabase
-      .from('payments')
+      .from('payments') // This targets public.payments (default schema)
       .insert(insertPayload)
       .select()
       .single();
@@ -237,6 +239,17 @@ export async function POST(req: Request) {
       process.env.NEXT_PUBLIC_SUPABASE_URL!,
       process.env.SUPABASE_SERVICE_ROLE_KEY!
     );
+    
+    // Log schema/table info once at startup (no secrets)
+    if (typeof process !== 'undefined' && !(global as any).__payments_schema_logged) {
+      console.log('[robokassa/create-trial] ========== PAYMENTS TABLE SCHEMA INFO ==========');
+      console.log('[robokassa/create-trial] Using Supabase client with default schema: public');
+      console.log('[robokassa/create-trial] Payments table: public.payments (default schema)');
+      console.log('[robokassa/create-trial] Insert will target: public.payments');
+      console.log('[robokassa/create-trial] Supabase URL:', process.env.NEXT_PUBLIC_SUPABASE_URL ? 'SET' : 'NOT SET');
+      console.log('[robokassa/create-trial] ================================================');
+      (global as any).__payments_schema_logged = true;
+    }
 
     debug.stage = 'check_user';
 
