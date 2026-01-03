@@ -515,7 +515,27 @@ function buildRobokassaSignature(
   
   // #region agent log
   if (typeof window === 'undefined') {
-    fetch('http://127.0.0.1:7242/ingest/43e8883f-375d-4d43-af6f-fef79b5ebbe3',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'robokassa.ts:buildRobokassaSignature',message:'Signature value result',data:{signatureValue:signatureValue,signatureValueLength:signatureValue.length,signatureValueIsLowercase:signatureValue===signatureValue.toLowerCase(),signatureValueIsHex:/^[0-9a-f]{32}$/.test(signatureValue)},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'A'})}).catch(()=>{});
+    // CRITICAL: Log exact signature string for debugging Error 29
+    // This helps verify that the signature matches what Robokassa expects
+    console.log('[robokassa] ========== SIGNATURE CALCULATION (Error 29 Debug) ==========');
+    console.log('[robokassa] Exact signature string (masked):', exactSignatureStringMasked);
+    console.log('[robokassa] Exact signature string (full, length):', exactSignatureString.length);
+    console.log('[robokassa] Signature parts count:', signatureParts.length);
+    console.log('[robokassa] Signature parts:', signatureParts.map((p, i) => ({
+      index: i + 1,
+      part: p === password1 ? '[PASSWORD1]' : (p.startsWith('Shp_') ? p : p.substring(0, 50)),
+      isPassword: p === password1,
+      isShp: p.startsWith('Shp_'),
+      isReceipt: p === receipt,
+    })));
+    console.log('[robokassa] Shp_* params in signature:', shpParams);
+    console.log('[robokassa] Signature value (MD5, lowercase):', signatureValue);
+    console.log('[robokassa] Signature value length:', signatureValue.length);
+    console.log('[robokassa] Signature value is lowercase:', signatureValue === signatureValue.toLowerCase());
+    console.log('[robokassa] Signature value is hex:', /^[0-9a-f]{32}$/.test(signatureValue));
+    console.log('[robokassa] ============================================================');
+    
+    fetch('http://127.0.0.1:7242/ingest/43e8883f-375d-4d43-af6f-fef79b5ebbe3',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'robokassa.ts:buildRobokassaSignature',message:'Signature value result',data:{signatureValue:signatureValue,signatureValueLength:signatureValue.length,signatureValueIsLowercase:signatureValue===signatureValue.toLowerCase(),signatureValueIsHex:/^[0-9a-f]{32}$/.test(signatureValue),exactSignatureStringLength:exactSignatureString.length,signaturePartsCount:signatureParts.length,shpParamsInSignature:shpParams},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'A'})}).catch(()=>{});
   }
   // #endregion
   
