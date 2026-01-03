@@ -556,26 +556,42 @@ function buildRobokassaSignature(
     // CRITICAL: Log exact signature string for debugging Error 29
     // This helps verify that the signature matches what Robokassa expects
     console.log('[robokassa] ========== SIGNATURE CALCULATION (Error 29 Debug) ==========');
+    console.log('[robokassa] MerchantLogin:', merchantLogin, '(must be exactly "steopone")');
+    console.log('[robokassa] OutSum:', outSum, '(type:', typeof outSum, ', must be "1.00" for trial)');
+    console.log('[robokassa] InvId:', invId, '(type:', typeof invId, ', must be string)');
+    console.log('[robokassa] Receipt present:', !!receipt, '(length:', receipt?.length || 0, ')');
+    console.log('[robokassa] Password1 length:', password1.length, '(must match Robokassa settings)');
+    console.log('[robokassa] Shp_* params count:', shpParams.length);
+    console.log('[robokassa] Shp_* params:', shpParams);
     console.log('[robokassa] Exact signature string (masked):', exactSignatureStringMasked);
     console.log('[robokassa] Exact signature string (full, length):', exactSignatureString.length);
     console.log('[robokassa] Signature parts count:', signatureParts.length);
-    console.log('[robokassa] Signature parts:', signatureParts.map((p, i) => ({
-      index: i + 1,
-      part: p === password1 ? '[PASSWORD1]' : (p.startsWith('Shp_') ? p : p.substring(0, 50)),
-      isPassword: p === password1,
-      isShp: p.startsWith('Shp_'),
-      isReceipt: p === receipt,
-    })));
+    console.log('[robokassa] Signature parts order:');
+    signatureParts.forEach((p, i) => {
+      const partDesc = p === password1 ? '[PASSWORD1_HIDDEN]' : 
+                       p.startsWith('Shp_') ? p : 
+                       p === receipt ? `[ReceiptEncoded, length: ${p.length}]` :
+                       p.substring(0, 50);
+      console.log(`  ${i + 1}. ${partDesc}`);
+    });
     if (receipt) {
       console.log('[robokassa] Receipt in signature (receiptEncoded, length):', receipt.length);
       console.log('[robokassa] Receipt in signature (receiptEncoded, preview):', receipt.substring(0, 80));
     }
-    console.log('[robokassa] Shp_* params in signature:', shpParams);
     console.log('[robokassa] Signature value (MD5, lowercase):', signatureValue);
-    console.log('[robokassa] Signature value length:', signatureValue.length);
+    console.log('[robokassa] Signature value length:', signatureValue.length, '(must be 32)');
     console.log('[robokassa] Signature value is lowercase:', signatureValue === signatureValue.toLowerCase());
     console.log('[robokassa] Signature value regex validation (/^[0-9a-f]{32}$/):', /^[0-9a-f]{32}$/.test(signatureValue));
-    console.log('[robokassa] Exact signature string (masked):', exactSignatureStringMasked);
+    console.log('[robokassa] ============================================================');
+    console.log('[robokassa] ⚠️ ERROR 29 CHECKLIST:');
+    console.log('[robokassa] 1. MerchantLogin === "steopone":', merchantLogin === 'steopone');
+    console.log('[robokassa] 2. OutSum === "1.00":', outSum === '1.00');
+    console.log('[robokassa] 3. InvId is string:', typeof invId === 'string');
+    console.log('[robokassa] 4. Receipt included (if recurring):', !!receipt);
+    console.log('[robokassa] 5. Password1 correct (check in Robokassa cabinet):', password1.length > 0);
+    console.log('[robokassa] 6. Shp_* params sorted alphabetically:', JSON.stringify(shpParams) === JSON.stringify([...shpParams].sort()));
+    console.log('[robokassa] 7. Shp_* params AFTER Password1:', signatureParts.indexOf(password1) < (shpParams.length > 0 ? signatureParts.indexOf(shpParams[0]) : signatureParts.length));
+    console.log('[robokassa] 8. Signature is lowercase hex 32 chars:', /^[0-9a-f]{32}$/.test(signatureValue));
     console.log('[robokassa] ============================================================');
     
     fetch('http://127.0.0.1:7242/ingest/43e8883f-375d-4d43-af6f-fef79b5ebbe3',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'robokassa.ts:buildRobokassaSignature',message:'Signature value result',data:{signatureValue:signatureValue,signatureValueLength:signatureValue.length,signatureValueIsLowercase:signatureValue===signatureValue.toLowerCase(),signatureValueIsHex:/^[0-9a-f]{32}$/.test(signatureValue),exactSignatureStringLength:exactSignatureString.length,signaturePartsCount:signatureParts.length,shpParamsInSignature:shpParams},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'A'})}).catch(()=>{});
