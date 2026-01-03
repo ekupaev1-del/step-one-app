@@ -1,7 +1,8 @@
 import { NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 
-const BASE_URL = (process.env.MINIAPP_BASE_URL || "https://step-one-app.vercel.app").trim().replace(/\/$/, "");
+// Используем preview URL для dev ветки
+const BASE_URL = (process.env.MINIAPP_BASE_URL || "https://step-one-app-git-dev-emins-projects-4717eabc.vercel.app").trim().replace(/\/$/, "");
 const TELEGRAM_BOT_TOKEN = process.env.TELEGRAM_BOT_TOKEN;
 
 function getMainMenuKeyboard(userId: number | null = null) {
@@ -93,14 +94,17 @@ export async function POST(req: Request) {
     return NextResponse.json({ ok: false, error: "telegram_id is missing for user" }, { status: 400 });
   }
 
-  const confirmationText = "Спасибо! Мы сохранили твои данные. Теперь вы можете отправлять фото, текст или аудио своих блюд — я всё проанализирую.";
-  const menuKeyboard = getMainMenuKeyboard(user.id);
+  // PART 4: Если передан message, отправляем его с меню
+  const messageText = body?.message || "Спасибо! Мы сохранили твои данные. Теперь вы можете отправлять фото, текст или аудио своих блюд — я всё проанализирую.";
+  const shouldSendMenu = body?.sendMenu === true || !body?.message; // PART 4: Отправлять меню если sendMenu=true или если нет кастомного сообщения
 
   try {
-    await sendTelegramMessage(user.telegram_id, confirmationText);
-    await sendTelegramMessage(user.telegram_id, "Выберите действие:", {
-      ...menuKeyboard
-    });
+    // Отправляем сообщение с меню
+    const menuKeyboard = shouldSendMenu ? getMainMenuKeyboard(user.id) : undefined;
+    await sendTelegramMessage(user.telegram_id, messageText, menuKeyboard);
+    
+    // PART 4: Меню отправляется сразу (no restart required)
+    console.log("[/api/notify-bot] ✅ Message sent with menu (4 buttons)");
   } catch (sendError: any) {
     console.error("[/api/notify-bot] Ошибка отправки сообщений:", sendError);
     return NextResponse.json({ ok: false, error: "Failed to send telegram messages" }, { status: 502 });
@@ -108,6 +112,3 @@ export async function POST(req: Request) {
 
   return NextResponse.json({ ok: true });
 }
-
-
-

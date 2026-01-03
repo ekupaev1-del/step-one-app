@@ -2,21 +2,28 @@
 
 import { useState, useEffect, useCallback, useRef } from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import { calculateDailyWaterGoal, type ActivityLevel } from "../lib/waterHelpers";
+import Link from "next/link";
+import { calculateMacros } from "../lib/macroCalculator";
 import "./globals.css";
 
 // Клиентский компонент с пошаговой формой
 export function QuestionnaireFormContent({ initialUserId }: { initialUserId?: string | null }) {
   const [userId, setUserId] = useState<number | null>(null);
   const webAppRef = useRef<any>(null);
-  const [step, setStep] = useState(0); // 0 = приветствие, 1-6 = шаги
+  const [step, setStep] = useState(-1); // -1 = согласие, 0 = приветствие, 0.5 = ввод данных, 1-6 = шаги
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [saved, setSaved] = useState(false);
+  const [consentLoading, setConsentLoading] = useState(false);
+  const [consentChecked, setConsentChecked] = useState(false);
+  const [privacyAccepted, setPrivacyAccepted] = useState(false);
+  const [termsAccepted, setTermsAccepted] = useState(false);
 
   // Форма данные
+  const [name, setName] = useState<string>("");
   const [phone, setPhone] = useState<string>("");
   const [email, setEmail] = useState<string>("");
+  const [nameError, setNameError] = useState<string | null>(null);
   const [phoneError, setPhoneError] = useState<string | null>(null);
   const [emailError, setEmailError] = useState<string | null>(null);
   const [gender, setGender] = useState<string>("");
@@ -68,19 +75,11 @@ export function QuestionnaireFormContent({ initialUserId }: { initialUserId?: st
         } catch (e) {
           console.warn("[questionnaire] Ошибка инициализации WebApp:", e);
         }
-        
-        console.log("[questionnaire] ✅ WebApp сохранен и инициализирован:", {
-          version: webApp.version,
-          platform: webApp.platform,
-          hasClose: typeof webApp.close === 'function',
-          attempt: attempt
-        });
       } else {
         if (attempt < 10) { // Пробуем до 10 раз
           console.log(`[questionnaire] ⚠️ Telegram WebApp недоступен, попытка ${attempt + 1}/10...`);
           setTimeout(() => initWebApp(attempt + 1), 200);
         } else {
-          console.error("[questionnaire] ❌ Telegram WebApp не загрузился после 10 попыток");
         }
       }
     };
@@ -93,6 +92,43 @@ export function QuestionnaireFormContent({ initialUserId }: { initialUserId?: st
       setTimeout(() => initWebApp(0), 100);
     });
   }, []);
+
+  // Проверяем согласие при загрузке
+  useEffect(() => {
+    if (!userId) {
+      // Если userId еще не получен, остаемся на экране согласия
+      setStep(-1);
+      return;
+    }
+
+    const checkConsent = async () => {
+      try {
+        const response = await fetch(`/api/privacy/check?userId=${userId}`);
+        const data = await response.json();
+
+        if (response.ok && data.ok) {
+          if (!data.all_accepted) {
+            // Согласие не дано - показываем экран согласия
+            setStep(-1);
+          } else {
+            // Согласие дано - переходим к вводу данных (первый шаг)
+            setStep(0.5);
+          }
+        } else {
+          // При ошибке показываем экран согласия для безопасности
+          setStep(-1);
+        }
+      } catch (err) {
+        console.error("[QuestionnaireFormContent] Ошибка проверки согласия:", err);
+        // При ошибке показываем экран согласия для безопасности
+        setStep(-1);
+      } finally {
+        setConsentChecked(true);
+      }
+    };
+
+    checkConsent();
+  }, [userId]);
 
   // Проверяем id при монтировании
   useEffect(() => {
@@ -141,7 +177,7 @@ export function QuestionnaireFormContent({ initialUserId }: { initialUserId?: st
     }
   }, [initialUserId]);
 
-  const calculateMacros = useCallback(() => {
+  const calculateMacrosLocal = useCallback(() => {
     if (!gender || !age || !weight || !height || !activity || !goal) return;
 
     const ageNum = Number(age);
@@ -152,54 +188,26 @@ export function QuestionnaireFormContent({ initialUserId }: { initialUserId?: st
       return;
     }
 
-    // Формула Миффлина-Сан Жеора
-    let bmr = 0;
-    if (gender === "male") {
-      bmr = 10 * weightNum + 6.25 * heightNum - 5 * ageNum + 5;
-    } else {
-      bmr = 10 * weightNum + 6.25 * heightNum - 5 * ageNum - 161;
+    try {
+      // Используем функцию из macroCalculator.ts с новыми формулами
+      const result = calculateMacros(
+        gender,
+        ageNum,
+        weightNum,
+        heightNum,
+        activity,
+        goal
+      );
+
+      setCalories(result.calories);
+      setProtein(result.protein);
+      setFat(result.fat);
+      setCarbs(result.carbs);
+      setWaterGoal(result.waterGoalMl);
+    } catch (error) {
+      console.error("[calculateMacrosLocal] Ошибка расчета:", error);
+      // В случае ошибки не устанавливаем значения
     }
-
-    // Коэффициент активности
-    const activityMultipliers: Record<string, number> = {
-      sedentary: 1.2,
-      light: 1.375,
-      moderate: 1.55,
-      active: 1.725,
-      very_active: 1.9
-    };
-
-    const multiplier = activityMultipliers[activity] || 1.55;
-    let totalCalories = bmr * multiplier;
-
-    // Корректировка по цели
-    const goalMultipliers: Record<string, number> = {
-      lose: 0.85,
-      maintain: 1.0,
-      gain: 1.15
-    };
-
-    const goalMultiplier = goalMultipliers[goal] || 1.0;
-    totalCalories = Math.round(totalCalories * goalMultiplier);
-
-    // Вычисляем норму воды
-    const waterGoalMl = calculateDailyWaterGoal(weightNum, activity as ActivityLevel);
-    setWaterGoal(waterGoalMl);
-
-    // Макроэлементы
-    const proteinGrams = Math.round(weightNum * 2.2);
-    const proteinCalories = proteinGrams * 4;
-
-    const fatCalories = Math.round(totalCalories * 0.25);
-    const fatGrams = Math.round(fatCalories / 9);
-
-    const carbsCalories = totalCalories - proteinCalories - fatCalories;
-    const carbsGrams = Math.round(carbsCalories / 4);
-
-    setCalories(totalCalories);
-    setProtein(proteinGrams);
-    setFat(fatGrams);
-    setCarbs(carbsGrams);
   }, [gender, age, weight, height, activity, goal]);
 
   // Валидация телефона
@@ -232,6 +240,7 @@ export function QuestionnaireFormContent({ initialUserId }: { initialUserId?: st
           "Content-Type": "application/json"
         },
         body: JSON.stringify({
+          name: name.trim(),
           phone: phone.trim(),
           email: email.trim()
         })
@@ -255,17 +264,58 @@ export function QuestionnaireFormContent({ initialUserId }: { initialUserId?: st
     }
   };
 
+  const handleConsentAccept = async () => {
+    if (!userId) {
+      setError("ID пользователя не найден");
+      return;
+    }
+
+    if (!privacyAccepted || !termsAccepted) {
+      setError("Необходимо принять Политику конфиденциальности и Пользовательское соглашение");
+      return;
+    }
+
+    setConsentLoading(true);
+    setError(null);
+
+    try {
+      const response = await fetch(`/api/privacy/consent?id=${userId}`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+      });
+
+      const data = await response.json();
+
+      if (!response.ok || !data.ok) {
+        throw new Error(data.error || "Ошибка сохранения согласия");
+      }
+
+      // Переходим сразу к вводу данных (первый шаг перед вопросами)
+      setStep(0.5);
+    } catch (err: any) {
+      console.error("[handleConsentAccept] Ошибка:", err);
+      setError(err.message || "Не удалось сохранить согласие. Попробуйте позже.");
+    } finally {
+      setConsentLoading(false);
+    }
+  };
+
   const handleNext = async () => {
-    if (step === 0) {
-      setStep(0.5); // Переход к экрану с телефоном и email
-    } else if (step === 0.5) {
-      // Валидация и сохранение телефона и email
+    if (step === 0.5) {
+      // Валидация и сохранение имени, телефона и email
+      setNameError(null);
       setPhoneError(null);
       setEmailError(null);
 
+      const nameValid = name.trim().length >= 2;
       const phoneValid = validatePhone(phone);
       const emailValid = validateEmail(email);
 
+      if (!nameValid) {
+        setNameError("Введите ваше имя (минимум 2 символа)");
+      }
       if (!phoneValid) {
         setPhoneError("Введите корректный номер телефона");
       }
@@ -273,11 +323,11 @@ export function QuestionnaireFormContent({ initialUserId }: { initialUserId?: st
         setEmailError("Введите корректный email адрес");
       }
 
-      if (!phoneValid || !emailValid) {
+      if (!nameValid || !phoneValid || !emailValid) {
         return;
       }
 
-      // Сохраняем телефон и email
+      // Сохраняем имя, телефон и email
       const saved = await savePhoneAndEmail();
       if (saved) {
         setStep(1);
@@ -293,21 +343,21 @@ export function QuestionnaireFormContent({ initialUserId }: { initialUserId?: st
     } else if (step === 5 && activity) {
       setStep(6);
     } else if (step === 6 && goal) {
-      calculateMacros();
+      calculateMacrosLocal();
       setStep(7);
     }
   };
 
   const handleBack = () => {
-    if (step > 0) {
-      if (step === 0.5) {
-        setStep(0);
-      } else if (step === 1) {
-        setStep(0.5);
-      } else {
-        setStep(step - 1);
-      }
+    if (step === 0.5) {
+      // Из ввода данных нельзя вернуться назад (к согласию)
+      return;
+    } else if (step === 1) {
+      setStep(0.5);
+    } else if (step > 1) {
+      setStep(step - 1);
     }
+    // step === -1 не имеет кнопки "Назад"
   };
 
   const handleSubmit = async () => {
@@ -323,6 +373,7 @@ export function QuestionnaireFormContent({ initialUserId }: { initialUserId?: st
 
     try {
       const payload = {
+        name: name.trim(),
         phone: phone.trim(),
         email: email.trim(),
         gender,
@@ -402,19 +453,38 @@ export function QuestionnaireFormContent({ initialUserId }: { initialUserId?: st
       
       // ВАЖНО: Ждем завершения sendData ПЕРЕД закрытием Mini App
       // Это гарантирует, что бот получит сообщение
-      let sendDataSuccess = false;
-      for (let attempt = 0; attempt < 3; attempt++) {
-        sendDataSuccess = await sendDataToBot();
-        if (sendDataSuccess) {
-          console.log(`[handleSubmit] ✅ sendData успешно отправлен с попытки ${attempt + 1}`);
-          break;
+      // ВАЖНО: Всегда используем fallback через /api/notify-bot для гарантии доставки
+      // sendData может "успешно" вызваться, но данные не дойдут до бота
+      console.log("[handleSubmit] Отправка уведомления боту через /api/notify-bot...");
+      
+      try {
+        const notifyResponse = await fetch("/api/notify-bot", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({ userId }),
+        });
+        
+        if (notifyResponse.ok) {
+          console.log("[handleSubmit] ✅ Уведомление отправлено успешно через /api/notify-bot");
+        } else {
+          const errorText = await notifyResponse.text();
+          console.error("[handleSubmit] ❌ Ошибка уведомления:", errorText);
         }
-        console.warn(`[handleSubmit] ⚠️ Попытка ${attempt + 1} не удалась, пробуем еще раз...`);
-        await new Promise(resolve => setTimeout(resolve, 500));
+      } catch (notifyError) {
+        console.error("[handleSubmit] ❌ КРИТИЧЕСКАЯ ОШИБКА: Не удалось отправить уведомление:", notifyError);
       }
       
-      if (!sendDataSuccess) {
-        console.error("[handleSubmit] ❌ КРИТИЧЕСКАЯ ОШИБКА: Не удалось отправить sendData после 3 попыток!");
+      // Также пробуем sendData как дополнительный способ (но не полагаемся на него)
+      let sendDataSuccess = false;
+      for (let attempt = 0; attempt < 2; attempt++) {
+        sendDataSuccess = await sendDataToBot();
+        if (sendDataSuccess) {
+          console.log(`[handleSubmit] ✅ sendData также отправлен с попытки ${attempt + 1}`);
+          break;
+        }
+        await new Promise(resolve => setTimeout(resolve, 300));
       }
       
       // Дополнительная задержка перед закрытием для гарантии доставки
@@ -498,7 +568,8 @@ export function QuestionnaireFormContent({ initialUserId }: { initialUserId?: st
     // Сбрасываем все данные, но не сохраняем флаг saved
     // Пользователь должен сохранить данные перед повторным прохождением
     if (saved) {
-      setStep(0);
+      setStep(-1);
+      setName("");
       setGender("");
       setAge("");
       setWeight("");
@@ -514,7 +585,8 @@ export function QuestionnaireFormContent({ initialUserId }: { initialUserId?: st
       setLoading(false);
     } else {
       // Если данные не сохранены, просто возвращаемся к началу
-      setStep(0);
+      setStep(-1);
+      setName("");
       setGender("");
       setAge("");
       setWeight("");
@@ -543,7 +615,93 @@ export function QuestionnaireFormContent({ initialUserId }: { initialUserId?: st
   }
 
   const totalSteps = 6;
-  const progress = step === 0 ? 0 : step === 0.5 ? 0 : ((step - 1) / totalSteps) * 100;
+  const progress = step === -1 ? 0 : step === 0.5 ? 0 : ((step - 1) / totalSteps) * 100;
+
+  // Экран -1: Объединенный экран согласия и старта (первый экран онбординга)
+  if (step === -1) {
+    if (!consentChecked && userId) {
+      // Ждем проверки согласия
+      return (
+        <div className="min-h-screen flex items-center justify-center px-4" style={{ backgroundColor: '#F6F3EF' }}>
+          <div className="text-textSecondary">Загрузка...</div>
+        </div>
+      );
+    }
+
+    return (
+      <div className="min-h-screen flex items-center justify-center px-4" style={{ backgroundColor: '#F6F3EF' }}>
+        <div className="max-w-md w-full bg-white rounded-[44px] shadow-lg p-8" style={{ paddingTop: '56px' }}>
+          <p className="text-xs uppercase text-gray-400 mb-6 tracking-[0.15em] font-light text-center">
+            ТВОЙ ДНЕВНИК ПИТАНИЯ
+          </p>
+          <h1 className="text-3xl md:text-4xl font-bold mb-4 text-gray-800 leading-tight text-center">
+            Считаем, сколько<br />
+            калорий нужно в<br />
+            день
+          </h1>
+          <p className="text-base text-gray-600 mb-6 text-center" style={{ fontSize: '16px' }}>
+            Просто ответьте на пару вопросов.
+          </p>
+
+          {error && (
+            <div className="p-4 bg-red-50 border border-red-200 rounded-lg text-red-700 text-sm mb-4">
+              {error}
+            </div>
+          )}
+
+          {/* Чекбоксы для согласия */}
+          <div className="mb-4 space-y-3">
+            <label className="flex items-start gap-3 cursor-pointer">
+              <input
+                type="checkbox"
+                checked={privacyAccepted}
+                onChange={(e) => setPrivacyAccepted(e.target.checked)}
+                className="mt-1 w-5 h-5 rounded border-gray-300 text-accent focus:ring-accent cursor-pointer"
+              />
+              <span className="text-sm text-gray-700 flex-1">
+                Я согласен с{" "}
+            <Link 
+              href={`/privacy${userId ? `?id=${userId}` : ''}` as any}
+                  className="text-accent hover:underline font-medium"
+                  target="_blank"
+            >
+                  Политикой конфиденциальности
+            </Link>
+              </span>
+            </label>
+            
+            <label className="flex items-start gap-3 cursor-pointer">
+              <input
+                type="checkbox"
+                checked={termsAccepted}
+                onChange={(e) => setTermsAccepted(e.target.checked)}
+                className="mt-1 w-5 h-5 rounded border-gray-300 text-accent focus:ring-accent cursor-pointer"
+              />
+              <span className="text-sm text-gray-700 flex-1">
+                Я согласен с{" "}
+            <Link 
+              href={`/terms${userId ? `?id=${userId}` : ''}` as any}
+                  className="text-accent hover:underline font-medium"
+                  target="_blank"
+            >
+                  Пользовательским соглашением
+            </Link>
+              </span>
+            </label>
+          </div>
+
+          <button
+            onClick={handleConsentAccept}
+            disabled={consentLoading || !userId || !privacyAccepted || !termsAccepted}
+            className="w-full py-4 px-6 text-white font-medium rounded-[50px] shadow-md hover:opacity-90 transition-opacity text-lg disabled:opacity-50 disabled:cursor-not-allowed"
+            style={{ backgroundColor: '#A4C49A' }}
+          >
+            {consentLoading ? "Сохранение..." : "Начать"}
+          </button>
+        </div>
+      </div>
+    );
+  }
 
   // Экран 0.5: Телефон и Email
   if (step === 0.5) {
@@ -554,7 +712,7 @@ export function QuestionnaireFormContent({ initialUserId }: { initialUserId?: st
             КОНТАКТНАЯ ИНФОРМАЦИЯ
           </p>
           <h1 className="text-2xl md:text-3xl font-bold mb-6 text-gray-800 leading-tight text-center">
-            Введите номер телефона и email
+            Введите ваши данные
           </h1>
 
           {error && (
@@ -564,6 +722,31 @@ export function QuestionnaireFormContent({ initialUserId }: { initialUserId?: st
           )}
 
           <div className="space-y-4 mb-6">
+            {/* Имя */}
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-2">
+                Ваше имя
+              </label>
+              <input
+                type="text"
+                value={name}
+                onChange={(e) => {
+                  setName(e.target.value);
+                  setNameError(null);
+                }}
+                placeholder="Например, Иван"
+                className={`w-full px-4 py-3 border-2 rounded-xl focus:outline-none focus:ring-2 transition-colors ${
+                  nameError
+                    ? 'border-red-300 focus:border-red-500 focus:ring-red-200'
+                    : 'border-gray-200 focus:border-accent focus:ring-accent/20'
+                }`}
+                style={{ backgroundColor: '#fff' }}
+              />
+              {nameError && (
+                <p className="mt-1 text-sm text-red-600">{nameError}</p>
+              )}
+            </div>
+
             {/* Телефон */}
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-2">
@@ -617,12 +800,30 @@ export function QuestionnaireFormContent({ initialUserId }: { initialUserId?: st
 
           <button
             onClick={handleNext}
-            disabled={loading || !phone.trim() || !email.trim()}
+            disabled={loading || !name.trim() || !phone.trim() || !email.trim()}
             className="w-full py-4 px-6 text-white font-medium rounded-[50px] shadow-md hover:opacity-90 transition-opacity text-lg disabled:opacity-50 disabled:cursor-not-allowed"
             style={{ backgroundColor: '#A4C49A' }}
           >
             {loading ? "Сохранение..." : "Продолжить"}
           </button>
+
+          <p className="text-xs text-gray-500 text-center mt-4">
+            Нажимая "Продолжить", вы даете согласие на обработку персональных данных и принимаете{" "}
+            <Link 
+              href={`/privacy${userId ? `?id=${userId}` : ''}` as any}
+              className="text-accent hover:underline"
+            >
+              Политику конфиденциальности
+            </Link>
+            {" "}и{" "}
+            <Link 
+              href={`/terms${userId ? `?id=${userId}` : ''}` as any}
+              className="text-accent hover:underline"
+            >
+              Пользовательское соглашение
+            </Link>
+            .
+          </p>
 
           <button
             onClick={handleBack}
@@ -635,33 +836,6 @@ export function QuestionnaireFormContent({ initialUserId }: { initialUserId?: st
     );
   }
 
-  // Экран 0: Приветствие
-  if (step === 0) {
-    return (
-      <div className="min-h-screen flex items-center justify-center px-4" style={{ backgroundColor: '#F6F3EF' }}>
-        <div className="max-w-md w-full bg-white rounded-[44px] shadow-lg p-8" style={{ paddingTop: '56px' }}>
-          <p className="text-xs uppercase text-gray-400 mb-6 tracking-[0.15em] font-light text-center">
-            ТВОЙ ДНЕВНИК ПИТАНИЯ
-          </p>
-          <h1 className="text-3xl md:text-4xl font-bold mb-4 text-gray-800 leading-tight text-center">
-            Считаем, сколько<br />
-            калорий нужно в<br />
-            день
-          </h1>
-          <p className="text-base text-gray-600 mb-10 text-center" style={{ fontSize: '16px' }}>
-            Просто ответьте на пару вопросов.
-          </p>
-          <button
-            onClick={handleNext}
-            className="w-full py-4 px-6 text-white font-medium rounded-[50px] shadow-md hover:opacity-90 transition-opacity text-lg"
-            style={{ backgroundColor: '#A4C49A' }}
-          >
-            Начать!
-          </button>
-        </div>
-      </div>
-    );
-  }
 
   // Экран 7: Результаты
   if (step === 7) {
@@ -696,7 +870,7 @@ export function QuestionnaireFormContent({ initialUserId }: { initialUserId?: st
               {/* Жиры */}
               <div className="p-5 bg-white rounded-xl border border-gray-100 shadow-sm">
                 <div className="flex items-center gap-2 mb-2">
-                  <span className="text-lg">🥥</span>
+                  <span className="text-lg">🥑</span>
                   <span className="text-xs text-textSecondary">Жиры</span>
                 </div>
                 <div className="text-2xl font-bold text-textPrimary">{fat} <span className="text-sm font-normal text-textSecondary">г</span></div>
@@ -711,7 +885,7 @@ export function QuestionnaireFormContent({ initialUserId }: { initialUserId?: st
                 <div className="text-2xl font-bold text-textPrimary">{carbs} <span className="text-sm font-normal text-textSecondary">г</span></div>
               </div>
 
-              {/* Калории */}
+              {/* Калории - в большой ячейке по центру */}
               <div className="p-5 bg-white rounded-xl border border-gray-100 shadow-sm col-span-2">
                 <div className="flex items-center justify-center gap-2 mb-2">
                   <span className="text-lg">🔥</span>
@@ -721,7 +895,6 @@ export function QuestionnaireFormContent({ initialUserId }: { initialUserId?: st
               </div>
             </div>
           )}
-
           {loading && (
             <div className="text-center text-textSecondary text-sm py-2 mb-4">
               Сохранение...

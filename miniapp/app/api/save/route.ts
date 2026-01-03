@@ -36,6 +36,7 @@ export async function POST(req: Request) {
 
   const body = await req.json();
   const {
+    name,
     phone,
     email,
     gender,
@@ -52,6 +53,7 @@ export async function POST(req: Request) {
   } = body;
 
   console.log("[/api/save] UPDATE users by id:", numericId, {
+    name,
     phone,
     email,
     gender,
@@ -88,11 +90,10 @@ export async function POST(req: Request) {
                                height !== undefined && activity !== undefined && goal !== undefined;
   
   // Жёсткая валидация только при полном сохранении анкеты (когда передаются все поля)
-  // ВАЖНО: phone и email НЕ обязательны при первой регистрации - их можно заполнить позже через profile/update
   if (isFullQuestionnaire && isFirstTime) {
-    if (!gender || !age || !weight || !height || !activity || !goal) {
+    if (!phone || !email || !gender || !age || !weight || !height || !activity || !goal) {
       return NextResponse.json(
-        { ok: false, error: "Пол, возраст, вес, рост, активность и цель обязательны" },
+        { ok: false, error: "Телефон, email, пол, возраст, вес, рост, активность и цель обязательны" },
         { status: 400 }
       );
     }
@@ -119,6 +120,7 @@ export async function POST(req: Request) {
     }
   }
 
+  if (name !== undefined) updateData.name = name || null;
   if (phone !== undefined) updateData.phone = phone || null;
   if (email !== undefined) updateData.email = email || null;
   if (gender !== undefined) updateData.gender = gender || null;
