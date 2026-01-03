@@ -41,7 +41,8 @@ function maskPassword(password: string): string {
 
 /**
  * Calculate MD5 signature for Robokassa
- * CRITICAL: Returns lowercase hex (Robokassa requirement)
+ * CRITICAL: Returns UPPERCASE hex (Robokassa requirement for form submission)
+ * Also logs lowercase for debugging
  */
 function calculateSignature(...args: string[]): string {
   const signatureString = args.join(':');
@@ -51,13 +52,16 @@ function calculateSignature(...args: string[]): string {
   }
   // #endregion
   const hash = createHash('md5').update(signatureString).digest('hex');
-  const hashLowercase = hash.toLowerCase();
+  const hashUppercase = hash.toUpperCase(); // Robokassa requires UPPERCASE
+  const hashLowercase = hash.toLowerCase(); // For debugging
   // #region agent log
   if (typeof window === 'undefined') {
-    fetch('http://127.0.0.1:7242/ingest/43e8883f-375d-4d43-af6f-fef79b5ebbe3',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'robokassa.ts:calculateSignature',message:'MD5 hash result',data:{hashOriginal:hash,hashLowercase:hashLowercase,isLowercase:hashLowercase===hash.toLowerCase(),length:hashLowercase.length},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'A'})}).catch(()=>{});
+    console.log('[robokassa] MD5 hash (lowercase, for debug):', hashLowercase);
+    console.log('[robokassa] MD5 hash (UPPERCASE, for form):', hashUppercase);
+    fetch('http://127.0.0.1:7242/ingest/43e8883f-375d-4d43-af6f-fef79b5ebbe3',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'robokassa.ts:calculateSignature',message:'MD5 hash result',data:{hashOriginal:hash,hashUppercase:hashUppercase,hashLowercase:hashLowercase,length:hashUppercase.length},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'A'})}).catch(()=>{});
   }
   // #endregion
-  return hashLowercase;
+  return hashUppercase; // Return UPPERCASE for Robokassa
 }
 
 /**
@@ -365,33 +369,27 @@ function buildRobokassaFields(payload: {
       throw new Error('Receipt is required for recurring mode');
     }
     
-    // CRITICAL: Robokassa requires double URL encoding for Receipt parameter
-    // receiptOnce = urlencode(JSON string) - used in SignatureValue
-    // receiptTwice = urlencode(receiptOnce) - sent in HTTP form as Receipt parameter
+    // CRITICAL: Robokassa requires Receipt to be URL-encoded exactly ONCE
+    // The same encoded value is used both in the form field AND in the signature
     const receiptJson = JSON.stringify(payload.receipt);
-    const receiptOnce = encodeURIComponent(receiptJson); // First encoding (for signature)
-    const receiptTwice = encodeURIComponent(receiptOnce); // Second encoding (for form)
-    
-    // Store receiptOnce in a special field for signature calculation
-    // We'll need to pass this separately to buildRobokassaSignature
-    (fields as any).__receiptOnce = receiptOnce; // Internal field, not sent to Robokassa
+    const receiptEncoded = encodeURIComponent(receiptJson); // Single encoding for both form and signature
     
     // #region agent log
     if (typeof window === 'undefined') {
       console.log('[robokassa] ========== RECEIPT ENCODING (Error 29 Fix) ==========');
       console.log('[robokassa] receiptRaw JSON:', receiptJson);
-      console.log('[robokassa] receiptOnce (length):', receiptOnce.length, 'preview:', receiptOnce.substring(0, 80));
-      console.log('[robokassa] receiptTwice (length):', receiptTwice.length, 'preview:', receiptTwice.substring(0, 80));
-      console.log('[robokassa] receiptOnce has %25:', receiptOnce.includes('%25'));
-      console.log('[robokassa] receiptTwice has %25:', receiptTwice.includes('%25'));
+      console.log('[robokassa] receiptRaw length:', receiptJson.length);
+      console.log('[robokassa] receiptEncoded (length):', receiptEncoded.length, 'preview:', receiptEncoded.substring(0, 80));
+      console.log('[robokassa] receiptEncoded has %25 (double encoding check):', receiptEncoded.includes('%25'));
+      console.log('[robokassa] Using single encoding for both form and signature');
       console.log('[robokassa] ======================================================');
       
-      fetch('http://127.0.0.1:7242/ingest/43e8883f-375d-4d43-af6f-fef79b5ebbe3',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'robokassa.ts:buildRobokassaFields',message:'Receipt double encoding',data:{receiptJsonLength:receiptJson.length,receiptOnceLength:receiptOnce.length,receiptOncePreview:receiptOnce.substring(0,80),receiptTwiceLength:receiptTwice.length,receiptTwicePreview:receiptTwice.substring(0,80),hasDoubleEncodingOnce:receiptOnce.includes('%25'),hasDoubleEncodingTwice:receiptTwice.includes('%25')},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'I'})}).catch(()=>{});
+      fetch('http://127.0.0.1:7242/ingest/43e8883f-375d-4d43-af6f-fef79b5ebbe3',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'robokassa.ts:buildRobokassaFields',message:'Receipt single encoding',data:{receiptJsonLength:receiptJson.length,receiptEncodedLength:receiptEncoded.length,receiptEncodedPreview:receiptEncoded.substring(0,80),hasDoubleEncoding:receiptEncoded.includes('%25')},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'I'})}).catch(()=>{});
     }
     // #endregion
     
-    // Send receiptTwice in the form (double-encoded)
-    fields.Receipt = receiptTwice;
+    // Send receiptEncoded in the form (single-encoded, same as in signature)
+    fields.Receipt = receiptEncoded;
     fields.Recurring = 'true';
   }
   
@@ -445,28 +443,19 @@ function buildRobokassaSignature(
   const merchantLogin = fields.MerchantLogin;
   const outSum = fields.OutSum;
   const invId = fields.InvId; // Keep as string to match form field exactly
-  
-  // CRITICAL: For signature, use receiptOnce (single-encoded), NOT receiptTwice (double-encoded)
-  // receiptOnce is stored in __receiptOnce internal field (not sent to Robokassa)
-  // receiptTwice is stored in Receipt field (sent to Robokassa in form)
-  const receiptOnce = (fields as any).__receiptOnce; // Single-encoded (for signature)
-  const receiptTwice = fields.Receipt; // Double-encoded (for form, may be undefined)
+  const receipt = fields.Receipt; // Single-encoded, same value used in form and signature
   
   // #region agent log
   if (typeof window === 'undefined') {
     console.log('[robokassa] ========== SIGNATURE RECEIPT EXTRACTION ==========');
-    console.log('[robokassa] receiptOnce present:', !!receiptOnce, 'length:', receiptOnce?.length || 0);
-    console.log('[robokassa] receiptTwice present:', !!receiptTwice, 'length:', receiptTwice?.length || 0);
-    console.log('[robokassa] Using receiptOnce for signature:', !!receiptOnce);
-    if (receiptOnce) {
-      console.log('[robokassa] receiptOnce preview:', receiptOnce.substring(0, 80));
-    }
-    if (receiptTwice) {
-      console.log('[robokassa] receiptTwice preview:', receiptTwice.substring(0, 80));
+    console.log('[robokassa] receipt present:', !!receipt, 'length:', receipt?.length || 0);
+    console.log('[robokassa] Using receipt (single-encoded) for signature:', !!receipt);
+    if (receipt) {
+      console.log('[robokassa] receipt preview:', receipt.substring(0, 80));
     }
     console.log('[robokassa] ==================================================');
     
-    fetch('http://127.0.0.1:7242/ingest/43e8883f-375d-4d43-af6f-fef79b5ebbe3',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'robokassa.ts:buildRobokassaSignature',message:'Extracted values with receiptOnce',data:{merchantLogin:merchantLogin,merchantLoginIsSteopone:merchantLogin==='steopone',outSum:outSum,outSumType:typeof outSum,outSumIs100:outSum==='1.00',invId:invId,invIdType:typeof invId,receiptOncePresent:!!receiptOnce,receiptOnceLength:receiptOnce?.length||0,receiptTwicePresent:!!receiptTwice,receiptTwiceLength:receiptTwice?.length||0},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'C'})}).catch(()=>{});
+    fetch('http://127.0.0.1:7242/ingest/43e8883f-375d-4d43-af6f-fef79b5ebbe3',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'robokassa.ts:buildRobokassaSignature',message:'Extracted values with receipt',data:{merchantLogin:merchantLogin,merchantLoginIsSteopone:merchantLogin==='steopone',outSum:outSum,outSumType:typeof outSum,outSumIs100:outSum==='1.00',invId:invId,invIdType:typeof invId,receiptPresent:!!receipt,receiptLength:receipt?.length||0},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'C'})}).catch(()=>{});
   }
   // #endregion
   
@@ -478,10 +467,10 @@ function buildRobokassaSignature(
     invId, // String, not number
   ];
   
-  // Add Receipt (receiptOnce - single-encoded) ONLY if it's present
-  // CRITICAL: Use receiptOnce for signature, NOT receiptTwice
-  if (receiptOnce) {
-    signatureParts.push(receiptOnce);
+  // Add Receipt (single-encoded) ONLY if it's present
+  // CRITICAL: Use the same receipt value that is sent in the form
+  if (receipt) {
+    signatureParts.push(receipt);
   }
   
   // Add Password1
@@ -523,7 +512,7 @@ function buildRobokassaSignature(
   if (typeof window === 'undefined') {
     const password1Index = signatureParts.findIndex(p => p === password1);
     const shpAfterPassword1 = signatureParts.slice(password1Index + 1).filter(p => p.startsWith('Shp_'));
-    fetch('http://127.0.0.1:7242/ingest/43e8883f-375d-4d43-af6f-fef79b5ebbe3',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'robokassa.ts:buildRobokassaSignature',message:'Signature parts order check',data:{signaturePartsCount:signatureParts.length,password1Index:password1Index,shpAfterPassword1:shpAfterPassword1,shpAfterPassword1Count:shpAfterPassword1.length,partsOrder:signatureParts.map((p,i)=>({index:i,value:typeof p==='string'&&p===password1?'[PASSWORD1]':p.substring(0,50),isPassword:p===password1,isShp:p.startsWith('Shp_'),isReceipt:p===receiptOnce}))},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'B'})}).catch(()=>{});
+    fetch('http://127.0.0.1:7242/ingest/43e8883f-375d-4d43-af6f-fef79b5ebbe3',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'robokassa.ts:buildRobokassaSignature',message:'Signature parts order check',data:{signaturePartsCount:signatureParts.length,password1Index:password1Index,shpAfterPassword1:shpAfterPassword1,shpAfterPassword1Count:shpAfterPassword1.length,partsOrder:signatureParts.map((p,i)=>({index:i,value:typeof p==='string'&&p===password1?'[PASSWORD1]':p.substring(0,50),isPassword:p===password1,isShp:p.startsWith('Shp_'),isReceipt:p===receipt}))},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'B'})}).catch(()=>{});
   }
   // #endregion
   
@@ -542,7 +531,7 @@ function buildRobokassaSignature(
   }
   // #endregion
   
-  // Calculate MD5 signature (lowercase)
+  // Calculate MD5 signature (UPPERCASE for Robokassa)
   const signatureValue = calculateSignature(...signatureParts);
   
   // #region agent log
@@ -558,17 +547,18 @@ function buildRobokassaSignature(
       part: p === password1 ? '[PASSWORD1]' : (p.startsWith('Shp_') ? p : p.substring(0, 50)),
       isPassword: p === password1,
       isShp: p.startsWith('Shp_'),
-      isReceipt: p === receiptOnce,
+      isReceipt: p === receipt,
     })));
-    if (receiptOnce) {
-      console.log('[robokassa] Receipt in signature (receiptOnce, length):', receiptOnce.length);
-      console.log('[robokassa] Receipt in signature (receiptOnce, preview):', receiptOnce.substring(0, 80));
+    if (receipt) {
+      console.log('[robokassa] Receipt in signature (receiptEncoded, length):', receipt.length);
+      console.log('[robokassa] Receipt in signature (receiptEncoded, preview):', receipt.substring(0, 80));
     }
     console.log('[robokassa] Shp_* params in signature:', shpParams);
-    console.log('[robokassa] Signature value (MD5, lowercase):', signatureValue);
+    console.log('[robokassa] Signature value (MD5, UPPERCASE):', signatureValue);
+    console.log('[robokassa] Signature value (MD5, lowercase, for debug):', signatureValue.toLowerCase());
     console.log('[robokassa] Signature value length:', signatureValue.length);
-    console.log('[robokassa] Signature value is lowercase:', signatureValue === signatureValue.toLowerCase());
-    console.log('[robokassa] Signature value is hex:', /^[0-9a-f]{32}$/.test(signatureValue));
+    console.log('[robokassa] Signature value is uppercase:', signatureValue === signatureValue.toUpperCase());
+    console.log('[robokassa] Signature value is hex:', /^[0-9A-F]{32}$/i.test(signatureValue));
     console.log('[robokassa] ============================================================');
     
     fetch('http://127.0.0.1:7242/ingest/43e8883f-375d-4d43-af6f-fef79b5ebbe3',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'robokassa.ts:buildRobokassaSignature',message:'Signature value result',data:{signatureValue:signatureValue,signatureValueLength:signatureValue.length,signatureValueIsLowercase:signatureValue===signatureValue.toLowerCase(),signatureValueIsHex:/^[0-9a-f]{32}$/.test(signatureValue),exactSignatureStringLength:exactSignatureString.length,signaturePartsCount:signatureParts.length,shpParamsInSignature:shpParams},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'A'})}).catch(()=>{});
@@ -652,12 +642,10 @@ export function generatePaymentForm(
   
   // Extract receipt info for debug (if present)
   let receiptJson: string | undefined;
-  let receiptOnce: string | undefined; // Single-encoded (used in signature)
-  let receiptTwice: string | undefined; // Double-encoded (sent in form)
+  let receiptEncoded: string | undefined; // Single-encoded (used in both form and signature)
   if (mode === 'recurring' && receipt) {
     receiptJson = JSON.stringify(receipt);
-    receiptOnce = (formFieldsWithoutSignature as any).__receiptOnce; // Single-encoded for signature
-    receiptTwice = formFieldsWithoutSignature.Receipt; // Double-encoded for form
+    receiptEncoded = formFieldsWithoutSignature.Receipt; // Single-encoded for both form and signature
   }
   
   // Extract custom params for debug
@@ -712,12 +700,9 @@ export function generatePaymentForm(
     
     // Receipt checks (if recurring)
     receiptPresent: mode === 'recurring' ? !!receipt : null,
-    receiptOncePresent: mode === 'recurring' ? !!receiptOnce : null,
-    receiptOnceLength: receiptOnce?.length || 0,
-    receiptTwicePresent: mode === 'recurring' ? !!receiptTwice : null,
-    receiptTwiceLength: receiptTwice?.length || 0,
-    receiptInSignature: mode === 'recurring' ? signatureResult.signatureParts.some(p => typeof p === 'string' && p === receiptOnce) : null,
-    receiptOnceInSignature: mode === 'recurring' ? signatureResult.signatureParts.some(p => typeof p === 'string' && p === receiptOnce) : null,
+    receiptEncodedPresent: mode === 'recurring' ? !!receiptEncoded : null,
+    receiptEncodedLength: receiptEncoded?.length || 0,
+    receiptInSignature: mode === 'recurring' ? signatureResult.signatureParts.some(p => typeof p === 'string' && p === receiptEncoded) : null,
     
     // Shp_* params checks
     shpParamsCount: customParams.length,
@@ -756,10 +741,10 @@ export function generatePaymentForm(
     formInvIdMatchesSignature: formFields.InvId === String(invId),
     formMerchantLoginMatchesSignature: formFields.MerchantLogin === config.merchantLogin,
     receiptInFormMatchesSignature: mode === 'recurring' 
-      ? formFields.Receipt === receiptTwice 
+      ? formFields.Receipt === receiptEncoded 
       : null,
-    receiptOnceUsedInSignature: mode === 'recurring' 
-      ? signatureResult.signatureParts.some(p => typeof p === 'string' && p === receiptOnce)
+    receiptUsedInSignature: mode === 'recurring' 
+      ? signatureResult.signatureParts.some(p => typeof p === 'string' && p === receiptEncoded)
       : null,
   };
   
@@ -788,7 +773,7 @@ export function generatePaymentForm(
       type: typeof p,
       isPassword: typeof p === 'string' && p === config.password1,
       isShp: typeof p === 'string' && p.startsWith('Shp_'),
-      isReceipt: typeof p === 'string' && p === receiptOnce,
+      isReceipt: typeof p === 'string' && p === receiptEncoded,
     })),
     customParams: customParams, // Show which Shp_* params were included in signature (after Password1)
     customParamsSorted: customParams, // Confirmed sorted alphabetically
@@ -807,12 +792,9 @@ export function generatePaymentForm(
     // Receipt info (safe)
     receiptRaw: receiptJson,
     receiptRawLength: receiptJson?.length || 0,
-    receiptOnce: receiptOnce, // Single-encoded (used in signature)
-    receiptOnceLength: receiptOnce?.length || 0,
-    receiptOncePreview: receiptOnce ? receiptOnce.substring(0, 80) + '...' : undefined,
-    receiptTwice: receiptTwice, // Double-encoded (sent in form)
-    receiptTwiceLength: receiptTwice?.length || 0,
-    receiptTwicePreview: receiptTwice ? receiptTwice.substring(0, 80) + '...' : undefined,
+    receiptEncoded: receiptEncoded, // Single-encoded (used in both form and signature)
+    receiptEncodedLength: receiptEncoded?.length || 0,
+    receiptEncodedPreview: receiptEncoded ? receiptEncoded.substring(0, 80) + '...' : undefined,
     receiptFull: receipt,
     telegramUserId: telegramUserId || undefined,
     // Validation checks for Error 29
@@ -845,7 +827,7 @@ export function generatePaymentForm(
       value: typeof p === 'string' && p === config.password1 ? '[PASSWORD1]' : String(p).substring(0, 50),
       isPassword: typeof p === 'string' && p === config.password1,
       isShp: typeof p === 'string' && p.startsWith('Shp_'),
-      isReceipt: typeof p === 'string' && p === receiptOnce,
+      isReceipt: typeof p === 'string' && p === receiptEncoded,
     })));
     
     // CRITICAL: Verify exact field-by-field match for Error 29
@@ -862,14 +844,14 @@ export function generatePaymentForm(
     console.log('[robokassa] Signature InvId:', signatureResult.signatureParts[2]);
     console.log('[robokassa] Match:', formFieldsWithoutSignature.InvId === String(signatureResult.signatureParts[2]));
     
-    if (mode === 'recurring' && receiptOnce && receiptTwice) {
-      console.log('[robokassa] Form field Receipt (receiptTwice, length):', receiptTwice?.length);
-      console.log('[robokassa] Signature Receipt (receiptOnce, length):', receiptOnce?.length);
-      const receiptInSignature = signatureResult.signatureParts.find(p => typeof p === 'string' && p === receiptOnce);
-      console.log('[robokassa] Receipt in signature (receiptOnce):', !!receiptInSignature);
-      console.log('[robokassa] Receipt exact match (form uses receiptTwice, signature uses receiptOnce):', formFieldsWithoutSignature.Receipt === receiptTwice);
-      console.log('[robokassa] Receipt in signature exact match (receiptOnce):', receiptInSignature === receiptOnce);
-      console.log('[robokassa] CRITICAL: Form sends receiptTwice, signature uses receiptOnce - this is CORRECT');
+    if (mode === 'recurring' && receiptEncoded) {
+      console.log('[robokassa] Form field Receipt (receiptEncoded, length):', receiptEncoded?.length);
+      console.log('[robokassa] Signature Receipt (receiptEncoded, length):', receiptEncoded?.length);
+      const receiptInSignature = signatureResult.signatureParts.find(p => typeof p === 'string' && p === receiptEncoded);
+      console.log('[robokassa] Receipt in signature (receiptEncoded):', !!receiptInSignature);
+      console.log('[robokassa] Receipt exact match (form and signature use same receiptEncoded):', formFieldsWithoutSignature.Receipt === receiptEncoded);
+      console.log('[robokassa] Receipt in signature exact match (receiptEncoded):', receiptInSignature === receiptEncoded);
+      console.log('[robokassa] CRITICAL: Form and signature use the SAME receiptEncoded value - this is CORRECT');
     }
     
     const password1Index = signatureResult.signatureParts.findIndex(p => typeof p === 'string' && p === config.password1);
@@ -1040,20 +1022,22 @@ export function generatePaymentForm(
 <strong>1. MerchantLogin:</strong> ${config.merchantLogin}
 <strong>2. OutSum:</strong> ${outSumFormatted}
 <strong>3. InvId:</strong> ${invId}
-<strong>4. Receipt (если есть):</strong> ${mode === 'recurring' && receiptTwice ? `Да (receiptTwice length: ${receiptTwice.length}, receiptOnce length: ${receiptOnce?.length || 0})` : 'Нет'}
+<strong>4. Receipt (если есть):</strong> ${mode === 'recurring' && receiptEncoded ? `Да (receiptEncoded length: ${receiptEncoded.length})` : 'Нет'}
 <strong>5. Shp_* параметры в форме:</strong> ${customParams.length > 0 ? customParams.join(', ') : 'Нет'}
 <strong>6. Shp_* параметры в подписи:</strong> ${customParams.length > 0 ? customParams.join(', ') : 'Нет'}
 <strong>7. Порядок параметров в подписи:</strong>
 ${signatureResult.signatureParts.map((p, i) => {
   if (p === config.password1) return `${i + 1}. Password1: [HIDDEN]`;
   if (p.startsWith('Shp_')) return `${i + 1}. ${p}`;
-  if (p === receiptOnce) return `${i + 1}. Receipt (receiptOnce, for signature): [single-encoded, length: ${p.length}]`;
+  if (p === receiptEncoded) return `${i + 1}. Receipt (receiptEncoded, for signature and form): [single-encoded, length: ${p.length}]`;
   return `${i + 1}. ${String(p).substring(0, 50)}`;
 }).join('\n')}
 <strong>8. Exact Signature String (masked):</strong>
 ${signatureResult.exactSignatureStringMasked}
-<strong>9. Signature Value (MD5, lowercase):</strong>
+<strong>9. Signature Value (MD5, UPPERCASE):</strong>
 ${signatureResult.signatureValue}
+<strong>9b. Signature Value (MD5, lowercase, for debug):</strong>
+${signatureResult.signatureValue.toLowerCase()}
 <strong>10. Signature Length:</strong> ${signatureResult.signatureValue.length} (должно быть 32)
 <strong>11. Signature is Lowercase:</strong> ${signatureResult.signatureValue === signatureResult.signatureValue.toLowerCase() ? '✅ Да' : '❌ НЕТ!'}
 <strong>12. Signature is Hex:</strong> ${/^[0-9a-f]{32}$/.test(signatureResult.signatureValue) ? '✅ Да' : '❌ НЕТ!'}
@@ -1130,8 +1114,8 @@ ${signatureResult.signatureValue}
     'OutSum',
     'InvId',
   ];
-  if (mode === 'recurring' && receiptOnce) {
-    signatureFormulaParts.push('ReceiptOnce'); // Single-encoded for signature
+  if (mode === 'recurring' && receiptEncoded) {
+    signatureFormulaParts.push('ReceiptEncoded'); // Single-encoded for both signature and form
   }
   signatureFormulaParts.push('Password1');
   if (customParams.length > 0) {
@@ -1158,7 +1142,7 @@ ${signatureResult.signatureParts.map((p: string | number, i: number) => {
   if (typeof p === 'string') {
     if (p === config.merchantLogin) return `${i + 1}. MerchantLogin: "${p}" (length: ${p.length})`;
     if (p === outSumFormatted) return `${i + 1}. OutSum: "${p}" (type: string, length: ${p.length})`;
-    if (p === receiptOnce) return `${i + 1}. ReceiptOnce (for signature): "${p.substring(0, 100)}..." (length: ${p.length}, single-encoded)`;
+    if (p === receiptEncoded) return `${i + 1}. ReceiptEncoded (for signature and form): "${p.substring(0, 100)}..." (length: ${p.length}, single-encoded)`;
     if (p.startsWith('Shp_')) return `${i + 1}. ${p} (Shp_* param, after Password1)`;
   }
   return `${i + 1}. ${String(p)} (unknown)`;
@@ -1197,11 +1181,11 @@ ${signatureResult.signatureValue}
 - InvId в подписи: ${invId}
 - Совпадают: ${formFields.InvId === String(invId) ? '✅ Да' : '❌ НЕТ!'}
 
-${mode === 'recurring' && receiptOnce && receiptTwice ? `- Receipt в форме (receiptTwice): присутствует (length: ${formFields.Receipt.length})
-- Receipt в подписи (receiptOnce): ${signatureResult.signatureParts.some(p => typeof p === 'string' && p === receiptOnce) ? '✅ Включен' : '❌ НЕ включен!'}
-- Форма использует receiptTwice (double-encoded): ${formFields.Receipt === receiptTwice ? '✅ Да' : '❌ НЕТ!'}
-- Подпись использует receiptOnce (single-encoded): ${signatureResult.signatureParts.some(p => typeof p === 'string' && p === receiptOnce) ? '✅ Да' : '❌ НЕТ!'}
-- CRITICAL: Форма и подпись используют РАЗНЫЕ значения (receiptTwice vs receiptOnce) - это ПРАВИЛЬНО!` : ''}
+${mode === 'recurring' && receiptEncoded ? `- Receipt в форме (receiptEncoded): присутствует (length: ${formFields.Receipt.length})
+- Receipt в подписи (receiptEncoded): ${signatureResult.signatureParts.some(p => typeof p === 'string' && p === receiptEncoded) ? '✅ Включен' : '❌ НЕ включен!'}
+- Форма использует receiptEncoded (single-encoded): ${formFields.Receipt === receiptEncoded ? '✅ Да' : '❌ НЕТ!'}
+- Подпись использует receiptEncoded (single-encoded): ${signatureResult.signatureParts.some(p => typeof p === 'string' && p === receiptEncoded) ? '✅ Да' : '❌ НЕТ!'}
+- CRITICAL: Форма и подпись используют ОДИНАКОВОЕ значение (receiptEncoded) - это ПРАВИЛЬНО!` : ''}
 
 - Shp_userId в форме: ${'Shp_userId' in formFields ? `"${formFields.Shp_userId}"` : '❌ Отсутствует'}
 - Shp_userId в подписи: ${customParams.some(p => p.startsWith('Shp_userId=')) ? `✅ Включен: ${customParams.find(p => p.startsWith('Shp_userId='))}` : '❌ НЕ включен!'}
@@ -1216,13 +1200,9 @@ ${mode === 'recurring' && receiptOnce && receiptTwice ? `- Receipt в форме
       <pre>Raw JSON:
 ${escapeHtmlAttribute(receiptJson)}
 
-ReceiptOnce (single-encoded, used in signature):
-${escapeHtmlAttribute(receiptOnce || 'N/A')}
-Length: ${receiptOnce?.length || 0} characters
-
-ReceiptTwice (double-encoded, sent in form):
-${escapeHtmlAttribute(receiptTwice || 'N/A')}
-Length: ${receiptTwice?.length || 0} characters
+ReceiptEncoded (single-encoded, used in both signature and form):
+${escapeHtmlAttribute(receiptEncoded || 'N/A')}
+Length: ${receiptEncoded?.length || 0} characters
 Item Sum: ${receipt?.items[0]?.sum}
 OutSum: ${outSumFormatted}
 Match: ${receipt?.items[0]?.sum === parseFloat(outSumFormatted) ? '✅ YES' : '❌ NO'}
