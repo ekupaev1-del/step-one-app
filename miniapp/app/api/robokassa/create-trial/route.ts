@@ -39,7 +39,7 @@ async function generateUniqueInvId(
 
 /**
  * Store payment attempt in DB (non-blocking)
- * Uses schema: user_id (UUID), telegram_user_id (bigint), inv_id, out_sum, mode, status
+ * Uses schema: user_id (UUID), telegram_user_id (bigint), inv_id, out_sum/amount, mode, status, description
  * Returns debug info about the operation
  * IMPORTANT: This must NOT fail the payment flow if DB insert fails
  */
@@ -61,6 +61,7 @@ async function storePaymentAttempt(
     // Include debug field (jsonb) - migration should add this column
     // CRITICAL: Use 'amount' if it exists, otherwise use 'out_sum'
     // Also handle 'invoice_id' vs 'inv_id' mismatch
+    // Description column should exist after migration add_description_to_payments.sql
     const insertPayload: any = {
       user_id: userId,
       telegram_user_id: telegramUserId,
@@ -72,7 +73,7 @@ async function storePaymentAttempt(
       out_sum: parseFloat(outSum), // Also set out_sum in case it exists
       mode: mode,
       status: 'created',
-      description: description || null,
+      description: description || null, // Should exist after migration
       debug: {
         receipt_raw: receiptJson || null,
         receipt_encoded: receiptEncoded || null,
@@ -84,15 +85,20 @@ async function storePaymentAttempt(
       },
     };
 
-    // TEMP DEBUG: Log insert payload (without sensitive data)
-    console.log('[robokassa/create-trial] TEMP DEBUG: DB insert payload:', {
+    // Log insert payload keys for debugging (without sensitive data)
+    const payloadKeys = Object.keys(insertPayload);
+    console.log('[robokassa/create-trial] DB insert payload keys:', payloadKeys);
+    console.log('[robokassa/create-trial] DB insert payload (safe):', {
       user_id: insertPayload.user_id,
       telegram_user_id: insertPayload.telegram_user_id,
       inv_id: insertPayload.inv_id,
+      invoice_id: insertPayload.invoice_id,
+      amount: insertPayload.amount,
       out_sum: insertPayload.out_sum,
       mode: insertPayload.mode,
       status: insertPayload.status,
       description: insertPayload.description,
+      has_debug: !!insertPayload.debug,
       debug_keys: Object.keys(insertPayload.debug || {}),
     });
 
@@ -103,14 +109,28 @@ async function storePaymentAttempt(
       .single();
 
     if (insertError) {
-      // Log full PostgREST error details (safe - no passwords)
+      // Enhanced error logging with exact insert payload keys and Supabase error fields
       console.error('[robokassa/create-trial] ❌ DB insert error:', {
+        // Supabase/PostgREST error fields
         code: insertError.code,
         message: insertError.message,
         details: insertError.details,
         hint: insertError.hint,
+        // Additional error context
+        insertPayloadKeys: payloadKeys,
+        insertPayloadKeysCount: payloadKeys.length,
+        // Full error object (for debugging)
         fullError: insertError,
       });
+      
+      // Also log the error in a structured format for easier debugging
+      console.error('[robokassa/create-trial] DB error details:', JSON.stringify({
+        code: insertError.code,
+        message: insertError.message,
+        details: insertError.details,
+        hint: insertError.hint,
+        insertPayloadKeys: payloadKeys,
+      }, null, 2));
       
       return {
         ok: false,
@@ -119,15 +139,18 @@ async function storePaymentAttempt(
           message: insertError.message,
           details: insertError.details,
           hint: insertError.hint,
+          insertPayloadKeys: payloadKeys, // Include payload keys for debugging
         },
       };
     }
 
     return { ok: true, debug: { inserted: data } };
   } catch (dbError: any) {
+    // Enhanced exception logging
     console.error('[robokassa/create-trial] ❌ DB insert exception:', {
       message: dbError.message,
       stack: dbError.stack,
+      name: dbError.name,
       fullError: dbError,
     });
     
@@ -136,6 +159,7 @@ async function storePaymentAttempt(
       error: {
         message: dbError.message,
         stack: dbError.stack,
+        name: dbError.name,
       },
     };
   }
