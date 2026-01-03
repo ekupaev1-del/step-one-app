@@ -52,7 +52,7 @@ async function storePaymentAttempt(
   mode: PaymentMode,
   description: string,
   receiptJson?: string,
-  receiptEncoded?: string,
+  receiptOnce?: string, // Single-encoded (for signature)
   signatureBase?: string,
   signatureValue?: string
 ): Promise<{ ok: boolean; error?: any; debug?: any }> {
@@ -76,9 +76,9 @@ async function storePaymentAttempt(
       description: description || null, // Should exist after migration
       debug: {
         receipt_raw: receiptJson || null,
-        receipt_encoded: receiptEncoded || null,
+        receipt_once: receiptOnce || null, // Single-encoded (for signature)
         receipt_json_length: receiptJson?.length || 0,
-        receipt_encoded_length: receiptEncoded?.length || 0,
+        receipt_once_length: receiptOnce?.length || 0,
         signature_base: signatureBase || null,
         signature_value_length: signatureValue?.length || 0,
         timestamp: new Date().toISOString(),
@@ -334,14 +334,19 @@ export async function POST(req: Request) {
     // Generate Receipt only for recurring mode
     let receipt;
     let receiptJson: string | undefined;
-    let receiptEncoded: string | undefined;
+    let receiptOnce: string | undefined; // Single-encoded (for signature)
+    let receiptTwice: string | undefined; // Double-encoded (for form)
     if (modeParam === 'recurring') {
       receipt = generateReceipt(1.00);
       receiptJson = JSON.stringify(receipt);
-      receiptEncoded = encodeURIComponent(receiptJson);
+      // CRITICAL: Double encoding for Robokassa
+      receiptOnce = encodeURIComponent(receiptJson); // First encoding (for signature)
+      receiptTwice = encodeURIComponent(receiptOnce); // Second encoding (for form)
       debug.receipt = receipt;
       debug.receiptItemSum = receipt.items[0].sum;
       debug.receiptMatchesOutSum = receipt.items[0].sum === 1.00;
+      debug.receiptOnceLength = receiptOnce.length;
+      debug.receiptTwiceLength = receiptTwice.length;
     }
 
     // Always use debug mode (no auto-submit) for easier debugging
@@ -404,7 +409,7 @@ export async function POST(req: Request) {
       modeParam,
       description,
       receiptJson,
-      receiptEncoded,
+      receiptOnce, // Pass receiptOnce (single-encoded) for debug
       formDebug.signatureBaseWithoutPassword,
       formDebug.signatureValue
     );
