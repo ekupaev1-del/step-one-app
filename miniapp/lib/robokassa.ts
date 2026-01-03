@@ -478,24 +478,41 @@ function buildRobokassaSignature(
   
   // Extract and sort Shp_* parameters alphabetically
   // CRITICAL: Only include Shp_* parameters in signature, NOT Description, Recurring, IsTest, etc.
+  // According to Robokassa docs: Shp_* params must be sorted alphabetically by PARAMETER NAME (key)
+  // Format in signature: "Shp_key=value" (sorted by key name, case-sensitive)
   const shpParams: string[] = [];
+  const shpEntries: Array<[string, string]> = [];
+  
   for (const [key, value] of Object.entries(fields)) {
     // Only include Shp_* parameters in signature
     // Exclude: Description, Recurring, IsTest, SignatureValue (not yet added)
     if (key.startsWith('Shp_')) {
-      // Format: "Shp_key=value" (NO URL encoding)
-      shpParams.push(`${key}=${value}`);
+      shpEntries.push([key, value]);
     }
+  }
+  
+  // Sort by parameter NAME (key) alphabetically, case-sensitive
+  // This ensures Shp_userId comes before Shp_otherParam if they exist
+  shpEntries.sort(([keyA], [keyB]) => {
+    // Case-sensitive alphabetical sort
+    if (keyA < keyB) return -1;
+    if (keyA > keyB) return 1;
+    return 0;
+  });
+  
+  // Build Shp_* params in sorted order: "Shp_key=value"
+  for (const [key, value] of shpEntries) {
+    shpParams.push(`${key}=${value}`);
   }
   
   // #region agent log
   if (typeof window === 'undefined') {
-    fetch('http://127.0.0.1:7242/ingest/43e8883f-375d-4d43-af6f-fef79b5ebbe3',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'robokassa.ts:buildRobokassaSignature',message:'Shp params before sort',data:{shpParamsBeforeSort:[...shpParams],shpParamsCount:shpParams.length},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'F'})}).catch(()=>{});
+    console.log('[robokassa] Shp_* entries before sort:', shpEntries.map(([k, v]) => ({ key: k, value: v })));
+    console.log('[robokassa] Shp_* entries after sort:', shpEntries.map(([k, v]) => ({ key: k, value: v })));
+    console.log('[robokassa] Shp_* params for signature:', shpParams);
+    fetch('http://127.0.0.1:7242/ingest/43e8883f-375d-4d43-af6f-fef79b5ebbe3',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'robokassa.ts:buildRobokassaSignature',message:'Shp params before sort',data:{shpEntriesBeforeSort:shpEntries.map(([k,v])=>({key:k,value:v})),shpParamsBeforeSort:[...shpParams],shpParamsCount:shpParams.length},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'F'})}).catch(()=>{});
   }
   // #endregion
-  
-  // Sort alphabetically by parameter name (case-sensitive)
-  shpParams.sort();
   
   // #region agent log
   if (typeof window === 'undefined') {
