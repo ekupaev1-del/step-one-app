@@ -65,9 +65,8 @@ async function storePaymentAttempt(
     const insertPayload: any = {
       user_id: userId,
       telegram_user_id: telegramUserId,
-      // Try both inv_id and invoice_id to handle schema mismatch
       inv_id: invId,
-      invoice_id: invId, // Also set invoice_id in case it exists
+      invoice_id: String(invId), // invoice_id is text, convert to string
       // Try both amount and out_sum to handle schema mismatch
       amount: parseFloat(outSum), // Use 'amount' if it exists (NOT NULL constraint)
       out_sum: parseFloat(outSum), // Also set out_sum in case it exists
@@ -400,6 +399,8 @@ export async function POST(req: Request) {
     console.log('[robokassa/create-trial] Signature value:', formDebug.signatureValue);
     console.log('[robokassa/create-trial] Signature length:', formDebug.signatureLength);
     console.log('[robokassa/create-trial] Signature is lowercase:', formDebug.signatureValue === formDebug.signatureValue.toLowerCase());
+    console.log('[robokassa/create-trial] Signature regex validation (/^[0-9a-f]{32}$/):', /^[0-9a-f]{32}$/.test(formDebug.signatureValue));
+    console.log('[robokassa/create-trial] Exact signature string (masked):', formDebug.exactSignatureStringMasked);
     console.log('[robokassa/create-trial] Form fields keys:', Object.keys(formDebug.finalFormFields || {}));
     console.log('[robokassa/create-trial] Form fields count:', Object.keys(formDebug.finalFormFields || {}).length);
     console.log('[robokassa/create-trial] Shp_userId in form:', 'Shp_userId' in (formDebug.finalFormFields || {}));

@@ -41,8 +41,8 @@ function maskPassword(password: string): string {
 
 /**
  * Calculate MD5 signature for Robokassa
- * CRITICAL: Returns UPPERCASE hex (Robokassa requirement for form submission)
- * Also logs lowercase for debugging
+ * CRITICAL: Returns lowercase hex (Robokassa requirement)
+ * Signature must match regex: /^[0-9a-f]{32}$/
  */
 function calculateSignature(...args: string[]): string {
   const signatureString = args.join(':');
@@ -52,16 +52,16 @@ function calculateSignature(...args: string[]): string {
   }
   // #endregion
   const hash = createHash('md5').update(signatureString).digest('hex');
-  const hashUppercase = hash.toUpperCase(); // Robokassa requires UPPERCASE
-  const hashLowercase = hash.toLowerCase(); // For debugging
+  const hashLowercase = hash.toLowerCase(); // Robokassa requires lowercase
   // #region agent log
   if (typeof window === 'undefined') {
-    console.log('[robokassa] MD5 hash (lowercase, for debug):', hashLowercase);
-    console.log('[robokassa] MD5 hash (UPPERCASE, for form):', hashUppercase);
-    fetch('http://127.0.0.1:7242/ingest/43e8883f-375d-4d43-af6f-fef79b5ebbe3',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'robokassa.ts:calculateSignature',message:'MD5 hash result',data:{hashOriginal:hash,hashUppercase:hashUppercase,hashLowercase:hashLowercase,length:hashUppercase.length},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'A'})}).catch(()=>{});
+    console.log('[robokassa] MD5 hash (lowercase):', hashLowercase);
+    console.log('[robokassa] MD5 hash length:', hashLowercase.length);
+    console.log('[robokassa] MD5 hash regex validation:', /^[0-9a-f]{32}$/.test(hashLowercase));
+    fetch('http://127.0.0.1:7242/ingest/43e8883f-375d-4d43-af6f-fef79b5ebbe3',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'robokassa.ts:calculateSignature',message:'MD5 hash result',data:{hashOriginal:hash,hashLowercase:hashLowercase,length:hashLowercase.length,regexValid:/^[0-9a-f]{32}$/.test(hashLowercase)},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'A'})}).catch(()=>{});
   }
   // #endregion
-  return hashUppercase; // Return UPPERCASE for Robokassa
+  return hashLowercase; // Return lowercase for Robokassa
 }
 
 /**
@@ -531,7 +531,7 @@ function buildRobokassaSignature(
   }
   // #endregion
   
-  // Calculate MD5 signature (UPPERCASE for Robokassa)
+  // Calculate MD5 signature (lowercase for Robokassa)
   const signatureValue = calculateSignature(...signatureParts);
   
   // #region agent log
@@ -554,11 +554,11 @@ function buildRobokassaSignature(
       console.log('[robokassa] Receipt in signature (receiptEncoded, preview):', receipt.substring(0, 80));
     }
     console.log('[robokassa] Shp_* params in signature:', shpParams);
-    console.log('[robokassa] Signature value (MD5, UPPERCASE):', signatureValue);
-    console.log('[robokassa] Signature value (MD5, lowercase, for debug):', signatureValue.toLowerCase());
+    console.log('[robokassa] Signature value (MD5, lowercase):', signatureValue);
     console.log('[robokassa] Signature value length:', signatureValue.length);
-    console.log('[robokassa] Signature value is uppercase:', signatureValue === signatureValue.toUpperCase());
-    console.log('[robokassa] Signature value is hex:', /^[0-9A-F]{32}$/i.test(signatureValue));
+    console.log('[robokassa] Signature value is lowercase:', signatureValue === signatureValue.toLowerCase());
+    console.log('[robokassa] Signature value regex validation (/^[0-9a-f]{32}$/):', /^[0-9a-f]{32}$/.test(signatureValue));
+    console.log('[robokassa] Exact signature string (masked):', exactSignatureStringMasked);
     console.log('[robokassa] ============================================================');
     
     fetch('http://127.0.0.1:7242/ingest/43e8883f-375d-4d43-af6f-fef79b5ebbe3',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'robokassa.ts:buildRobokassaSignature',message:'Signature value result',data:{signatureValue:signatureValue,signatureValueLength:signatureValue.length,signatureValueIsLowercase:signatureValue===signatureValue.toLowerCase(),signatureValueIsHex:/^[0-9a-f]{32}$/.test(signatureValue),exactSignatureStringLength:exactSignatureString.length,signaturePartsCount:signatureParts.length,shpParamsInSignature:shpParams},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'A'})}).catch(()=>{});
@@ -1034,13 +1034,11 @@ ${signatureResult.signatureParts.map((p, i) => {
 }).join('\n')}
 <strong>8. Exact Signature String (masked):</strong>
 ${signatureResult.exactSignatureStringMasked}
-<strong>9. Signature Value (MD5, UPPERCASE):</strong>
+<strong>9. Signature Value (MD5, lowercase):</strong>
 ${signatureResult.signatureValue}
-<strong>9b. Signature Value (MD5, lowercase, for debug):</strong>
-${signatureResult.signatureValue.toLowerCase()}
 <strong>10. Signature Length:</strong> ${signatureResult.signatureValue.length} (должно быть 32)
 <strong>11. Signature is Lowercase:</strong> ${signatureResult.signatureValue === signatureResult.signatureValue.toLowerCase() ? '✅ Да' : '❌ НЕТ!'}
-<strong>12. Signature is Hex:</strong> ${/^[0-9a-f]{32}$/.test(signatureResult.signatureValue) ? '✅ Да' : '❌ НЕТ!'}
+<strong>12. Signature Regex Validation (/^[0-9a-f]{32}$/):</strong> ${/^[0-9a-f]{32}$/.test(signatureResult.signatureValue) ? '✅ Да' : '❌ НЕТ!'}
 <strong>13. Test Mode:</strong> ${config.isTest ? '✅ Да (IsTest=1)' : '❌ Нет (production)'}
       </pre>
     </div>
@@ -1166,7 +1164,7 @@ ${signatureResult.signatureValue}
 Проверка подписи:
 - Длина: ${signatureResult.signatureValue.length} символов (должно быть 32)
 - Lowercase: ${signatureResult.signatureValue === signatureResult.signatureValue.toLowerCase() ? '✅ Да' : '❌ НЕТ!'}
-- Hex формат: ${/^[0-9a-f]{32}$/.test(signatureResult.signatureValue) ? '✅ Да' : '❌ НЕТ!'}
+- Regex Validation (/^[0-9a-f]{32}$/): ${/^[0-9a-f]{32}$/.test(signatureResult.signatureValue) ? '✅ Да' : '❌ НЕТ!'}
 
 Сравнение формы и подписи:
 - MerchantLogin в форме: "${formFields.MerchantLogin}"
