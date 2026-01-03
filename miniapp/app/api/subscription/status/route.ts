@@ -31,7 +31,7 @@ export async function GET(req: Request) {
     );
 
     // Если передан telegramUserId, находим user_id
-    let userId: string | null = null;
+    let userId: number | null = null;
     if (telegramUserIdParam) {
       const { data: user } = await supabase
         .from('users')
@@ -40,13 +40,13 @@ export async function GET(req: Request) {
         .maybeSingle();
 
       if (user) {
-        userId = user.id;
+        userId = Number(user.id);
       }
-    } else {
-      userId = userIdParam;
+    } else if (userIdParam) {
+      userId = Number(userIdParam);
     }
 
-    if (!userId) {
+    if (!userId || !Number.isFinite(userId)) {
       return NextResponse.json({
         ok: false,
         error: 'User not found',

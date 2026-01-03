@@ -120,7 +120,8 @@ export async function POST(req: Request) {
     }
 
     // Активируем подписку
-    const userId = payment.user_id;
+    // user_id в payments - это BIGINT (id из users)
+    const userId = Number(payment.user_id);
     const telegramUserId = payment.telegram_user_id;
     const amount = parseFloat(outSum);
 

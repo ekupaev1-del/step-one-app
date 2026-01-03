@@ -4,7 +4,7 @@
 -- Создаем таблицу subscriptions
 CREATE TABLE IF NOT EXISTS subscriptions (
   id BIGSERIAL PRIMARY KEY,
-  user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  user_id BIGINT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
   telegram_user_id BIGINT NOT NULL,
   payment_id BIGINT REFERENCES payments(inv_id),
   status TEXT NOT NULL CHECK (status IN ('active', 'expired', 'cancelled', 'trial')),
