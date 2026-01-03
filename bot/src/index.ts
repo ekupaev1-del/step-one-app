@@ -17,7 +17,7 @@ const bot = new Telegraf(env.telegramBotToken);
 // Preview деплои создают разные домены каждый раз - это ломает web_app URLs
 const MINIAPP_BASE_URL =
   process.env.MINIAPP_BASE_URL ||
-  "https://step-one-app-git-dev-emins-projects-4717eabc.vercel.app";
+  "https://step-one-gr745cr7n-emins-projects-4717eabc.vercel.app";
 
 // ░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░
 //      ЕДИНАЯ ФУНКЦИЯ ГЛАВНОГО МЕНЮ
@@ -41,7 +41,7 @@ const MINIAPP_BASE_URL =
 function getMainMenuKeyboard(userId: number | null = null): any {
   // ВАЖНО: Используем ТОЛЬКО production URL для стабильности
   // Preview деплои создают разные домены - это ломает web_app URLs в Telegram
-  const baseUrl = (MINIAPP_BASE_URL || "https://step-one-app-git-dev-emins-projects-4717eabc.vercel.app").trim().replace(/\/$/, '');
+  const baseUrl = (MINIAPP_BASE_URL || "https://step-one-gr745cr7n-emins-projects-4717eabc.vercel.app").trim().replace(/\/$/, '');
   
   // ВАЖНО: URL должны быть правильными - /profile и /report (не /reports!)
   const reportUrl = userId ? `${baseUrl}/report?id=${userId}` : undefined;
