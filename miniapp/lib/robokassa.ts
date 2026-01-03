@@ -984,33 +984,39 @@ export function generatePaymentForm(
       ${config.isTest ? '<span class="status-badge status-test">TEST MODE</span>' : '<span class="status-badge status-prod">PRODUCTION</span>'}
     </div>
     
-    <button class="copy-all-btn" onclick="copyAllDebugInfo()">
-      📋 СКОПИРОВАТЬ ВСЮ DEBUG ИНФОРМАЦИЮ (ОДНИМ КЛИКОМ)
+    <div class="debug-section" style="background: #1a2a1a; border: 2px solid #00ff88;">
+      <h3>🔑 КЛЮЧЕВАЯ ИНФОРМАЦИЯ ДЛЯ ERROR 29 (СКОПИРУЙТЕ ЭТО)</h3>
+      <button class="copy-all-btn" onclick="copyKeyInfo()" style="background: #00ff88; color: #000; margin-bottom: 20px;">
+        📋 СКОПИРОВАТЬ КЛЮЧЕВУЮ ИНФОРМАЦИЮ ДЛЯ ERROR 29
+      </button>
+      <pre id="key-info" style="background: #000; padding: 15px; border-radius: 5px; font-size: 12px; line-height: 1.6;">
+<strong>1. MerchantLogin:</strong> ${config.merchantLogin}
+<strong>2. OutSum:</strong> ${outSumFormatted}
+<strong>3. InvId:</strong> ${invId}
+<strong>4. Receipt (если есть):</strong> ${mode === 'recurring' && receiptEncoded ? `Да (length: ${receiptEncoded.length})` : 'Нет'}
+<strong>5. Shp_* параметры в форме:</strong> ${customParams.length > 0 ? customParams.join(', ') : 'Нет'}
+<strong>6. Shp_* параметры в подписи:</strong> ${customParams.length > 0 ? customParams.join(', ') : 'Нет'}
+<strong>7. Порядок параметров в подписи:</strong>
+${signatureResult.signatureParts.map((p, i) => {
+  if (p === config.password1) return `${i + 1}. Password1: [HIDDEN]`;
+  if (p.startsWith('Shp_')) return `${i + 1}. ${p}`;
+  if (p === receiptEncoded) return `${i + 1}. Receipt: [encoded, length: ${p.length}]`;
+  return `${i + 1}. ${String(p).substring(0, 50)}`;
+}).join('\n')}
+<strong>8. Exact Signature String (masked):</strong>
+${signatureResult.exactSignatureStringMasked}
+<strong>9. Signature Value (MD5, lowercase):</strong>
+${signatureResult.signatureValue}
+<strong>10. Signature Length:</strong> ${signatureResult.signatureValue.length} (должно быть 32)
+<strong>11. Signature is Lowercase:</strong> ${signatureResult.signatureValue === signatureResult.signatureValue.toLowerCase() ? '✅ Да' : '❌ НЕТ!'}
+<strong>12. Signature is Hex:</strong> ${/^[0-9a-f]{32}$/.test(signatureResult.signatureValue) ? '✅ Да' : '❌ НЕТ!'}
+<strong>13. Test Mode:</strong> ${config.isTest ? '✅ Да (IsTest=1)' : '❌ Нет (production)'}
+      </pre>
+    </div>
+    
+    <button class="copy-all-btn" onclick="copyAllDebugInfo()" style="background: #666; margin-top: 20px;">
+      📋 СКОПИРОВАТЬ ВСЮ DEBUG ИНФОРМАЦИЮ (ПОЛНАЯ)
     </button>
-    
-    <div class="error-info">
-      <h4>⚠️ Robokassa Error 29 - Детальная Диагностика</h4>
-      <p><strong>Типичные причины Error 29:</strong></p>
-      <ul>
-        <li>❌ Неправильный порядок параметров в подписи (Shp_* должны быть ПОСЛЕ Password1)</li>
-        <li>❌ Shp_* параметры не отсортированы алфавитно</li>
-        <li>❌ Shp_* параметры не включены в подпись, хотя присутствуют в форме</li>
-        <li>❌ Неправильные имена параметров (должно быть InvId, не InvoiceID)</li>
-        <li>❌ Проблемы с кодированием Receipt (двойное кодирование или неправильный формат)</li>
-        <li>❌ Несоответствие формата OutSum (должно быть "1.00", не "1.000000")</li>
-        <li>❌ MerchantLogin не совпадает с идентификатором в кабинете Robokassa (case-sensitive, должно быть "steopone")</li>
-        <li>❌ Подпись в UPPERCASE вместо lowercase</li>
-        <li>❌ Receipt включен в подпись, но отсутствует в форме (или наоборот)</li>
-        <li>❌ Несоответствие значений между формой и подписью</li>
-      </ul>
-      <p><strong>Автоматические проверки (все должны быть ✅):</strong></p>
-      <div id="checks"></div>
-    </div>
-    
-    <div class="debug-section">
-      <h3>🔍 Детальная Валидация (Error 29)</h3>
-      <pre id="validation-checks"></pre>
-    </div>
     
     <div class="debug-section">
       <h3>💳 Payment Form</h3>
@@ -1179,29 +1185,28 @@ Match: ${receipt?.items[0]?.sum === parseFloat(outSumFormatted) ? '✅ YES' : '�
     </div>
     
     <script>
-      // Render validation checks
-      const validationChecks = ${JSON.stringify(debugInfo.validationChecks)};
-      const checksHtml = Object.entries(validationChecks).map(([key, value]) => {
-        // Special handling for isTestCorrect - it's correct if true (test mode with IsTest) OR false (production without IsTest)
-        if (key === 'isTestCorrect') {
-          const className = value === true ? 'check-ok' : 'check-fail';
-          const icon = value === true ? '✅' : '❌';
-          const explanation = value === true 
-            ? '✅ Правильно: IsTest присутствует в test mode ИЛИ отсутствует в production' 
-            : '❌ ОШИБКА: IsTest должен быть в test mode, но отсутствует в production';
-          return \`<div class="check-item \${className}">\${icon} <strong>\${key}:</strong> \${value} (\${explanation})</div>\`;
-        }
-        // For other checks: true/positive numbers/non-empty strings = OK
-        const className = value === true || (typeof value === 'number' && value > 0) || (typeof value === 'string' && value.length > 0 && value !== 'NOT_PRESENT') ? 'check-ok' : 'check-fail';
-        const icon = value === true || (typeof value === 'number' && value > 0) || (typeof value === 'string' && value.length > 0 && value !== 'NOT_PRESENT') ? '✅' : '❌';
-        const displayValue = value === null ? 'N/A' : value;
-        return \`<div class="check-item \${className}">\${icon} <strong>\${key}:</strong> \${displayValue}</div>\`;
-      }).join('');
-      document.getElementById('checks').innerHTML = checksHtml;
-      
-      // Render detailed validation checks
-      const validationChecksJson = JSON.stringify(validationChecks, null, 2);
-      document.getElementById('validation-checks').textContent = validationChecksJson;
+      function copyKeyInfo() {
+        const keyInfo = document.getElementById('key-info').textContent;
+        
+        navigator.clipboard.writeText(keyInfo).then(() => {
+          alert('✅ Ключевая информация для Error 29 скопирована!\\n\\nТеперь можете вставить её для анализа.');
+        }).catch(err => {
+          // Fallback for older browsers
+          const textarea = document.createElement('textarea');
+          textarea.value = keyInfo;
+          textarea.style.position = 'fixed';
+          textarea.style.opacity = '0';
+          document.body.appendChild(textarea);
+          textarea.select();
+          try {
+            document.execCommand('copy');
+            alert('✅ Ключевая информация скопирована!');
+          } catch (e) {
+            alert('❌ Не удалось скопировать. Попробуйте выделить текст вручную.');
+          }
+          document.body.removeChild(textarea);
+        });
+      }
       
       function copyAllDebugInfo() {
         const debugData = ${JSON.stringify(debugInfo)};
