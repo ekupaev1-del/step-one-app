@@ -37,14 +37,15 @@ interface DebugInfo {
       fieldOrder?: string[];
     };
   };
-  env?: {
-    vercelEnv?: string;
-    nodeEnv?: string;
-    receiptEnabled?: boolean;
-    pass1Len?: number;
-    pass1Prefix2?: string;
-    pass1Suffix2?: string;
-  };
+      env?: {
+        vercelEnv?: string;
+        nodeEnv?: string;
+        receiptEnabled?: boolean;
+        pass1Len?: number;
+        pass1Prefix2?: string;
+        pass1Suffix2?: string;
+        buildId?: string;
+      };
   error?: string;
   stage?: string;
   fullResponse?: any;
