@@ -31,6 +31,8 @@ export default function SubscriptionClient() {
   const [error, setError] = useState<string | null>(null);
   const [consentAccepted, setConsentAccepted] = useState(false);
   const [debugInfo, setDebugInfo] = useState<any>(null);
+  const [showDebugBeforeSubmit, setShowDebugBeforeSubmit] = useState(false);
+  const [paymentHtml, setPaymentHtml] = useState<string | null>(null);
 
   const handlePayMonthly = async () => {
     if (!userId || loading) return;
@@ -91,21 +93,37 @@ export default function SubscriptionClient() {
         return;
       }
 
-      // Store debug info if debug mode is enabled
-      if (debugMode && data.debug) {
-        setDebugInfo(data.debug);
-        // Don't submit form in debug mode - show debug info instead
-        return;
-      }
-
-      // Log debug info to console for troubleshooting
+      // Store debug info and payment HTML
       if (data.debug) {
+        setDebugInfo(data.debug);
         console.log('[Payment Debug]', data.debug);
       }
 
-      // Submit form immediately (if not in debug mode)
       if (data.html) {
-        // Use HTML directly (auto-submit form) - preferred method
+        // Store HTML for later submission
+        setPaymentHtml(data.html);
+        
+        // If debug mode, show debug first, then user can continue
+        if (debugMode) {
+          setShowDebugBeforeSubmit(true);
+          return;
+        }
+        
+        // If not debug mode but debug info exists, show it briefly then submit
+        if (data.debug) {
+          setShowDebugBeforeSubmit(true);
+          // Auto-submit after 3 seconds if user doesn't interact
+          setTimeout(() => {
+            if (paymentHtml) {
+              document.open();
+              document.write(paymentHtml);
+              document.close();
+            }
+          }, 3000);
+          return;
+        }
+        
+        // No debug info - submit immediately
         document.open();
         document.write(data.html);
         document.close();
@@ -166,20 +184,47 @@ export default function SubscriptionClient() {
           </label>
         </div>
 
-        <button
-          onClick={() => handlePayMonthly()}
-          disabled={loading || !consentAccepted}
-          className="w-full bg-blue-600 hover:bg-blue-700 text-white font-semibold py-3 px-6 rounded-lg disabled:opacity-50 disabled:cursor-not-allowed mb-4"
-        >
-          {loading ? 'Обработка...' : 'Начать пробный период (1 ₽)'}
-        </button>
+        {!showDebugBeforeSubmit ? (
+          <button
+            onClick={() => handlePayMonthly()}
+            disabled={loading || !consentAccepted}
+            className="w-full bg-blue-600 hover:bg-blue-700 text-white font-semibold py-3 px-6 rounded-lg disabled:opacity-50 disabled:cursor-not-allowed mb-4"
+          >
+            {loading ? 'Обработка...' : 'Начать пробный период (1 ₽)'}
+          </button>
+        ) : (
+          <div className="space-y-2 mb-4">
+            <button
+              onClick={() => {
+                if (paymentHtml) {
+                  document.open();
+                  document.write(paymentHtml);
+                  document.close();
+                }
+              }}
+              className="w-full bg-green-600 hover:bg-green-700 text-white font-semibold py-3 px-6 rounded-lg"
+            >
+              Продолжить оплату
+            </button>
+            <button
+              onClick={() => {
+                setShowDebugBeforeSubmit(false);
+                setDebugInfo(null);
+                setPaymentHtml(null);
+              }}
+              className="w-full bg-gray-500 hover:bg-gray-600 text-white font-semibold py-2 px-6 rounded-lg"
+            >
+              Отмена
+            </button>
+          </div>
+        )}
 
-        {/* Debug info block (shown on errors or when ?debug=1) */}
+        {/* Debug info block (shown before payment or on errors) */}
         {debugInfo && (
           <div className="mt-4 p-4 bg-gray-900 text-white rounded-lg font-mono text-xs">
             <div className="flex justify-between items-center mb-3">
               <h3 className="text-sm font-bold text-green-400">
-                {debugInfo.error ? '❌ Ошибка' : '🔍 Debug (Error 29)'}
+                {debugInfo.error ? '❌ Ошибка' : '🔍 Debug (Error 29) - Скопируйте перед оплатой'}
               </h3>
               <button
                 onClick={() => {
