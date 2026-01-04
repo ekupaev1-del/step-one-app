@@ -393,15 +393,15 @@ export async function POST(req: Request) {
     );
     
     // #region agent log - Comprehensive Error 29 diagnostics
-    const finalFormFields = formDebug.finalFormFields || {};
-    const shpParams = formDebug.customParams || [];
-    const shpSorted = JSON.stringify(shpParams) === JSON.stringify([...shpParams].sort());
+    const formFieldsForDebug = formDebug.finalFormFields || {};
+    const shpParamsForLog = formDebug.customParams || [];
+    const shpSorted = JSON.stringify(shpParamsForLog) === JSON.stringify([...shpParamsForLog].sort());
     const password1Index = formDebug.signatureParts?.findIndex((p: any) => p === config.password1) ?? -1;
-    const shpAfterPassword1 = password1Index >= 0 && shpParams.length > 0 ? 
+    const shpAfterPassword1 = password1Index >= 0 && shpParamsForLog.length > 0 ? 
       formDebug.signatureParts?.slice(password1Index + 1).some((p: any) => typeof p === 'string' && p.startsWith('Shp_')) : 
-      shpParams.length === 0;
+      shpParamsForLog.length === 0;
     
-    fetch('http://127.0.0.1:7242/ingest/43e8883f-375d-4d43-af6f-fef79b5ebbe3',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'create-trial/route.ts:POST',message:'After generatePaymentForm - Error 29 diagnostics',data:{signatureValue:formDebug.signatureValue,signatureLength:formDebug.signatureLength,signatureIsLowercase:formDebug.signatureValue===formDebug.signatureValue.toLowerCase(),signatureIsHex:/^[0-9a-f]{32}$/.test(formDebug.signatureValue),merchantLogin:formDebug.merchantLogin,merchantLoginIsSteopone:formDebug.merchantLoginIsSteopone,outSum:formDebug.outSum,outSumIs100:formDebug.outSum==='1.00',invId:formDebug.invId,invIdString:String(formDebug.invId),hasReceipt:!!formDebug.receiptEncoded,receiptEncodedLength:formDebug.receiptEncodedLength||0,shpParamsCount:shpParams.length,shpParams:shpParams,shpParamsSorted:shpSorted,shpAfterPassword1:shpAfterPassword1,password1Index:password1Index,isTest:formDebug.isTest,formHasIsTest:'IsTest' in finalFormFields,formIsTestValue:finalFormFields.IsTest||'NOT_PRESENT',formFieldsKeys:Object.keys(finalFormFields),formFieldsCount:Object.keys(finalFormFields).length},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'ALL'})}).catch(()=>{});
+    fetch('http://127.0.0.1:7242/ingest/43e8883f-375d-4d43-af6f-fef79b5ebbe3',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'create-trial/route.ts:POST',message:'After generatePaymentForm - Error 29 diagnostics',data:{signatureValue:formDebug.signatureValue,signatureLength:formDebug.signatureLength,signatureIsLowercase:formDebug.signatureValue===formDebug.signatureValue.toLowerCase(),signatureIsHex:/^[0-9a-f]{32}$/.test(formDebug.signatureValue),merchantLogin:formDebug.merchantLogin,merchantLoginIsSteopone:formDebug.merchantLoginIsSteopone,outSum:formDebug.outSum,outSumIs100:formDebug.outSum==='1.00',invId:formDebug.invId,invIdString:String(formDebug.invId),hasReceipt:!!formDebug.receiptEncoded,receiptEncodedLength:formDebug.receiptEncodedLength||0,shpParamsCount:shpParamsForLog.length,shpParams:shpParamsForLog,shpParamsSorted:shpSorted,shpAfterPassword1:shpAfterPassword1,password1Index:password1Index,isTest:formDebug.isTest,formHasIsTest:'IsTest' in formFieldsForDebug,formIsTestValue:formFieldsForDebug.IsTest||'NOT_PRESENT',formFieldsKeys:Object.keys(formFieldsForDebug),formFieldsCount:Object.keys(formFieldsForDebug).length},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'ALL'})}).catch(()=>{});
     // #endregion
 
     // ========== DETAILED DEBUG FOR ERROR 29 ==========
@@ -426,12 +426,12 @@ export async function POST(req: Request) {
     console.log('[robokassa/create-trial] Signature is lowercase:', formDebug.signatureValue === formDebug.signatureValue.toLowerCase());
     console.log('[robokassa/create-trial] Signature regex validation (/^[0-9a-f]{32}$/):', /^[0-9a-f]{32}$/.test(formDebug.signatureValue));
     console.log('[robokassa/create-trial] Exact signature string (masked):', formDebug.exactSignatureStringMasked);
-    console.log('[robokassa/create-trial] Form fields keys:', Object.keys(formDebug.finalFormFields || {}));
-    console.log('[robokassa/create-trial] Form fields count:', Object.keys(formDebug.finalFormFields || {}).length);
-    console.log('[robokassa/create-trial] Shp_userId in form:', 'Shp_userId' in (formDebug.finalFormFields || {}));
-    console.log('[robokassa/create-trial] Receipt in form:', 'Receipt' in (formDebug.finalFormFields || {}));
-    console.log('[robokassa/create-trial] Recurring in form:', 'Recurring' in (formDebug.finalFormFields || {}));
-    console.log('[robokassa/create-trial] SignatureValue in form:', 'SignatureValue' in (formDebug.finalFormFields || {}));
+    console.log('[robokassa/create-trial] Form fields keys:', Object.keys(formFieldsForDebug));
+    console.log('[robokassa/create-trial] Form fields count:', Object.keys(formFieldsForDebug).length);
+    console.log('[robokassa/create-trial] Shp_userId in form:', 'Shp_userId' in formFieldsForDebug);
+    console.log('[robokassa/create-trial] Receipt in form:', 'Receipt' in formFieldsForDebug);
+    console.log('[robokassa/create-trial] Recurring in form:', 'Recurring' in formFieldsForDebug);
+    console.log('[robokassa/create-trial] SignatureValue in form:', 'SignatureValue' in formFieldsForDebug);
     console.log('[robokassa/create-trial] ============================================');
 
     // Store payment attempt in DB (non-blocking - do not fail request if this fails)
@@ -471,9 +471,27 @@ export async function POST(req: Request) {
     debug.formGeneration = formDebug;
     debug.debugModeEnabled = debugMode;
 
-    // Log success summary
+    // Extract final form fields (with SignatureValue) from formDebug
+    const finalFormFields = formDebug.finalFormFields || {};
+    const paymentUrl = 'https://auth.robokassa.ru/Merchant/Index.aspx';
+    
+    // Extract Shp_* params for debug
+    const shpParamsDebug: string[] = [];
+    for (const [key, value] of Object.entries(finalFormFields)) {
+      if (key.startsWith('Shp_')) {
+        shpParamsDebug.push(`${key}=${value}`);
+      }
+    }
+    shpParamsDebug.sort();
+
+    // Log success summary with final signature base string
     console.log('[robokassa/create-trial] ========== SUCCESS ==========');
     console.log('[robokassa/create-trial] Payment form generated successfully');
+    console.log('[robokassa/create-trial] Payment URL:', paymentUrl);
+    console.log('[robokassa/create-trial] Final signature base string (masked):', formDebug.exactSignatureStringMasked);
+    console.log('[robokassa/create-trial] Final form fields:', Object.keys(finalFormFields));
+    console.log('[robokassa/create-trial] Shp_* params:', shpParamsDebug);
+    console.log('[robokassa/create-trial] Receipt encoded length:', formDebug.receiptEncodedLength || 0);
     console.log('[robokassa/create-trial] DB store result:', dbStoreResult.ok ? 'OK' : 'FAILED');
     if (!dbStoreResult.ok) {
       console.error('[robokassa/create-trial] DB error details:', JSON.stringify(dbStoreResult.error, null, 2));
@@ -481,29 +499,25 @@ export async function POST(req: Request) {
 
     return NextResponse.json({
       ok: true,
-      html,
+      paymentUrl,
+      fields: finalFormFields,
       debug: {
+        hashAlgo: 'MD5',
+        signatureBaseStringMasked: formDebug.exactSignatureStringMasked,
+        outSum: debug.outSum,
+        invId: debug.invId,
+        receiptEncodedLen: formDebug.receiptEncodedLength || 0,
+        shpParams: shpParamsDebug,
+        endpoint: paymentUrl,
         stage: debug.stage,
         mode: debug.mode,
         merchantLogin: debug.merchantLogin,
         merchantLoginIsSteopone: formDebug.merchantLoginIsSteopone,
-        outSum: debug.outSum,
-        invId: debug.invId,
         description: debug.description,
         isTest: debug.isTest,
-        isTestIncluded: debug.isTest,
-        robokassaTestMode: debug.robokassaTestMode,
-        debugModeEnabled: debug.debugModeEnabled,
-        signatureBaseWithoutPassword: formDebug.signatureBaseWithoutPassword,
         signatureValue: formDebug.signatureValue, // Will be masked in UI
-        customParams: formDebug.customParams || [], // Show which Shp_* params were included
-        formFields: formDebug.formFields,
-        receiptRawLength: formDebug.receiptRawLength,
-        receiptEncodedLength: formDebug.receiptEncodedLength,
-        receiptEncodedPreview: formDebug.receiptEncodedPreview,
         dbInsertOk: dbStoreResult.ok,
         dbError: dbStoreResult.error || undefined,
-        dbInsertError: debug.dbInsertError || undefined,
       },
     });
   } catch (error: any) {

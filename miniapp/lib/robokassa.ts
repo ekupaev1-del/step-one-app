@@ -427,7 +427,7 @@ function buildRobokassaFields(payload: {
 function buildRobokassaSignature(
   fields: Record<string, string>,
   password1: string,
-  receiptRawJson?: string,
+  receiptEncoded?: string,
   includeReceiptInSignature: boolean = false
 ): {
   signatureValue: string;
@@ -448,17 +448,22 @@ function buildRobokassaSignature(
   const invId = fields.InvId; // Keep as string to match form field exactly
   const receipt = fields.Receipt; // Single-encoded, same value used in form and signature
   
+  // Trim Password1 to avoid trailing spaces
+  const password1Trimmed = password1.trim();
+  
   // #region agent log
   if (typeof window === 'undefined') {
     console.log('[robokassa] ========== SIGNATURE RECEIPT EXTRACTION ==========');
-    console.log('[robokassa] receipt present:', !!receipt, 'length:', receipt?.length || 0);
-    console.log('[robokassa] Using receipt (single-encoded) for signature:', !!receipt);
-    if (receipt) {
-      console.log('[robokassa] receipt preview:', receipt.substring(0, 80));
+    console.log('[robokassa] receipt present:', !!receiptEncoded, 'length:', receiptEncoded?.length || 0);
+    console.log('[robokassa] Using receipt (URL-encoded) for signature:', !!receiptEncoded);
+    if (receiptEncoded) {
+      console.log('[robokassa] receipt preview:', receiptEncoded.substring(0, 80));
     }
+    console.log('[robokassa] merchantLogin trimmed:', merchantLogin, '(length:', merchantLogin.length, ')');
+    console.log('[robokassa] password1 trimmed:', password1Trimmed.length, 'chars');
     console.log('[robokassa] ==================================================');
     
-    fetch('http://127.0.0.1:7242/ingest/43e8883f-375d-4d43-af6f-fef79b5ebbe3',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'robokassa.ts:buildRobokassaSignature',message:'Extracted values with receipt',data:{merchantLogin:merchantLogin,merchantLoginIsSteopone:merchantLogin==='steopone',outSum:outSum,outSumType:typeof outSum,outSumIs100:outSum==='1.00',invId:invId,invIdType:typeof invId,receiptPresent:!!receipt,receiptLength:receipt?.length||0},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'C'})}).catch(()=>{});
+    fetch('http://127.0.0.1:7242/ingest/43e8883f-375d-4d43-af6f-fef79b5ebbe3',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'robokassa.ts:buildRobokassaSignature',message:'Extracted values with receipt',data:{merchantLogin:merchantLogin,merchantLoginIsSteopone:merchantLogin==='steopone',outSum:outSum,outSumType:typeof outSum,outSumIs100:outSum==='1.00',invId:invId,invIdType:typeof invId,receiptPresent:!!receiptEncoded,receiptLength:receiptEncoded?.length||0},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'C'})}).catch(()=>{});
   }
   // #endregion
   
@@ -470,17 +475,17 @@ function buildRobokassaSignature(
     invId, // String, not number
   ];
   
-  // Add Receipt (RAW JSON, NOT URL-encoded) ONLY if includeReceiptInSignature=true
-  // CRITICAL: Receipt in signature must be RAW JSON (not URL-encoded)
-  // Receipt in form field is still URL-encoded (encodeURIComponent)
+  // Add Receipt (URL-encoded) ONLY if includeReceiptInSignature=true
+  // CRITICAL: Receipt in signature uses the SAME URL-encoded value as in the form field
+  // This is the EXACT same value that will be submitted in the form
   let variant: 'with-receipt' | 'without-receipt' = 'without-receipt';
-  if (includeReceiptInSignature && receiptRawJson) {
-    signatureParts.push(receiptRawJson); // RAW JSON, NOT encoded
+  if (includeReceiptInSignature && receiptEncoded) {
+    signatureParts.push(receiptEncoded); // SAME encoded value as in form field
     variant = 'with-receipt';
   }
   
-  // Add Password1
-  signatureParts.push(password1);
+  // Add Password1 (trimmed)
+  signatureParts.push(password1Trimmed);
   
   // Extract and sort Shp_* parameters alphabetically
   // CRITICAL: Only include Shp_* parameters in signature, NOT Description, Recurring, IsTest, etc.
@@ -563,7 +568,7 @@ function buildRobokassaSignature(
   
   // Build masked signature string (for debug)
   const exactSignatureStringMasked = signatureParts.map(p => 
-    p === password1 ? '[PASSWORD1_HIDDEN]' : p
+    p === password1Trimmed ? '[PASSWORD1_HIDDEN]' : p
   ).join(':');
   
   // #region agent log
@@ -583,8 +588,8 @@ function buildRobokassaSignature(
     console.log('[robokassa] MerchantLogin:', merchantLogin, '(must be exactly "steopone")');
     console.log('[robokassa] OutSum:', outSum, '(type:', typeof outSum, ', must be "1.00" for trial)');
     console.log('[robokassa] InvId:', invId, '(type:', typeof invId, ', must be string)');
-    console.log('[robokassa] Receipt present:', !!receipt, '(length:', receipt?.length || 0, ')');
-    console.log('[robokassa] Password1 length:', password1.length, '(must match Robokassa settings)');
+    console.log('[robokassa] Receipt present:', !!receiptEncoded, '(length:', receiptEncoded?.length || 0, ')');
+    console.log('[robokassa] Password1 length:', password1Trimmed.length, '(must match Robokassa settings)');
     console.log('[robokassa] Shp_* params count:', shpParams.length);
     console.log('[robokassa] Shp_* params:', shpParams);
     console.log('[robokassa] Exact signature string (masked):', exactSignatureStringMasked);
@@ -592,15 +597,15 @@ function buildRobokassaSignature(
     console.log('[robokassa] Signature parts count:', signatureParts.length);
     console.log('[robokassa] Signature parts order:');
     signatureParts.forEach((p, i) => {
-      const partDesc = p === password1 ? '[PASSWORD1_HIDDEN]' : 
+      const partDesc = p === password1Trimmed ? '[PASSWORD1_HIDDEN]' : 
                        p.startsWith('Shp_') ? p : 
-                       p === receipt ? `[ReceiptEncoded, length: ${p.length}]` :
+                       p === receiptEncoded ? `[ReceiptEncoded, length: ${p.length}]` :
                        p.substring(0, 50);
       console.log(`  ${i + 1}. ${partDesc}`);
     });
-    if (receipt) {
-      console.log('[robokassa] Receipt in signature (receiptEncoded, length):', receipt.length);
-      console.log('[robokassa] Receipt in signature (receiptEncoded, preview):', receipt.substring(0, 80));
+    if (receiptEncoded) {
+      console.log('[robokassa] Receipt in signature (receiptEncoded, length):', receiptEncoded.length);
+      console.log('[robokassa] Receipt in signature (receiptEncoded, preview):', receiptEncoded.substring(0, 80));
     }
     console.log('[robokassa] Signature value (MD5, lowercase):', signatureValue);
     console.log('[robokassa] Signature value length:', signatureValue.length, '(must be 32)');
@@ -611,10 +616,10 @@ function buildRobokassaSignature(
     console.log('[robokassa] 1. MerchantLogin === "steopone":', merchantLogin === 'steopone');
     console.log('[robokassa] 2. OutSum === "1.00":', outSum === '1.00');
     console.log('[robokassa] 3. InvId is string:', typeof invId === 'string');
-    console.log('[robokassa] 4. Receipt included (if recurring):', !!receipt);
-    console.log('[robokassa] 5. Password1 correct (check in Robokassa cabinet):', password1.length > 0);
+    console.log('[robokassa] 4. Receipt included (if recurring):', !!receiptEncoded);
+    console.log('[robokassa] 5. Password1 correct (check in Robokassa cabinet):', password1Trimmed.length > 0);
     console.log('[robokassa] 6. Shp_* params sorted alphabetically:', JSON.stringify(shpParams) === JSON.stringify([...shpParams].sort()));
-    console.log('[robokassa] 7. Shp_* params AFTER Password1:', signatureParts.indexOf(password1) < (shpParams.length > 0 ? signatureParts.indexOf(shpParams[0]) : signatureParts.length));
+    console.log('[robokassa] 7. Shp_* params AFTER Password1:', signatureParts.indexOf(password1Trimmed) < (shpParams.length > 0 ? signatureParts.indexOf(shpParams[0]) : signatureParts.length));
     console.log('[robokassa] 8. Signature is lowercase hex 32 chars:', /^[0-9a-f]{32}$/.test(signatureValue));
     console.log('[robokassa] ============================================================');
     
@@ -675,17 +680,17 @@ export function generatePaymentForm(
   // #endregion
   
   // Step 2: Calculate signature based on exact fields
-  // CRITICAL: By default, Receipt is NOT included in signature
-  // Only include if ROBOKASSA_INCLUDE_RECEIPT_IN_SIGNATURE=true
-  const includeReceiptInSignature = process.env.ROBOKASSA_INCLUDE_RECEIPT_IN_SIGNATURE === 'true';
-  const receiptRawJson = mode === 'recurring' && receipt ? JSON.stringify(receipt) : undefined;
+  // CRITICAL: If Receipt is in the form, it MUST be included in signature
+  // Receipt in signature uses the SAME URL-encoded value as in the form field
+  const receiptEncoded = formFieldsWithoutSignature.Receipt; // Already URL-encoded, same as in form
+  const includeReceiptInSignature = !!receiptEncoded; // Include if Receipt is present in form
   
   // #region agent log
   if (typeof window === 'undefined') {
     console.log('[robokassa] ========== SIGNATURE VARIANT SELECTION ==========');
-    console.log('[robokassa] includeReceiptInSignature:', includeReceiptInSignature);
-    console.log('[robokassa] Receipt in form:', !!formFieldsWithoutSignature.Receipt);
-    console.log('[robokassa] Receipt raw JSON length:', receiptRawJson?.length || 0);
+    console.log('[robokassa] Receipt in form:', !!receiptEncoded);
+    console.log('[robokassa] Receipt encoded length:', receiptEncoded?.length || 0);
+    console.log('[robokassa] Include Receipt in signature:', includeReceiptInSignature);
     console.log('[robokassa] Variant:', includeReceiptInSignature ? 'with-receipt' : 'without-receipt');
     console.log('[robokassa] =================================================');
   }
@@ -694,7 +699,7 @@ export function generatePaymentForm(
   const signatureResult = buildRobokassaSignature(
     formFieldsWithoutSignature,
     config.password1,
-    receiptRawJson,
+    receiptEncoded, // Use the SAME encoded value as in form
     includeReceiptInSignature
   );
   
@@ -718,10 +723,10 @@ export function generatePaymentForm(
   
   // Extract receipt info for debug (if present)
   let receiptJson: string | undefined;
-  let receiptEncoded: string | undefined; // URL-encoded (used in form field)
+  let receiptEncodedDebug: string | undefined; // URL-encoded (used in form field)
   if (mode === 'recurring' && receipt) {
     receiptJson = JSON.stringify(receipt);
-    receiptEncoded = formFieldsWithoutSignature.Receipt; // URL-encoded for form field
+    receiptEncodedDebug = formFieldsWithoutSignature.Receipt; // URL-encoded for form field
   }
   
   // Extract custom params for debug
@@ -872,11 +877,11 @@ export function generatePaymentForm(
     // Receipt info (safe)
     receiptRaw: receiptJson,
     receiptRawLength: receiptJson?.length || 0,
-    receiptEncoded: receiptEncoded, // URL-encoded (used in form field)
-    receiptEncodedLength: receiptEncoded?.length || 0,
-    receiptEncodedPreview: receiptEncoded ? receiptEncoded.substring(0, 80) + '...' : undefined,
-    receiptRawJson: receiptRawJson, // Raw JSON (used in signature if includeReceiptInSignature=true)
-    receiptRawJsonLength: receiptRawJson?.length || 0,
+    receiptEncoded: receiptEncodedDebug, // URL-encoded (used in form field)
+    receiptEncodedLength: receiptEncodedDebug?.length || 0,
+    receiptEncodedPreview: receiptEncodedDebug ? receiptEncodedDebug.substring(0, 80) + '...' : undefined,
+    receiptRawJson: receiptJson, // Raw JSON (used in signature if includeReceiptInSignature=true)
+    receiptRawJsonLength: receiptJson?.length || 0,
     receiptFull: receipt,
     telegramUserId: telegramUserId || undefined,
     // Validation checks for Error 29
@@ -936,7 +941,8 @@ export function generatePaymentForm(
       console.log('[robokassa] CRITICAL: Form and signature use the SAME receiptEncoded value - this is CORRECT');
     }
     
-    const password1Index = signatureResult.signatureParts.findIndex(p => typeof p === 'string' && p === config.password1);
+    const password1Trimmed = config.password1.trim();
+    const password1Index = signatureResult.signatureParts.findIndex(p => typeof p === 'string' && p === password1Trimmed);
     console.log('[robokassa] Password1 index in signature:', password1Index);
     
     if (customParams.length > 0) {

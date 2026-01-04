@@ -1,0 +1,31 @@
+===========================================
+БЫСТРАЯ СПРАВКА: Переменные Robokassa в Vercel
+===========================================
+
+1. ROBOKASSA_MERCHANT_LOGIN
+   Значение: steopone
+   Окружения: Production, Preview, Development
+
+2. ROBOKASSA_PASSWORD1
+   Значение: B2Bnpr5rjF948tbTZXSg
+   Окружения: Production, Preview, Development
+
+3. ROBOKASSA_PASSWORD2
+   Значение: FCxKxmU1VgdE4V0S4Q1f
+   Окружения: Production, Preview, Development
+
+4. ROBOKASSA_TEST_MODE
+   Значение: false (для Production) или true (для Preview/Development)
+   Окружения: Production (false), Preview (true), Development (true)
+
+5. ROBOKASSA_INCLUDE_RECEIPT_IN_SIGNATURE
+   НЕ УСТАНАВЛИВАЙТЕ (или false)
+   По умолчанию false - это правильно
+
+===========================================
+Где добавить:
+Vercel Dashboard → Ваш проект → Settings → Environment Variables
+===========================================
+
+После добавления: Redeploy последний деплой!
+===========================================

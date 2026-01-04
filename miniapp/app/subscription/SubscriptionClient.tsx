@@ -6,6 +6,8 @@ import { useSearchParams } from 'next/navigation';
 interface CreateTrialResponse {
   ok: boolean;
   html?: string;
+  paymentUrl?: string;
+  fields?: Record<string, string>;
   stage?: string;
   message?: string;
   debug?: any;
@@ -135,15 +137,34 @@ export default function SubscriptionClient() {
         return;
       }
 
-      // If ok=true → open HTML in new window/iframe or replace document
-      if (data.html) {
-        // For Mini App: replace current document to submit form
-        // This ensures form submits properly in Telegram WebView
+      // If ok=true → create and submit form
+      if (data.paymentUrl && data.fields) {
+        // Create hidden HTML form and auto-submit
+        // This works inside Telegram WebView (miniapp)
+        const form = document.createElement('form');
+        form.method = 'POST';
+        form.action = data.paymentUrl;
+        form.style.display = 'none';
+        
+        // Add all fields as hidden inputs
+        for (const [key, value] of Object.entries(data.fields)) {
+          const input = document.createElement('input');
+          input.type = 'hidden';
+          input.name = key;
+          input.value = String(value);
+          form.appendChild(input);
+        }
+        
+        // Append form to body and submit
+        document.body.appendChild(form);
+        form.submit();
+      } else if (data.html) {
+        // Fallback: if HTML is provided (for backward compatibility)
         document.open();
         document.write(data.html);
         document.close();
       } else {
-        const errorMsg = 'Payment creation failed: No HTML form returned';
+        const errorMsg = 'Payment creation failed: No payment URL or fields returned';
         setError(errorMsg);
         alert(`Ошибка: ${errorMsg}`);
       }
