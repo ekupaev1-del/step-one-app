@@ -3,7 +3,7 @@
 import { useEffect, useState } from 'react';
 import { useSearchParams } from 'next/navigation';
 
-interface CreateTrialResponse {
+interface CreateMonthlyResponse {
   ok: boolean;
   html?: string;
   paymentUrl?: string;
@@ -13,26 +13,11 @@ interface CreateTrialResponse {
   debug?: any;
 }
 
-/**
- * Mask signature value for safe display
- * Shows first 6 and last 6 characters
- */
-function maskSignature(signature: string): string {
-  if (!signature || signature.length <= 12) {
-    return signature;
-  }
-  return `${signature.substring(0, 6)}...${signature.substring(signature.length - 6)}`;
-}
-
 export default function SubscriptionClient() {
   const searchParams = useSearchParams();
   const userId = searchParams.get('id');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [debugData, setDebugData] = useState<any>(null);
-  const [showDebug, setShowDebug] = useState(false);
-  const [showDebugModal, setShowDebugModal] = useState(false);
-  const [paymentData, setPaymentData] = useState<{ url: string; fields: Record<string, string> } | null>(null);
   const [consentAccepted, setConsentAccepted] = useState(false);
 
   const handlePayMonthly = async () => {
@@ -41,8 +26,6 @@ export default function SubscriptionClient() {
     try {
       setLoading(true);
       setError(null);
-      setDebugData(null);
-      setShowDebug(false);
       
       // Get telegram_user_id
       const userResponse = await fetch(`/api/user?id=${userId}`);
@@ -51,21 +34,6 @@ export default function SubscriptionClient() {
       if (!userData.ok || !userData.telegram_id) {
         const errorMsg = 'Ошибка: не удалось получить данные пользователя';
         setError(errorMsg);
-        setDebugData({
-          request: {
-            url: `/api/user?id=${userId}`,
-            method: 'GET',
-            payload: null,
-          },
-          response: {
-            status: userResponse.status,
-            body: userData,
-          },
-          error: {
-            message: 'Failed to get user telegram_id',
-          },
-        });
-        setShowDebug(true);
         return;
       }
 
@@ -87,207 +55,71 @@ export default function SubscriptionClient() {
       const contentType = response.headers.get('content-type');
       if (!contentType || !contentType.includes('application/json')) {
         const text = await response.text();
-        const errorMsg = `Expected JSON response, got: ${contentType}. Response: ${text.substring(0, 200)}`;
+        const errorMsg = `Ошибка: неверный формат ответа от сервера`;
         setError(errorMsg);
-        setDebugData({
-          request: { url: requestUrl, method: 'POST', payload: requestPayload },
-          response: { status: response.status, body: text.substring(0, 500) },
-          error: { message: errorMsg },
-        });
-        setShowDebug(true);
-        alert(`Ошибка: ${errorMsg}`);
+        console.error('[Payment] Invalid response:', { contentType, text: text.substring(0, 200) });
         return;
       }
       
-      const data: CreateTrialResponse = await response.json();
-      
-      // Prepare debug data with masked signature
-      const safeDebug = data.debug ? {
-        ...data.debug,
-        signatureValue: data.debug.signatureValue ? maskSignature(data.debug.signatureValue) : undefined,
-      } : undefined;
-      
-      // Save full response to Debug JSON panel with request details
-      setDebugData({
-        request: {
-          url: requestUrl,
-          method: 'POST',
-          payload: requestPayload,
-        },
-        response: {
-          status: response.status,
-          body: {
-            ...data,
-            debug: safeDebug, // Use masked debug
-          },
-        },
-        error: !response.ok || !data.ok ? {
-          message: data.message || 'Payment creation failed',
-          stage: data.stage,
-        } : null,
-        debug: safeDebug, // Include API debug info (masked)
-        timestamp: new Date().toISOString(),
-      });
-      setShowDebug(true);
+      const data: CreateMonthlyResponse = await response.json();
 
-      // If ok=false → show error + debug JSON
+      // If ok=false → show error
       if (!response.ok || !data.ok) {
-        const errorMsg = data.message || 'Payment creation failed';
+        const errorMsg = data.message || 'Ошибка создания платежа';
         setError(errorMsg);
-        // Show alert for errors
-        alert(`Ошибка: ${errorMsg}\n\nПроверьте Debug JSON панель для деталей.`);
+        console.error('[Payment] Error:', data);
         return;
       }
 
-      // If ok=true → show debug modal first, then submit form
-      if (data.paymentUrl && data.fields) {
-        // Save payment data for later submission
-        setPaymentData({
-          url: data.paymentUrl,
-          fields: data.fields,
-          html: data.html, // Store HTML if available
-        } as any);
-        // Show debug modal
-        setShowDebugModal(true);
-      } else if (data.html) {
-        // Fallback: if only HTML is provided
-        setPaymentData({
-          url: data.paymentUrl || 'https://auth.robokassa.ru/Merchant/Index.aspx',
-          fields: {},
-          html: data.html,
-        } as any);
-        setShowDebugModal(true);
+      // If ok=true → submit form immediately (no debug modal blocking)
+      // Log debug info to console for troubleshooting
+      if (data.debug) {
+        console.log('[Payment Debug]', {
+          exactSignatureString: data.debug.exactSignatureStringMasked,
+          signatureValue: data.debug.signatureValue?.substring(0, 8) + '...',
+          merchantLogin: data.debug.merchantLogin,
+          outSum: data.debug.outSum,
+          invId: data.debug.invId,
+          shpParams: data.debug.shpParams,
+          formFields: Object.keys(data.debug.formFields || {}),
+        });
+      }
+
+      // Submit form immediately
+      if (data.html) {
+        // Use HTML directly (auto-submit form) - preferred method
+        document.open();
+        document.write(data.html);
+        document.close();
+      } else if (data.paymentUrl && data.fields) {
+        // Fallback: create form from fields
+        const form = document.createElement('form');
+        form.method = 'POST';
+        form.action = data.paymentUrl;
+        form.style.display = 'none';
+        
+        for (const [key, value] of Object.entries(data.fields)) {
+          const input = document.createElement('input');
+          input.type = 'hidden';
+          input.name = key;
+          input.value = String(value);
+          form.appendChild(input);
+        }
+        
+        document.body.appendChild(form);
+        form.submit();
       } else {
         const errorMsg = 'Payment creation failed: No payment URL or fields returned';
         setError(errorMsg);
         alert(`Ошибка: ${errorMsg}`);
       }
     } catch (error: any) {
-      console.error('Error starting trial:', error);
-      const errorMsg = 'Payment creation failed';
+      console.error('[Payment] Error:', error);
+      const errorMsg = 'Ошибка создания платежа';
       setError(errorMsg);
-      setDebugData({
-        request: {
-          url: `/api/robokassa/create-trial?telegramUserId=${userId}`,
-          method: 'POST',
-          payload: { telegramUserId: userId },
-        },
-        response: null,
-        error: {
-          message: error.message,
-          stack: error.stack,
-        },
-        timestamp: new Date().toISOString(),
-      });
-      setShowDebug(true);
-      // Show alert for errors
-      alert(`Ошибка: ${errorMsg}\n\nПроверьте Debug JSON панель для деталей.`);
     } finally {
       setLoading(false);
     }
-  };
-
-  const handleCopyDebug = () => {
-    if (!debugData?.debug) return;
-    
-    const dbg = debugData.debug;
-    
-    // Формируем критичную информацию для Error 29
-    const criticalInfo = {
-      // Самое важное - точная строка подписи
-      exactSignatureString: dbg.exactSignatureStringMasked || 'N/A',
-      signatureValue: dbg.signatureValue || 'N/A',
-      signatureLength: dbg.signatureLength || 0,
-      signatureIsValid: dbg.signatureIsValid || false,
-      
-      // Параметры подписи
-      merchantLogin: dbg.merchantLogin || 'N/A',
-      merchantLoginIsSteopone: dbg.merchantLoginIsSteopone || false,
-      outSum: dbg.outSum || 'N/A',
-      outSumFormat: dbg.outSumFormat || false,
-      invId: dbg.invId || 'N/A',
-      invIdString: dbg.invIdString || 'N/A',
-      
-      // Shp_* параметры
-      shpParams: dbg.shpParams || [],
-      shpParamsSorted: dbg.shpParamsSorted || false,
-      
-      // Receipt
-      hasReceipt: dbg.hasReceipt || false,
-      receiptEncodedLength: dbg.receiptEncodedLength || 0,
-      receiptInSignature: dbg.receiptInSignature || false,
-      
-      // Test mode
-      isTest: dbg.isTest || false,
-      hasIsTestInForm: dbg.hasIsTestInForm || false,
-      
-      // Все поля формы
-      formFields: dbg.formFields || {},
-      
-      // Проверки валидности
-      validation: dbg.validation || {},
-      
-      // Части подписи по порядку
-      signatureParts: dbg.signatureParts || [],
-      
-      timestamp: debugData.timestamp || new Date().toISOString(),
-    };
-
-    const text = JSON.stringify(criticalInfo, null, 2);
-    
-    navigator.clipboard.writeText(text).then(() => {
-      alert('✅ Debug-информация скопирована в буфер обмена!');
-    }).catch(() => {
-      // Fallback
-      const textarea = document.createElement('textarea');
-      textarea.value = text;
-      textarea.style.position = 'fixed';
-      textarea.style.opacity = '0';
-      document.body.appendChild(textarea);
-      textarea.select();
-      try {
-        document.execCommand('copy');
-        alert('✅ Debug-информация скопирована!');
-      } catch (e) {
-        alert('❌ Не удалось скопировать. Выделите текст вручную.');
-      }
-      document.body.removeChild(textarea);
-    });
-  };
-
-  const handleContinuePayment = () => {
-    if (!paymentData) return;
-    
-    setShowDebugModal(false);
-    
-    // Check if we have HTML (from create-monthly)
-    const html = (paymentData as any).html;
-    if (html) {
-      // Use HTML directly (auto-submit form)
-      document.open();
-      document.write(html);
-      document.close();
-      return;
-    }
-    
-    // Otherwise create form from fields
-    const form = document.createElement('form');
-    form.method = 'POST';
-    form.action = paymentData.url;
-    form.style.display = 'none';
-    
-    // Add all fields as hidden inputs
-    for (const [key, value] of Object.entries(paymentData.fields)) {
-      const input = document.createElement('input');
-      input.type = 'hidden';
-      input.name = key;
-      input.value = String(value);
-      form.appendChild(input);
-    }
-    
-    // Append form to body and submit
-    document.body.appendChild(form);
-    form.submit();
   };
 
   return (
@@ -337,155 +169,6 @@ export default function SubscriptionClient() {
         >
           {loading ? 'Обработка...' : 'Оплатить 199 ₽'}
         </button>
-
-        {/* Debug Modal */}
-        {showDebugModal && debugData && (
-          <div className="fixed inset-0 bg-black/50 flex items-center justify-center p-4 z-50">
-            <div className="bg-white rounded-2xl shadow-xl max-w-lg w-full max-h-[90vh] overflow-hidden flex flex-col">
-              {/* Header */}
-              <div className="bg-gray-900 text-white p-4 flex justify-between items-center">
-                <h2 className="text-lg font-semibold">🔍 Debug информация</h2>
-                <button
-                  onClick={() => setShowDebugModal(false)}
-                  className="text-gray-400 hover:text-white"
-                >
-                  ✕
-                </button>
-              </div>
-
-              {/* Content */}
-              <div className="p-4 overflow-y-auto flex-1">
-                {debugData?.debug && (
-                  <div className="space-y-4 text-sm">
-                    {/* 1. Точная строка подписи - САМОЕ ВАЖНОЕ */}
-                    <div className="bg-red-50 border border-red-200 rounded-lg p-3">
-                      <div className="font-semibold text-red-900 mb-2">🔴 Точная строка подписи (для Error 29):</div>
-                      <div className="text-gray-800 font-mono text-xs break-all bg-white p-2 rounded border">
-                        {debugData.debug.exactSignatureStringMasked || 'N/A'}
-                      </div>
-                      <div className="mt-1 text-xs text-gray-600">
-                        Длина: {debugData.debug.exactSignatureStringLength || 0} символов
-                      </div>
-                    </div>
-
-                    {/* 2. Значение подписи */}
-                    <div>
-                      <div className="font-semibold text-gray-900 mb-1">SignatureValue (MD5):</div>
-                      <div className="text-gray-800 font-mono text-xs break-all bg-gray-50 p-2 rounded">
-                        {debugData.debug.signatureValue || 'N/A'}
-                      </div>
-                      <div className="mt-1 text-xs">
-                        Длина: {debugData.debug.signatureLength || 0} | 
-                        Валидна: {debugData.debug.signatureIsValid ? '✅' : '❌'}
-                      </div>
-                    </div>
-
-                    {/* 3. Части подписи по порядку */}
-                    {debugData.debug.signatureParts && debugData.debug.signatureParts.length > 0 && (
-                      <div>
-                        <div className="font-semibold text-gray-900 mb-1">Части подписи (по порядку):</div>
-                        <div className="bg-gray-50 p-2 rounded text-xs space-y-1">
-                          {debugData.debug.signatureParts.map((part: any, idx: number) => (
-                            <div key={idx} className="flex items-start gap-2">
-                              <span className="text-gray-500 w-6">{part.index}.</span>
-                              <span className="text-gray-800 font-mono break-all flex-1">
-                                {part.isShp ? '🔵 ' : part.isReceipt ? '🟡 Receipt (encoded)' : ''}
-                                {part.part}
-                              </span>
-                            </div>
-                          ))}
-                        </div>
-                      </div>
-                    )}
-
-                    {/* 4. Ключевые параметры */}
-                    <div className="grid grid-cols-2 gap-2">
-                      <div>
-                        <span className="text-gray-600">MerchantLogin:</span>
-                        <div className="font-mono text-xs">
-                          {debugData.debug.merchantLogin || 'N/A'}
-                          {debugData.debug.merchantLoginIsSteopone ? ' ✅' : ' ❌'}
-                        </div>
-                      </div>
-                      <div>
-                        <span className="text-gray-600">OutSum:</span>
-                        <div className="font-mono text-xs">
-                          {debugData.debug.outSum || 'N/A'}
-                          {debugData.debug.outSumFormat ? ' ✅' : ' ❌'}
-                        </div>
-                      </div>
-                      <div>
-                        <span className="text-gray-600">InvId:</span>
-                        <div className="font-mono text-xs">{debugData.debug.invIdString || 'N/A'}</div>
-                      </div>
-                      <div>
-                        <span className="text-gray-600">Test Mode:</span>
-                        <div className="text-xs">{debugData.debug.isTest ? 'Да' : 'Нет'}</div>
-                      </div>
-                    </div>
-
-                    {/* 5. Shp_* параметры */}
-                    {debugData.debug.shpParams && debugData.debug.shpParams.length > 0 && (
-                      <div>
-                        <div className="font-semibold text-gray-900 mb-1">
-                          Shp_* параметры:
-                          {debugData.debug.shpParamsSorted ? ' ✅ Отсортированы' : ' ❌ НЕ отсортированы!'}
-                        </div>
-                        <div className="text-xs text-gray-700 bg-gray-50 p-2 rounded">
-                          {debugData.debug.shpParams.join(', ')}
-                        </div>
-                      </div>
-                    )}
-
-                    {/* 6. Receipt */}
-                    {debugData.debug.hasReceipt && (
-                      <div>
-                        <div className="font-semibold text-gray-900 mb-1">Receipt:</div>
-                        <div className="text-xs text-gray-700">
-                          Длина: {debugData.debug.receiptEncodedLength} | 
-                          В подписи: {debugData.debug.receiptInSignature ? '✅ Да' : '❌ Нет'}
-                        </div>
-                      </div>
-                    )}
-
-                    {/* 7. Проверки валидности */}
-                    {debugData.debug.validation && (
-                      <div className="bg-blue-50 border border-blue-200 rounded-lg p-3">
-                        <div className="font-semibold text-blue-900 mb-2">Проверки валидности:</div>
-                        <div className="text-xs space-y-1">
-                          <div>MerchantLogin = "steopone": {debugData.debug.validation.merchantLoginCorrect ? '✅' : '❌'}</div>
-                          <div>OutSum = "1.00": {debugData.debug.validation.outSumFormat ? '✅' : '❌'}</div>
-                          <div>InvId валиден: {debugData.debug.validation.invIdValid ? '✅' : '❌'}</div>
-                          <div>Signature формат: {debugData.debug.validation.signatureFormat ? '✅' : '❌'}</div>
-                          <div>Shp_* отсортированы: {debugData.debug.validation.shpParamsSorted ? '✅' : '❌'}</div>
-                          {debugData.debug.hasReceipt && (
-                            <div>Receipt консистентен: {debugData.debug.validation.receiptConsistent ? '✅' : '❌'}</div>
-                          )}
-                        </div>
-                      </div>
-                    )}
-                  </div>
-                )}
-              </div>
-
-              {/* Footer */}
-              <div className="border-t p-4 flex gap-3">
-                <button
-                  onClick={handleCopyDebug}
-                  className="flex-1 bg-gray-900 hover:bg-gray-800 text-white font-medium py-2 px-4 rounded-lg transition-colors"
-                >
-                  📋 Скопировать всё
-                </button>
-                <button
-                  onClick={handleContinuePayment}
-                  className="flex-1 bg-blue-600 hover:bg-blue-700 text-white font-medium py-2 px-4 rounded-lg transition-colors"
-                >
-                  Продолжить оплату
-                </button>
-              </div>
-            </div>
-          </div>
-        )}
       </div>
     </div>
   );
