@@ -2087,8 +2087,8 @@ ${formInputs}
     if (fields.Recurring) {
       console.error('[robokassa] ❌ CRITICAL ERROR: Recurring is present in form fields (causes Error 29! Must be removed for Index.aspx)!');
     }
-    if (isNPD && !fields.Receipt) {
-      console.error('[robokassa] ❌ CRITICAL ERROR: Receipt is MANDATORY for sno=npd but is missing!');
+    if (!fields.Receipt || fields.Receipt.length === 0) {
+      console.error('[robokassa] ❌ CRITICAL ERROR: Receipt is MANDATORY (sno=npd) but is missing or empty!');
     }
     if (fields.Receipt && !receiptEncoded) {
       console.error('[robokassa] ❌ CRITICAL ERROR: Receipt is in form but not included in signature!');
