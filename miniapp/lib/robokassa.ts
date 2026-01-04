@@ -540,24 +540,25 @@ function buildRobokassaSignature(
   }
   // #endregion
   
-  // Build signature parts in correct order
+  // Build signature parts in correct order according to Robokassa docs:
+  // WITHOUT Receipt: MerchantLogin:OutSum:InvId:Password1:Shp_...
+  // WITH Receipt: MerchantLogin:OutSum:InvId:Receipt:Password1:Shp_...
   // CRITICAL: All parts must be strings to match Robokassa's exact format
   const signatureParts: string[] = [
-    merchantLogin,
-    outSum,
-    invId, // String, not number
+    merchantLogin.trim(), // Trim to avoid trailing spaces
+    outSum, // Already formatted as "199.00"
+    invId, // String, digits only
   ];
   
-  // Add Receipt (URL-encoded) ONLY if includeReceiptInSignature=true
+  // Add Receipt (URL-encoded) BEFORE Password1 if present
   // CRITICAL: Receipt in signature uses the SAME URL-encoded value as in the form field
-  // This is the EXACT same value that will be submitted in the form
   let variant: 'with-receipt' | 'without-receipt' = 'without-receipt';
   if (includeReceiptInSignature && receiptEncoded) {
-    signatureParts.push(receiptEncoded); // SAME encoded value as in form field
+    signatureParts.push(receiptEncoded); // SAME encoded value as in form field, BEFORE Password1
     variant = 'with-receipt';
   }
   
-  // Add Pass1 (trimmed)
+  // Add Pass1 (trimmed) AFTER MerchantLogin:OutSum:InvId[:Receipt]
   signatureParts.push(pass1Trimmed);
   
   // Extract and sort Shp_* parameters alphabetically

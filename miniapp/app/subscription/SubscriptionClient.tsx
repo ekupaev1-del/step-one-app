@@ -16,9 +16,11 @@ interface CreateMonthlyResponse {
 export default function SubscriptionClient() {
   const searchParams = useSearchParams();
   const userId = searchParams.get('id');
+  const debugMode = searchParams.get('debug') === '1';
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [consentAccepted, setConsentAccepted] = useState(false);
+  const [debugInfo, setDebugInfo] = useState<any>(null);
 
   const handlePayMonthly = async () => {
     if (!userId || loading) return;
@@ -71,21 +73,19 @@ export default function SubscriptionClient() {
         return;
       }
 
-      // If ok=true → submit form immediately (no debug modal blocking)
-      // Log debug info to console for troubleshooting
-      if (data.debug) {
-        console.log('[Payment Debug]', {
-          exactSignatureString: data.debug.exactSignatureStringMasked,
-          signatureValue: data.debug.signatureValue?.substring(0, 8) + '...',
-          merchantLogin: data.debug.merchantLogin,
-          outSum: data.debug.outSum,
-          invId: data.debug.invId,
-          shpParams: data.debug.shpParams,
-          formFields: Object.keys(data.debug.formFields || {}),
-        });
+      // Store debug info if debug mode is enabled
+      if (debugMode && data.debug) {
+        setDebugInfo(data.debug);
+        // Don't submit form in debug mode - show debug info instead
+        return;
       }
 
-      // Submit form immediately
+      // Log debug info to console for troubleshooting
+      if (data.debug) {
+        console.log('[Payment Debug]', data.debug);
+      }
+
+      // Submit form immediately (if not in debug mode)
       if (data.html) {
         // Use HTML directly (auto-submit form) - preferred method
         document.open();
@@ -169,6 +169,16 @@ export default function SubscriptionClient() {
         >
           {loading ? 'Обработка...' : 'Оплатить 199 ₽'}
         </button>
+
+        {/* Debug info block (only shown when ?debug=1) */}
+        {debugMode && debugInfo && (
+          <div className="mt-4 p-4 bg-gray-900 text-white rounded-lg font-mono text-xs overflow-auto max-h-96">
+            <h3 className="text-sm font-bold mb-2 text-green-400">🔍 Debug информация</h3>
+            <pre className="whitespace-pre-wrap break-words">
+              {JSON.stringify(debugInfo, null, 2)}
+            </pre>
+          </div>
+        )}
       </div>
     </div>
   );
