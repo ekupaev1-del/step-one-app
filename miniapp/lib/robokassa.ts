@@ -1433,6 +1433,227 @@ Match: ${receipt?.items[0]?.sum === parseFloat(outSumFormatted) ? 'âœ… YES' : 'â
 }
 
 /**
+ * CANONICAL Robokassa form builder with strict validation
+ * 
+ * This is the SINGLE source of truth for building Robokassa payment forms.
+ * All payment creation endpoints MUST use this function to ensure consistency.
+ * 
+ * @param params - Payment parameters
+ * @returns Form fields, signature info, and validation results
+ */
+export function buildRobokassaForm(params: {
+  merchantLogin: string;
+  password1: string;
+  outSum: string; // Must be formatted as "199.00" (2 decimals)
+  invId: string; // Must be digits-only string
+  description: string; // ASCII, max 128 chars
+  recurring?: boolean; // If true, add Recurring=true field (NOT in signature per Robokassa docs)
+  receipt?: Receipt; // Optional Receipt object (if provided, MUST be included in signature)
+  shpParams?: Record<string, string>; // Shp_* custom parameters (e.g., { userId: "123" } -> Shp_userId=123)
+  isTest?: boolean; // If true, add IsTest=1 field (NOT in signature)
+}): {
+  fields: Record<string, string>; // Final form fields ready to submit
+  signature: {
+    value: string; // SignatureValue (MD5 hex lowercase)
+    baseString: string; // Exact signature string with password masked
+    baseStringRaw: string; // Exact signature string with real password (for calculation only)
+    parts: string[]; // Signature parts in order
+    variant: 'with-receipt' | 'without-receipt';
+  };
+  validation: {
+    passed: boolean;
+    errors: string[];
+    warnings: string[];
+  };
+} {
+  const errors: string[] = [];
+  const warnings: string[] = [];
+
+  // ========== STRICT VALIDATION ==========
+  
+  // 1. MerchantLogin validation
+  if (!params.merchantLogin || params.merchantLogin.trim().length === 0) {
+    errors.push('MerchantLogin is required and cannot be empty');
+  }
+  const merchantLogin = params.merchantLogin.trim();
+  if (merchantLogin !== 'steopone') {
+    warnings.push(`MerchantLogin is "${merchantLogin}", expected "steopone" (this may cause Error 26)`);
+  }
+
+  // 2. Password1 validation
+  if (!params.password1 || params.password1.trim().length === 0) {
+    errors.push('Password1 is required and cannot be empty');
+  }
+  const password1 = params.password1.trim();
+
+  // 3. OutSum validation - MUST match /^\d+(\.\d{2})$/
+  if (!/^\d+(\.\d{2})$/.test(params.outSum)) {
+    errors.push(`OutSum must be formatted as "199.00" (2 decimals), got: "${params.outSum}"`);
+  }
+  const outSum = params.outSum; // Already formatted correctly
+
+  // 4. InvId validation - MUST be digits-only
+  if (!/^\d+$/.test(params.invId)) {
+    errors.push(`InvId must be digits-only string, got: "${params.invId}"`);
+  }
+  const invIdNum = parseInt(params.invId, 10);
+  if (invIdNum <= 0 || invIdNum > 2000000000) {
+    errors.push(`InvId must be between 1 and 2000000000, got: ${invIdNum}`);
+  }
+  const invId = params.invId; // Already validated as digits-only
+
+  // 5. Description validation
+  if (!params.description || params.description.length === 0) {
+    errors.push('Description is required');
+  }
+  if (params.description.length > 128) {
+    warnings.push(`Description is ${params.description.length} chars, max is 128 (will be truncated)`);
+  }
+  const description = params.description.substring(0, 128);
+
+  // If validation failed, throw error
+  if (errors.length > 0) {
+    throw new Error(`Robokassa form validation failed:\n${errors.join('\n')}`);
+  }
+
+  // ========== BUILD FORM FIELDS ==========
+  
+  const fields: Record<string, string> = {
+    MerchantLogin: merchantLogin,
+    OutSum: outSum,
+    InvId: invId, // Use InvId (canonical field name for Index.aspx)
+    Description: description,
+  };
+
+  // Add Shp_* parameters
+  const shpEntries: Array<[string, string]> = [];
+  if (params.shpParams) {
+    for (const [key, value] of Object.entries(params.shpParams)) {
+      const shpKey = `Shp_${key}`;
+      fields[shpKey] = String(value).trim();
+      shpEntries.push([shpKey, String(value).trim()]);
+    }
+  }
+
+  // Sort Shp_* parameters alphabetically by key name
+  shpEntries.sort(([keyA], [keyB]) => keyA.localeCompare(keyB, undefined, { sensitivity: 'case' }));
+
+  // Validate: all Shp_* params must appear exactly once
+  const shpKeysInFields = Object.keys(fields).filter(k => k.startsWith('Shp_'));
+  if (shpKeysInFields.length !== shpEntries.length) {
+    errors.push(`Shp_* parameter count mismatch: ${shpKeysInFields.length} in fields, ${shpEntries.length} in entries`);
+  }
+
+  // Process Receipt if provided
+  let receiptEncoded: string | undefined;
+  if (params.receipt) {
+    // Serialize Receipt JSON deterministically (sorted keys)
+    const receiptJson = JSON.stringify(params.receipt, (key, value) => {
+      if (value && typeof value === 'object' && !Array.isArray(value)) {
+        return Object.keys(value).sort().reduce((acc, k) => {
+          acc[k] = value[k];
+          return acc;
+        }, {} as any);
+      }
+      return value;
+    });
+    // URL-encode ONCE - this exact value will be used in BOTH form field AND signature
+    receiptEncoded = encodeURIComponent(receiptJson);
+    fields.Receipt = receiptEncoded;
+  }
+
+  // Add Recurring if requested (NOT included in signature per Robokassa docs)
+  if (params.recurring === true) {
+    fields.Recurring = 'true';
+  }
+
+  // Add IsTest if test mode (NOT included in signature)
+  if (params.isTest === true) {
+    fields.IsTest = '1';
+  }
+
+  // ========== BUILD SIGNATURE ==========
+  
+  // Signature format:
+  // WITHOUT Receipt: MerchantLogin:OutSum:InvId:Password1:Shp_key=value...
+  // WITH Receipt: MerchantLogin:OutSum:InvId:Receipt:Password1:Shp_key=value...
+  
+  const signatureParts: string[] = [
+    merchantLogin,
+    outSum,
+    invId,
+  ];
+
+  // Add Receipt BEFORE Password1 if present
+  let variant: 'with-receipt' | 'without-receipt' = 'without-receipt';
+  if (receiptEncoded) {
+    signatureParts.push(receiptEncoded); // SAME encoded value as in form field
+    variant = 'with-receipt';
+    
+    // Validate: Receipt in signature must match Receipt in form
+    if (fields.Receipt !== receiptEncoded) {
+      errors.push('Receipt encoding mismatch: form field and signature must use the same encoded value');
+    }
+  }
+
+  // Add Password1
+  signatureParts.push(password1);
+
+  // Add Shp_* parameters AFTER Password1 (sorted)
+  const shpParamsForSignature: string[] = shpEntries.map(([key, value]) => `${key}=${value}`);
+  if (shpParamsForSignature.length > 0) {
+    signatureParts.push(...shpParamsForSignature);
+    
+    // Validate: Shp_* params are sorted
+    const isSorted = shpParamsForSignature.every((param, index) => {
+      if (index === 0) return true;
+      const prevKey = shpParamsForSignature[index - 1].split('=')[0];
+      const currKey = param.split('=')[0];
+      return prevKey.localeCompare(currKey, undefined, { sensitivity: 'case' }) <= 0;
+    });
+    if (!isSorted) {
+      errors.push('Shp_* parameters must be sorted alphabetically by key name');
+    }
+  }
+
+  // Calculate signature
+  const signatureBaseStringRaw = signatureParts.join(':');
+  const signatureBaseString = signatureParts.map(p => 
+    p === password1 ? '[PASSWORD1_HIDDEN]' : p
+  ).join(':');
+  const signatureValue = calculateSignature(...signatureParts);
+
+  // Validate signature format
+  if (!/^[0-9a-f]{32}$/.test(signatureValue)) {
+    errors.push(`SignatureValue must be 32-character lowercase hex MD5, got: "${signatureValue}"`);
+  }
+
+  // Add SignatureValue to form fields
+  fields.SignatureValue = signatureValue;
+
+  // Final validation check
+  if (errors.length > 0) {
+    throw new Error(`Robokassa form validation failed:\n${errors.join('\n')}\nSignature base (masked): ${signatureBaseString}`);
+  }
+
+  return {
+    fields,
+    signature: {
+      value: signatureValue,
+      baseString: signatureBaseString,
+      baseStringRaw: signatureBaseStringRaw, // For internal use only, never log this
+      parts: signatureParts.map(p => p === password1 ? '[PASSWORD1_HIDDEN]' : p),
+      variant,
+    },
+    validation: {
+      passed: errors.length === 0,
+      errors,
+      warnings,
+    },
+  };
+}
+
+/**
  * Generate safe InvId (digits only, <= 2_000_000_000)
  * Format: timestamp_seconds + random_4_digits
  * Returns as string (digits only) for consistency

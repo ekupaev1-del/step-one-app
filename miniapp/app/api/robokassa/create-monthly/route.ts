@@ -1,10 +1,8 @@
 import { NextResponse } from 'next/server';
 import { createClient } from '@supabase/supabase-js';
 import {
-  generateReceipt,
-  generatePaymentForm,
+  buildRobokassaForm,
   generateSafeInvId,
-  PaymentMode,
 } from '../../../../lib/robokassa';
 import { getRobokassaConfig } from '../../../../lib/robokassaConfig';
 
@@ -141,7 +139,7 @@ export async function POST(req: Request) {
       }, { status: 500 });
     }
 
-    // Payment amount: 199.00 RUB
+    // Payment amount: 199.00 RUB (always 2 decimals as string)
     const outSum = '199.00';
     const description = 'Monthly subscription';
 
@@ -149,31 +147,34 @@ export async function POST(req: Request) {
     debug.description = description;
     debug.stage = 'generate_form';
 
-    // Determine payment mode
-    // For now, use 'minimal' (no Receipt, no Recurring) for simple one-time payment
-    // If FEATURE_RECURRING is enabled, we can use 'recurring' mode later
-    const mode: PaymentMode = featureRecurring ? 'recurring' : 'minimal';
-
-    // Generate Receipt only if recurring mode
-    let receipt = undefined;
-    if (mode === 'recurring') {
-      receipt = generateReceipt(199.00, description);
+    // Build form using canonical builder (NO Receipt, NO Recurring for one-time payment)
+    let formResult;
+    try {
+      formResult = buildRobokassaForm({
+        merchantLogin: config.merchantLogin,
+        password1: config.pass1,
+        outSum: outSum,
+        invId: invId,
+        description: description,
+        recurring: false, // One-time payment, no recurring
+        shpParams: {
+          userId: String(telegramUserId),
+        },
+        isTest: config.isTest,
+      });
+    } catch (validationError: any) {
+      console.error('[robokassa/create-monthly] ❌ Form validation failed:', validationError.message);
+      return NextResponse.json({
+        ok: false,
+        stage: 'generate_form',
+        message: 'Payment form validation failed',
+        error: validationError.message,
+        debug,
+      }, { status: 400 });
     }
 
-    // Generate payment form
-    const { html, debug: formDebug } = generatePaymentForm(
-      config,
-      outSum,
-      invId,
-      description,
-      mode,
-      receipt,
-      telegramUserId,
-      false // Production mode - auto-submit
-    );
-
     // CRITICAL: Server-side logging before returning form
-    const finalFormFields = formDebug.finalFormFields || {};
+    const finalFormFields = formResult.fields;
     const shpParams: string[] = [];
     for (const [key, value] of Object.entries(finalFormFields)) {
       if (key.startsWith('Shp_')) {
@@ -187,20 +188,47 @@ export async function POST(req: Request) {
     console.log('[robokassa/create-monthly] OutSum:', outSum);
     console.log('[robokassa/create-monthly] InvId:', invId);
     console.log('[robokassa/create-monthly] Description:', description);
-    console.log('[robokassa/create-monthly] HasReceipt:', !!receipt);
-    console.log('[robokassa/create-monthly] ReceiptLength:', formDebug.receiptEncodedLength || 0);
+    console.log('[robokassa/create-monthly] HasReceipt: false (one-time payment)');
     console.log('[robokassa/create-monthly] ShpParams:', shpParams);
-    console.log('[robokassa/create-monthly] SignatureString (masked):', formDebug.exactSignatureStringMasked);
+    console.log('[robokassa/create-monthly] SignatureString (masked):', formResult.signature.baseString);
+    console.log('[robokassa/create-monthly] SignatureValue:', formResult.signature.value);
     console.log('[robokassa/create-monthly] FormFields keys:', Object.keys(finalFormFields));
-    console.log('[robokassa/create-monthly] FormFields (no passwords):', 
-      Object.fromEntries(
-        Object.entries(finalFormFields).map(([k, v]) => [
-          k,
-          k === 'SignatureValue' ? `${String(v).substring(0, 8)}...` : v
-        ])
-      )
-    );
+    console.log('[robokassa/create-monthly] Validation passed:', formResult.validation.passed);
+    if (formResult.validation.warnings.length > 0) {
+      console.warn('[robokassa/create-monthly] Warnings:', formResult.validation.warnings);
+    }
     console.log('[robokassa/create-monthly] =========================================');
+
+    // Generate HTML form for auto-submit
+    const baseUrl = 'https://auth.robokassa.ru/Merchant/Index.aspx';
+    const formInputs = Object.entries(finalFormFields)
+      .map(([name, value]) => {
+        const escapedValue = value
+          .replace(/&/g, '&amp;')
+          .replace(/</g, '&lt;')
+          .replace(/>/g, '&gt;')
+          .replace(/"/g, '&quot;')
+          .replace(/'/g, '&#39;');
+        return `    <input type="hidden" name="${name}" value="${escapedValue}">`;
+      })
+      .join('\n');
+    
+    const html = `<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Robokassa Payment</title>
+</head>
+<body>
+  <form id="robokassa-form" method="POST" action="${baseUrl}">
+${formInputs}
+  </form>
+  <script>
+    document.getElementById('robokassa-form').submit();
+  </script>
+</body>
+</html>`;
 
     // Store payment attempt in DB (non-blocking)
     debug.stage = 'store_payment';
@@ -214,7 +242,7 @@ export async function POST(req: Request) {
           invoice_id: invId, // Same as inv_id
           amount: parseFloat(outSum),
           out_sum: parseFloat(outSum),
-          mode: mode,
+          mode: 'minimal', // One-time payment
           status: 'created',
           description: description,
         });
@@ -232,68 +260,42 @@ export async function POST(req: Request) {
 
     debug.stage = 'success';
 
-    // Единый информативный debug объект (такой же формат как в create-trial)
+    // Unified debug object
     const unifiedDebug = {
-      // Подпись (самое важное для Error 29)
       signature: {
-        value: formDebug.signatureValue || 'N/A',
-        length: formDebug.signatureValue?.length || 0,
-        isValid: formDebug.signatureValue ? /^[0-9a-f]{32}$/.test(formDebug.signatureValue) : false,
-        stringMasked: formDebug.exactSignatureStringMasked || 'N/A',
-        stringLength: formDebug.exactSignatureString?.length || formDebug.exactSignatureStringMasked?.length || 0,
-        parts: formDebug.signatureParts?.map((p: any) => String(p)) || [],
+        value: formResult.signature.value,
+        length: formResult.signature.value.length,
+        isValid: /^[0-9a-f]{32}$/.test(formResult.signature.value),
+        stringMasked: formResult.signature.baseString,
+        stringLength: formResult.signature.baseStringRaw.length,
+        parts: formResult.signature.parts,
+        variant: formResult.signature.variant,
       },
-      
-      // Параметры платежа
       payment: {
         merchantLogin: config.merchantLogin,
         merchantLoginCorrect: config.merchantLogin === 'steopone',
         outSum: outSum,
         outSumFormat: outSum === '199.00',
         invId: invId,
-        invIdValid: (() => {
-          const invIdNum = parseInt(invId, 10);
-          return invIdNum > 0 && invIdNum <= 2000000000;
-        })(),
+        invIdValid: /^\d+$/.test(invId) && parseInt(invId, 10) > 0 && parseInt(invId, 10) <= 2000000000,
         description: description,
-        mode: mode,
         isTest: config.isTest,
         hasIsTestInForm: 'IsTest' in finalFormFields,
       },
-      
-      // Shp_* параметры
       shpParams: {
         list: shpParams,
         sorted: JSON.stringify(shpParams) === JSON.stringify([...shpParams].sort()),
         count: shpParams.length,
       },
-      
-      // Receipt (если есть)
       receipt: {
-        present: !!receipt,
-        encodedLength: formDebug.receiptEncodedLength || 0,
-        inSignature: formDebug.includeReceiptInSignature || false,
-        json: receipt ? JSON.stringify(receipt) : null,
-        encoded: finalFormFields.Receipt || null,
+        present: false, // One-time payment, no receipt
+        encodedLength: 0,
+        inSignature: false,
+        json: null,
+        encoded: null,
       },
-      
-      // Поля формы (что реально отправляется)
       formFields: finalFormFields,
-      
-      // Проверки валидности
-      validation: {
-        merchantLoginCorrect: config.merchantLogin === 'steopone',
-        outSumFormat: outSum === '199.00',
-        invIdValid: (() => {
-          const invIdNum = parseInt(invId, 10);
-          return invIdNum > 0 && invIdNum <= 2000000000;
-        })(),
-        signatureFormat: formDebug.signatureValue ? /^[0-9a-f]{32}$/.test(formDebug.signatureValue) : false,
-        shpParamsSorted: JSON.stringify(shpParams) === JSON.stringify([...shpParams].sort()),
-        receiptConsistent: true, // For minimal mode, no receipt
-      },
-      
-      // Метаданные
+      validation: formResult.validation,
       meta: {
         timestamp: new Date().toISOString(),
         stage: 'success',
@@ -304,7 +306,7 @@ export async function POST(req: Request) {
     return NextResponse.json({
       ok: true,
       html, // HTML form for auto-submit
-      paymentUrl: 'https://auth.robokassa.ru/Merchant/Index.aspx',
+      paymentUrl: baseUrl,
       fields: finalFormFields, // Form fields for manual form creation
       debug: unifiedDebug,
     });
