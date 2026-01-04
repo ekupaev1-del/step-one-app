@@ -103,23 +103,19 @@ export default function SubscriptionClient() {
         // Store HTML for later submission
         setPaymentHtml(data.html);
         
-        // If debug mode, show debug first, then user can continue
-        if (debugMode) {
-          setShowDebugBeforeSubmit(true);
-          return;
-        }
-        
-        // If not debug mode but debug info exists, show it briefly then submit
+        // Always show debug if it exists, then user can continue
         if (data.debug) {
+          setDebugInfo(data.debug);
           setShowDebugBeforeSubmit(true);
-          // Auto-submit after 3 seconds if user doesn't interact
+          
+          // Auto-submit after 5 seconds if user doesn't interact
           setTimeout(() => {
-            if (paymentHtml) {
+            if (data.html) {
               document.open();
-              document.write(paymentHtml);
+              document.write(data.html);
               document.close();
             }
-          }, 3000);
+          }, 5000);
           return;
         }
         
