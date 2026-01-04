@@ -2056,6 +2056,17 @@ ${formInputs}
   // Extract receipt info from formResult
   const receiptJson = formResult.fields.Receipt ? decodeURIComponent(formResult.fields.Receipt) : null;
   
+  // Extract Shp_* params from finalFields
+  const shpRaw: Record<string, string> = {};
+  const shpSortedList: string[] = [];
+  for (const [key, value] of Object.entries(formResult.fields)) {
+    if (key.startsWith('Shp_')) {
+      shpRaw[key] = String(value);
+      shpSortedList.push(`${key}=${String(value).trim()}`);
+    }
+  }
+  shpSortedList.sort(); // Lexicographic sort
+  
   const debug = {
     version: 'robokassa-v3',
     timestamp: new Date().toISOString(),
@@ -2068,6 +2079,10 @@ ${formInputs}
       description: description.substring(0, 128),
       hasRecurring: formResult.debug.hasRecurringInFinalFields,
       recurringValue: formResult.fields.Recurring || 'false',
+      shp: {
+        raw: shpRaw,
+        sortedList: shpSortedList,
+      },
       receipt: {
         enabled: formResult.debug.receiptEnabled,
         rawJson: receiptJson,
