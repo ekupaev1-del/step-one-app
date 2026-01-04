@@ -1794,38 +1794,37 @@ export function createParentRecurringPaymentForm(
     throw new Error(`Invalid telegramUserId: ${telegramUserId}`);
   }
   
-  // ========== CHECK RECEIPT ENABLED ==========
-  // Receipt is OPTIONAL, controlled by ROBOKASSA_USE_RECEIPT env flag (default false)
-  const receiptEnabled = process.env.ROBOKASSA_USE_RECEIPT === 'true';
+  // ========== GENERATE RECEIPT ==========
+  // CRITICAL: Receipt is ALWAYS generated for this project (self-employed, sno="npd")
+  // Receipt is MANDATORY for all payments
+  const receipt = generateReceipt(parseFloat(outSum), description);
   
-  // ========== GENERATE RECEIPT (if enabled) ==========
-  let receiptJson: string | null = null;
-  let receiptEncoded: string | null = null;
+  // CRITICAL: Verify sno is set to "npd"
+  if (receipt.sno !== 'npd') {
+    throw new Error(`CRITICAL: Receipt sno must be "npd" but got "${receipt.sno}". Check generateReceipt function.`);
+  }
   
-  if (receiptEnabled) {
-    const receipt = generateReceipt(parseFloat(outSum), description);
-    
-    // Serialize Receipt JSON deterministically (sorted keys for consistent output)
-    receiptJson = JSON.stringify(receipt, (key, value) => {
-      if (value && typeof value === 'object' && !Array.isArray(value)) {
-        return Object.keys(value).sort().reduce((acc, k) => {
-          acc[k] = value[k];
-          return acc;
-        }, {} as any);
-      }
-      return value;
-    });
-    
-    // URL-encode ONCE - this exact value will be used in BOTH form field AND signature
-    receiptEncoded = encodeURIComponent(receiptJson);
-    
-    if (typeof window === 'undefined') {
-      console.log('[robokassa] Receipt enabled, encoded length:', receiptEncoded.length);
+  // Serialize Receipt JSON deterministically (sorted keys for consistent output)
+  const receiptJson = JSON.stringify(receipt, (key, value) => {
+    if (value && typeof value === 'object' && !Array.isArray(value)) {
+      return Object.keys(value).sort().reduce((acc, k) => {
+        acc[k] = value[k];
+        return acc;
+      }, {} as any);
     }
-  } else {
-    if (typeof window === 'undefined') {
-      console.log('[robokassa] Receipt disabled (ROBOKASSA_USE_RECEIPT=false)');
-    }
+    return value;
+  });
+  
+  // URL-encode ONCE - this exact value will be used in BOTH form field AND signature
+  const receiptEncoded = encodeURIComponent(receiptJson);
+  
+  // CRITICAL: Receipt must be non-empty
+  if (!receiptEncoded || receiptEncoded.length === 0) {
+    throw new Error('CRITICAL: Receipt encoded is empty! This will cause Error 29.');
+  }
+  
+  if (typeof window === 'undefined') {
+    console.log('[robokassa] Receipt generated (sno=npd), encoded length:', receiptEncoded.length);
   }
   
   // ========== BUILD FORM FIELDS ==========
@@ -1841,10 +1840,8 @@ export function createParentRecurringPaymentForm(
     Shp_userId: String(telegramUserId),
   };
   
-  // Add Receipt if enabled
-  if (receiptEncoded) {
-    fields.Receipt = receiptEncoded;
-  }
+  // CRITICAL: Receipt MUST be added to fields (always generated with sno=npd)
+  fields.Receipt = receiptEncoded;
   
   // Add IsTest if test mode (NOT in signature)
   if (config.isTest) {
@@ -1879,10 +1876,8 @@ export function createParentRecurringPaymentForm(
     invoiceId, // Use InvId value (same as form field InvId)
   ];
   
-  // CRITICAL: Add Receipt BEFORE Password1 if present
-  if (receiptEncoded) {
-    signatureParts.push(receiptEncoded); // SAME encoded value as in form field
-  }
+  // CRITICAL: Add Receipt BEFORE Password1 (always present)
+  signatureParts.push(receiptEncoded); // SAME encoded value as in form field
   
   // Add Password1 AFTER Receipt (if present) or after InvId
   signatureParts.push(password1);
@@ -1920,17 +1915,15 @@ export function createParentRecurringPaymentForm(
   if (!fields.Recurring || fields.Recurring !== 'true') {
     throw new Error(`CRITICAL: Recurring field must be "true", got: "${fields.Recurring}"`);
   }
-  // CRITICAL: If Receipt is enabled, it MUST be in form and signature
-  if (receiptEnabled) {
-    if (!fields.Receipt || fields.Receipt.length === 0) {
-      throw new Error('CRITICAL: Receipt is enabled but missing or empty in form fields!');
-    }
-    if (!receiptEncoded || !signatureParts.includes(receiptEncoded)) {
-      throw new Error('CRITICAL: Receipt is enabled but not included in signature!');
-    }
-    if (fields.Receipt !== receiptEncoded) {
-      throw new Error('CRITICAL: Receipt in form does not match receiptEncoded!');
-    }
+  // CRITICAL: Receipt MUST be in form and signature (always required)
+  if (!fields.Receipt || fields.Receipt.length === 0) {
+    throw new Error('CRITICAL: Receipt is MANDATORY but missing or empty in form fields!');
+  }
+  if (!receiptEncoded || !signatureParts.includes(receiptEncoded)) {
+    throw new Error('CRITICAL: Receipt is MANDATORY but not included in signature!');
+  }
+  if (fields.Receipt !== receiptEncoded) {
+    throw new Error('CRITICAL: Receipt in form does not match receiptEncoded!');
   }
   // Validate signature uses InvId (same value as form field)
   const invIdIndex = 2; // MerchantLogin:OutSum:InvId[:Receipt]:Password1
@@ -1964,7 +1957,7 @@ export function createParentRecurringPaymentForm(
     'InvId',
     'Description',
     'Recurring',
-    ...(receiptEncoded ? ['Receipt'] : []),
+    'Receipt', // CRITICAL: Receipt is always present
     ...Object.keys(fields).filter(k => k.startsWith('Shp_')),
     'SignatureValue',
     ...(config.isTest ? ['IsTest'] : []),
@@ -2026,10 +2019,10 @@ ${formInputs}
         sortedList: shpParams,
       },
       receipt: {
-        enabled: receiptEnabled,
+        enabled: true, // CRITICAL: Receipt is always enabled (sno=npd)
         rawJson: receiptJson,
         encoded: receiptEncoded,
-        encodedLength: receiptEncoded ? receiptEncoded.length : 0,
+        encodedLength: receiptEncoded.length,
       },
       signature: {
         algo: 'MD5',
@@ -2047,10 +2040,11 @@ ${formInputs}
     env: {
       vercelEnv: process.env.VERCEL_ENV || 'not-set',
       nodeEnv: process.env.NODE_ENV || 'not-set',
-      receiptEnabled,
+      receiptEnabled: true, // CRITICAL: Always enabled (sno=npd)
       pass1Len,
       pass1Prefix2,
       pass1Suffix2,
+      buildId: process.env.NEXT_PUBLIC_VERCEL_GIT_COMMIT_SHA?.substring(0, 7) || 'not-set',
     },
   };
   
@@ -2060,18 +2054,17 @@ ${formInputs}
     console.log('[robokassa] ========== PARENT RECURRING PAYMENT FORM ==========');
     console.log('[robokassa] Target URL:', actionUrl);
     console.log('[robokassa] Mode: recurring-mother');
-    console.log('[robokassa] Receipt enabled:', receiptEnabled);
+    console.log('[robokassa] Receipt enabled: true (always, sno=npd)');
     console.log('[robokassa] ========== VERIFICATION CHECKLIST ==========');
     console.log('[robokassa] ✅ Form includes InvId (NOT InvoiceID):', 'InvId' in fields && !('InvoiceID' in fields));
     console.log('[robokassa] ✅ Form includes Recurring=true:', fields.Recurring === 'true');
+    console.log('[robokassa] ✅ Receipt in form:', 'Receipt' in fields);
+    console.log('[robokassa] ✅ Receipt in signature:', signatureParts.includes(receiptEncoded));
+    console.log('[robokassa] ✅ Receipt encoded length:', receiptEncoded.length, '(must be > 0)');
     console.log('[robokassa] ✅ Signature string uses InvId:', signatureParts[2] === fields.InvId);
     console.log('[robokassa] ✅ Shp_userId in form:', 'Shp_userId' in fields);
     console.log('[robokassa] ✅ Shp_userId in signature:', shpParams.some(p => p.startsWith('Shp_userId=')));
     console.log('[robokassa] ✅ SignatureValue is lowercase hex 32 chars:', debug.robokassa.signature.isHex32);
-    if (receiptEnabled) {
-      console.log('[robokassa] ✅ Receipt in form:', 'Receipt' in fields);
-      console.log('[robokassa] ✅ Receipt in signature:', receiptEncoded ? signatureParts.includes(receiptEncoded) : false);
-    }
     console.log('[robokassa] ===================================================');
     console.log('[robokassa] Signature (masked):', signatureBaseMasked);
     console.log('[robokassa] Signature value:', signatureValue);

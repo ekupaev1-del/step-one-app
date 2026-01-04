@@ -39,22 +39,23 @@ const MINIAPP_BASE_URL =
  * @returns Объект reply_markup с клавиатурой
  */
 function getMainMenuKeyboard(userId: number | null = null): any {
-  // ВАЖНО: Используем ТОЛЬКО production URL для стабильности
-  // Preview деплои создают разные домены - это ломает web_app URLs в Telegram
-  const baseUrl = (MINIAPP_BASE_URL || "https://step-one-app-emins-projects-4717eabc.vercel.app").trim().replace(/\/$/, '');
+  // CRITICAL: Always use stable production domain from MINIAPP_BASE_URL env var
+  // Never use preview domains - they break Telegram web_app URLs
+  const productionDomain = "https://step-one-app-emins-projects-4717eabc.vercel.app";
+  const baseUrl = (MINIAPP_BASE_URL || productionDomain).trim().replace(/\/$/, '');
   
-  // КРИТИЧЕСКАЯ ПРОВЕРКА: Убеждаемся что используем production домен
-  const isProductionDomain = baseUrl.includes("step-one-app-emins-projects-4717eabc.vercel.app");
-  if (!isProductionDomain) {
-    console.error("[getMainMenuKeyboard] ⚠️ ВНИМАНИЕ: Используется НЕ production домен!");
-    console.error("[getMainMenuKeyboard] Текущий URL:", baseUrl);
-    console.error("[getMainMenuKeyboard] Ожидаемый production:", "step-one-app-emins-projects-4717eabc.vercel.app");
+  // CRITICAL: Force production domain - ignore preview domains
+  let finalBaseUrl = baseUrl;
+  if (!baseUrl.includes("step-one-app-emins-projects-4717eabc.vercel.app")) {
+    console.warn("[getMainMenuKeyboard] ⚠️ Non-production domain detected, using production:", baseUrl);
+    finalBaseUrl = productionDomain;
   }
   
-  // ВАЖНО: URL должны быть правильными - /profile и /report (не /reports!)
-  const reportUrl = userId ? `${baseUrl}/report?id=${userId}` : undefined;
-  const profileUrl = userId ? `${baseUrl}/profile?id=${userId}` : undefined;
-  const subscriptionUrl = userId ? `${baseUrl}/subscription?id=${userId}` : undefined;
+  // CRITICAL: Use finalBaseUrl (always production domain)
+  // URLs must be correct: /profile, /report (not /reports!)
+  const reportUrl = userId ? `${finalBaseUrl}/report?id=${userId}` : undefined;
+  const profileUrl = userId ? `${finalBaseUrl}/profile?id=${userId}` : undefined;
+  const subscriptionUrl = userId ? `${finalBaseUrl}/subscription?id=${userId}` : undefined;
 
   // ЕДИНСТВЕННОЕ правильное меню - 5 кнопок с правильными URL
   // Кнопки с web_app открывают Mini App напрямую
@@ -80,9 +81,9 @@ function getMainMenuKeyboard(userId: number | null = null): any {
     one_time_keyboard: false
   };
 
-  // Логируем для отладки
+  // Log for debugging
   console.log("[getMainMenuKeyboard] userId:", userId);
-  console.log("[getMainMenuKeyboard] baseUrl:", baseUrl);
+  console.log("[getMainMenuKeyboard] finalBaseUrl (production):", finalBaseUrl);
   console.log("[getMainMenuKeyboard] reportUrl:", reportUrl);
 
   return keyboard;

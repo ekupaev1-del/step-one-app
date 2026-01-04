@@ -191,6 +191,18 @@ export default function PaymentDebugModal({ debugInfo, onClose, errorMessage }: 
                     </span>
                     <span>SignatureValue is lowercase hex 32 chars</span>
                   </div>
+                  <div className="flex items-center gap-2">
+                    <span className={robokassa?.receipt?.enabled && (robokassa?.receipt?.encodedLength || 0) > 0 ? 'text-green-600' : 'text-red-600'}>
+                      {robokassa?.receipt?.enabled && (robokassa?.receipt?.encodedLength || 0) > 0 ? '✅' : '❌'}
+                    </span>
+                    <span>Receipt enabled and included in form (sno=npd)</span>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <span className={robokassa?.signature?.signatureStringMasked?.includes(robokassa?.receipt?.encoded || '') ? 'text-green-600' : 'text-red-600'}>
+                      {robokassa?.signature?.signatureStringMasked?.includes(robokassa?.receipt?.encoded || '') ? '✅' : '❌'}
+                    </span>
+                    <span>Receipt included in signature string</span>
+                  </div>
                 </div>
               </div>
 
@@ -267,14 +279,31 @@ export default function PaymentDebugModal({ debugInfo, onClose, errorMessage }: 
                 {robokassa?.receipt?.enabled !== undefined && (
                   <div>
                     <span className="text-gray-600 font-medium">Receipt Enabled:</span>
-                    <div className={`mt-1 ${robokassa.receipt.enabled ? 'text-green-600' : 'text-gray-600'}`}>
-                      {robokassa.receipt.enabled ? 'Yes' : 'No'}
+                    <div className={`mt-1 ${robokassa.receipt.enabled ? 'text-green-600' : 'text-red-600'}`}>
+                      {robokassa.receipt.enabled ? '✅ Yes (sno=npd)' : '❌ No (ERROR!)'}
                     </div>
-                    {robokassa.receipt.enabled && robokassa.receipt.encodedLength !== undefined && (
-                      <div className="text-sm text-gray-500 mt-1">
-                        Encoded length: {robokassa.receipt.encodedLength} chars
+                    {robokassa.receipt.encodedLength !== undefined && (
+                      <div className={`text-sm mt-1 ${robokassa.receipt.encodedLength > 0 ? 'text-green-600' : 'text-red-600'}`}>
+                        Encoded length: {robokassa.receipt.encodedLength} chars {robokassa.receipt.encodedLength > 0 ? '✅' : '❌'}
                       </div>
                     )}
+                  </div>
+                )}
+
+                {/* Env Fingerprint */}
+                {debugInfo.env && (
+                  <div className="mt-4">
+                    <span className="text-gray-600 font-medium">Environment:</span>
+                    <div className="text-sm text-gray-700 mt-1 space-y-1">
+                      <div>Vercel Env: {debugInfo.env.vercelEnv}</div>
+                      <div>Node Env: {debugInfo.env.nodeEnv}</div>
+                      {debugInfo.env.pass1Prefix2 && (
+                        <div>Pass1: {debugInfo.env.pass1Prefix2}...{debugInfo.env.pass1Suffix2} (len: {debugInfo.env.pass1Len})</div>
+                      )}
+                      {debugInfo.env.buildId && (
+                        <div>Build ID: {debugInfo.env.buildId}</div>
+                      )}
+                    </div>
                   </div>
                 )}
 
