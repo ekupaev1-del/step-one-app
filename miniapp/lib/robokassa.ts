@@ -1697,12 +1697,13 @@ export function generateSafeInvId(): string {
  * 
  * Per Robokassa official docs:
  * - POST to https://auth.robokassa.ru/Merchant/Index.aspx
- * - Fields: MerchantLogin, InvoiceID, Description, SignatureValue, OutSum, Recurring=true, Shp_userId
+ * - Fields: MerchantLogin, InvId, Description, SignatureValue, OutSum, Recurring=true, Shp_userId
  * - NO Receipt for now
- * - Signature: MD5(MerchantLogin:OutSum:InvoiceID:Password1:Shp_userId=...)
+ * - Signature: MD5(MerchantLogin:OutSum:InvId:Password1:Shp_userId=...)
+ * - CRITICAL: For Index.aspx, use InvId (NOT InvoiceID). InvoiceID is only for Merchant/Recurring endpoint.
  * 
  * @param config - Robokassa configuration
- * @param invoiceId - InvoiceID as string (digits only, positive, non-zero)
+ * @param invoiceId - InvId value as string (digits only, positive, non-zero). Will be used as InvId field in form.
  * @param outSum - Payment amount as string with 2 decimals (e.g., "1.00")
  * @param description - Payment description (ASCII, max 128 chars)
  * @param telegramUserId - Telegram user ID (for Shp_userId)
@@ -1766,9 +1767,11 @@ export function createParentRecurringPaymentForm(
   
   // ========== BUILD FORM FIELDS ==========
   
+  // CRITICAL: For Index.aspx, Robokassa requires InvId (NOT InvoiceID)
+  // InvoiceID is only used for Merchant/Recurring endpoint
   const fields: Record<string, string> = {
     MerchantLogin: config.merchantLogin.trim(),
-    InvoiceID: invoiceId, // CRITICAL: Use InvoiceID (not InvId) for recurring
+    InvId: invoiceId, // CRITICAL: Use InvId (not InvoiceID) for Index.aspx
     OutSum: outSum,
     Description: description.substring(0, 128),
     Recurring: 'true', // CRITICAL: Recurring=true for parent payment
@@ -1782,7 +1785,8 @@ export function createParentRecurringPaymentForm(
   
   // ========== BUILD SIGNATURE ==========
   
-  // Signature format: MerchantLogin:OutSum:InvoiceID:Password1:Shp_userId=...
+  // Signature format: MerchantLogin:OutSum:InvId:Password1:Shp_userId=...
+  // CRITICAL: Use InvId (same as form field) in signature, NOT InvoiceID
   // Shp_* params must be sorted alphabetically and appended AFTER Password1
   const merchantLogin = config.merchantLogin.trim();
   const password1 = config.pass1.trim();
@@ -1800,7 +1804,7 @@ export function createParentRecurringPaymentForm(
   const signatureParts: string[] = [
     merchantLogin,
     outSum,
-    invoiceId, // Use InvoiceID in signature
+    invoiceId, // Use InvId value (same as form field InvId)
     password1,
   ];
   
@@ -1820,6 +1824,22 @@ export function createParentRecurringPaymentForm(
   // Validate signature format
   if (!/^[0-9a-f]{32}$/.test(signatureValue)) {
     throw new Error(`Invalid signature format: ${signatureValue} (must be 32-char lowercase hex)`);
+  }
+  
+  // ========== RUNTIME VALIDATION ==========
+  // CRITICAL: Ensure InvId is present and InvoiceID is NOT present for Index.aspx
+  if (!fields.InvId || fields.InvId.length === 0) {
+    throw new Error('CRITICAL: InvId is missing in form fields for Index.aspx');
+  }
+  if (!/^\d+$/.test(fields.InvId)) {
+    throw new Error(`CRITICAL: InvId must be digits only, got: ${fields.InvId}`);
+  }
+  if ('InvoiceID' in fields) {
+    throw new Error('CRITICAL: InvoiceID must NOT be present in form fields for Index.aspx (use InvId instead)');
+  }
+  // Validate signature uses InvId (same value as form field)
+  if (signatureParts[2] !== fields.InvId) {
+    throw new Error(`CRITICAL: Signature InvId mismatch: signature uses "${signatureParts[2]}", form uses "${fields.InvId}"`);
   }
   
   // Add SignatureValue to form fields
@@ -1890,13 +1910,21 @@ ${formInputs}
   
   if (typeof window === 'undefined') {
     console.log('[robokassa] ========== PARENT RECURRING PAYMENT FORM ==========');
+    console.log('[robokassa] Target URL: https://auth.robokassa.ru/Merchant/Index.aspx');
     console.log('[robokassa] Signature base (masked):', signatureBaseMasked);
     console.log('[robokassa] Signature value:', signatureValue);
-    console.log('[robokassa] Form fields:', Object.keys(fields));
+    console.log('[robokassa] Form fields:', Object.keys(fields), '(MUST include InvId, NOT InvoiceID for Index.aspx)');
     console.log('[robokassa] MerchantLogin:', merchantLogin);
     console.log('[robokassa] OutSum:', outSum);
-    console.log('[robokassa] InvoiceID:', invoiceId);
+    console.log('[robokassa] InvId:', invoiceId, '(CRITICAL: Using InvId for Index.aspx, NOT InvoiceID)');
     console.log('[robokassa] Shp_userId:', telegramUserId);
+    // Validate: Ensure InvId is present and InvoiceID is NOT present
+    if (!fields.InvId) {
+      console.error('[robokassa] ❌ CRITICAL ERROR: InvId is missing in form fields!');
+    }
+    if (fields.InvoiceID) {
+      console.error('[robokassa] ❌ CRITICAL ERROR: InvoiceID is present in form fields (should be InvId for Index.aspx)!');
+    }
     console.log('[robokassa] ===================================================');
   }
   

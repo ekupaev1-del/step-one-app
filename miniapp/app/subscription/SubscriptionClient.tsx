@@ -288,8 +288,14 @@ export default function SubscriptionClient() {
               )}
               {debugInfo.invoiceId && (
                 <div>
-                  <span className="text-green-400">InvoiceID:</span>
+                  <span className="text-green-400">InvId:</span>
                   <div className="text-gray-300 mt-1">{debugInfo.invoiceId}</div>
+                </div>
+              )}
+              {debugInfo.targetUrl && (
+                <div>
+                  <span className="text-green-400">Target URL:</span>
+                  <div className="text-gray-300 mt-1 break-all">{debugInfo.targetUrl}</div>
                 </div>
               )}
               {debugInfo.formFields && (

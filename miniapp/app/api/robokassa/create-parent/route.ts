@@ -122,9 +122,9 @@ export async function POST(req: Request) {
     try {
       invoiceId = await generateUniqueInvoiceId(supabase);
       debug.invoiceId = invoiceId;
-      console.log('[robokassa/create-parent] Generated InvoiceID:', invoiceId);
+      console.log('[robokassa/create-parent] Generated InvId:', invoiceId, '(will be used as InvId field for Index.aspx)');
     } catch (invoiceIdError: any) {
-      console.error('[robokassa/create-parent] ❌ InvoiceID generation error:', invoiceIdError.message);
+      console.error('[robokassa/create-parent] ❌ InvId generation error:', invoiceIdError.message);
       return NextResponse.json({
         ok: false,
         stage: 'generate_invoice_id',
