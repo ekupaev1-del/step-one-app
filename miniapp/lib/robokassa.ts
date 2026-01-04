@@ -1766,6 +1766,41 @@ export function createParentRecurringPaymentForm(
     throw new Error(`Invalid telegramUserId: ${telegramUserId}`);
   }
   
+  // ========== GENERATE RECEIPT ==========
+  // CRITICAL: For self-employed (sno=npd), Receipt is MANDATORY for ALL payments
+  const snoEnv = process.env.ROBOKASSA_SNO?.trim();
+  const isNPD = snoEnv === 'npd';
+  
+  // Generate Receipt if sno is set (especially for npd)
+  let receiptEncoded: string | undefined = undefined;
+  if (snoEnv) {
+    const receipt = generateReceipt(parseFloat(outSum), description);
+    // Serialize Receipt JSON deterministically (sorted keys for consistent output)
+    const receiptJson = JSON.stringify(receipt, (key, value) => {
+      if (value && typeof value === 'object' && !Array.isArray(value)) {
+        // Sort object keys for deterministic output
+        return Object.keys(value).sort().reduce((acc, k) => {
+          acc[k] = value[k];
+          return acc;
+        }, {} as any);
+      }
+      return value;
+    });
+    // URL-encode ONCE - this exact value will be used in BOTH form field AND signature
+    receiptEncoded = encodeURIComponent(receiptJson);
+    
+    if (typeof window === 'undefined') {
+      console.log('[robokassa] Receipt generated for sno:', snoEnv);
+      console.log('[robokassa] Receipt JSON:', receiptJson);
+      console.log('[robokassa] Receipt encoded length:', receiptEncoded.length);
+    }
+  }
+  
+  // CRITICAL: If sno=npd, Receipt is MANDATORY
+  if (isNPD && !receiptEncoded) {
+    throw new Error('CRITICAL: Receipt is MANDATORY for sno=npd (self-employed). ROBOKASSA_SNO is set to "npd" but Receipt was not generated.');
+  }
+  
   // ========== BUILD FORM FIELDS ==========
   
   // CRITICAL: For Index.aspx, Robokassa requires InvId (NOT InvoiceID)
@@ -1781,6 +1816,11 @@ export function createParentRecurringPaymentForm(
     Shp_userId: String(telegramUserId),
   };
   
+  // Add Receipt if generated (MANDATORY for sno=npd)
+  if (receiptEncoded) {
+    fields.Receipt = receiptEncoded;
+  }
+  
   // Add IsTest if test mode (NOT in signature)
   if (config.isTest) {
     fields.IsTest = '1';
@@ -1788,8 +1828,10 @@ export function createParentRecurringPaymentForm(
   
   // ========== BUILD SIGNATURE ==========
   
-  // Signature format: MerchantLogin:OutSum:InvId:Password1:Shp_userId=...
+  // Signature format WITH Receipt: MerchantLogin:OutSum:InvId:Receipt:Password1:Shp_userId=...
+  // Signature format WITHOUT Receipt: MerchantLogin:OutSum:InvId:Password1:Shp_userId=...
   // CRITICAL: Use InvId (same as form field) in signature, NOT InvoiceID
+  // CRITICAL: Receipt must be included BEFORE Password1 if present
   // Shp_* params must be sorted alphabetically and appended AFTER Password1
   const merchantLogin = config.merchantLogin.trim();
   const password1 = config.pass1.trim();
@@ -1808,8 +1850,15 @@ export function createParentRecurringPaymentForm(
     merchantLogin,
     outSum,
     invoiceId, // Use InvId value (same as form field InvId)
-    password1,
   ];
+  
+  // CRITICAL: Add Receipt BEFORE Password1 if present
+  if (receiptEncoded) {
+    signatureParts.push(receiptEncoded); // SAME encoded value as in form field
+  }
+  
+  // Add Password1 AFTER Receipt (if present) or after InvId
+  signatureParts.push(password1);
   
   // Add Shp_* params AFTER Password1 (sorted)
   if (shpParams.length > 0) {
@@ -1845,9 +1894,22 @@ export function createParentRecurringPaymentForm(
     const formKeys = Object.keys(fields).join(', ');
     throw new Error(`CRITICAL: Recurring field must NOT be present in Index.aspx form! Form fields: ${formKeys}`);
   }
+  // CRITICAL: If sno=npd, Receipt MUST be present in form
+  if (isNPD && !fields.Receipt) {
+    throw new Error('CRITICAL: Receipt is MANDATORY for sno=npd (self-employed) but is missing in form fields!');
+  }
+  // CRITICAL: If Receipt is in form, it MUST be in signature
+  if (fields.Receipt && !receiptEncoded) {
+    throw new Error('CRITICAL: Receipt is present in form but not included in signature!');
+  }
+  // CRITICAL: If Receipt is in signature, it must match form Receipt exactly
+  if (receiptEncoded && fields.Receipt !== receiptEncoded) {
+    throw new Error(`CRITICAL: Receipt mismatch: form has "${fields.Receipt.substring(0, 50)}...", signature has "${receiptEncoded.substring(0, 50)}..."`);
+  }
   // Validate signature uses InvId (same value as form field)
-  if (signatureParts[2] !== fields.InvId) {
-    throw new Error(`CRITICAL: Signature InvId mismatch: signature uses "${signatureParts[2]}", form uses "${fields.InvId}"`);
+  const invIdIndex = 2; // MerchantLogin:OutSum:InvId[:Receipt]:Password1
+  if (signatureParts[invIdIndex] !== fields.InvId) {
+    throw new Error(`CRITICAL: Signature InvId mismatch: signature uses "${signatureParts[invIdIndex]}", form uses "${fields.InvId}"`);
   }
   // Validate OutSum format
   if (!/^\d+(\.\d{2})$/.test(fields.OutSum)) {
@@ -1908,6 +1970,9 @@ ${formInputs}
     formFields: Object.keys(fields), // Field names only
     targetUrl: actionUrl, // Index.aspx
     hasRecurring: 'Recurring' in fields, // CRITICAL: Must be false for Index.aspx
+    receiptPresent: !!receiptEncoded, // CRITICAL: Must be true for sno=npd
+    receiptIncludedInSignature: !!receiptEncoded, // CRITICAL: Must match receiptPresent
+    sno: snoEnv || 'not-set', // SNO value from env
     envCheck: {
       pass1Len,
       pass2Len,
@@ -1933,6 +1998,9 @@ ${formInputs}
     console.log('[robokassa] InvId:', invoiceId, '(CRITICAL: Using InvId for Index.aspx, NOT InvoiceID)');
     console.log('[robokassa] Shp_userId:', telegramUserId);
     console.log('[robokassa] HasRecurring:', 'Recurring' in fields, '(MUST be false for Index.aspx)');
+    console.log('[robokassa] Receipt present:', !!receiptEncoded, '(MANDATORY for sno=npd)');
+    console.log('[robokassa] Receipt in signature:', !!receiptEncoded, '(MUST match receipt present)');
+    console.log('[robokassa] SNO:', snoEnv || 'not-set', '(if "npd", Receipt is mandatory)');
     // Validate: Ensure InvId is present and InvoiceID/Recurring are NOT present
     if (!fields.InvId) {
       console.error('[robokassa] ❌ CRITICAL ERROR: InvId is missing in form fields!');
@@ -1942,6 +2010,12 @@ ${formInputs}
     }
     if (fields.Recurring) {
       console.error('[robokassa] ❌ CRITICAL ERROR: Recurring is present in form fields (causes Error 29! Must be removed for Index.aspx)!');
+    }
+    if (isNPD && !fields.Receipt) {
+      console.error('[robokassa] ❌ CRITICAL ERROR: Receipt is MANDATORY for sno=npd but is missing!');
+    }
+    if (fields.Receipt && !receiptEncoded) {
+      console.error('[robokassa] ❌ CRITICAL ERROR: Receipt is in form but not included in signature!');
     }
     console.log('[robokassa] ===================================================');
   }

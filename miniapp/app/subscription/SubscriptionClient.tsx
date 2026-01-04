@@ -308,6 +308,32 @@ export default function SubscriptionClient() {
                   </div>
                 </div>
               )}
+              {debugInfo.receiptPresent !== undefined && (
+                <div>
+                  <span className={debugInfo.receiptPresent ? "text-green-400" : "text-yellow-400"}>
+                    Receipt Present:
+                  </span>
+                  <div className={debugInfo.receiptPresent ? "text-green-300 mt-1" : "text-yellow-300 mt-1"}>
+                    {debugInfo.receiptPresent ? '✅ YES' : '⚠️ NO' + (debugInfo.sno === 'npd' ? ' (ERROR! Mandatory for sno=npd)' : '')}
+                  </div>
+                </div>
+              )}
+              {debugInfo.receiptIncludedInSignature !== undefined && (
+                <div>
+                  <span className={debugInfo.receiptIncludedInSignature ? "text-green-400" : "text-red-400"}>
+                    Receipt in Signature:
+                  </span>
+                  <div className={debugInfo.receiptIncludedInSignature ? "text-green-300 mt-1" : "text-red-300 mt-1"}>
+                    {debugInfo.receiptIncludedInSignature ? '✅ YES' : '❌ NO (ERROR! Must match receipt present)'}
+                  </div>
+                </div>
+              )}
+              {debugInfo.sno && (
+                <div>
+                  <span className="text-green-400">SNO:</span>
+                  <div className="text-gray-300 mt-1">{debugInfo.sno} {debugInfo.sno === 'npd' && '(self-employed - Receipt mandatory)'}</div>
+                </div>
+              )}
               {debugInfo.formFields && (
                 <div>
                   <span className="text-green-400">Form Fields:</span>
@@ -317,12 +343,11 @@ export default function SubscriptionClient() {
                       ⚠️ WARNING: Recurring field found! This will cause Error 29.
                     </div>
                   )}
-                </div>
-              )}
-              {debugInfo.formFields && (
-                <div>
-                  <span className="text-green-400">Form Fields:</span>
-                  <div className="text-gray-300 mt-1">{debugInfo.formFields.join(', ')}</div>
+                  {debugInfo.sno === 'npd' && !debugInfo.formFields.includes('Receipt') && (
+                    <div className="text-red-300 mt-1 text-xs">
+                      ⚠️ ERROR: Receipt is mandatory for sno=npd but is missing!
+                    </div>
+                  )}
                 </div>
               )}
               {debugInfo.envCheck && (
