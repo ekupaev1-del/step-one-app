@@ -31,6 +31,8 @@ export default function SubscriptionClient() {
   const [error, setError] = useState<string | null>(null);
   const [debugData, setDebugData] = useState<any>(null);
   const [showDebug, setShowDebug] = useState(false);
+  const [showDebugModal, setShowDebugModal] = useState(false);
+  const [paymentData, setPaymentData] = useState<{ url: string; fields: Record<string, string> } | null>(null);
 
   const handleStartTrial = async () => {
     if (!userId || loading) return;
@@ -137,27 +139,15 @@ export default function SubscriptionClient() {
         return;
       }
 
-      // If ok=true → create and submit form
+      // If ok=true → show debug modal first, then submit form
       if (data.paymentUrl && data.fields) {
-        // Create hidden HTML form and auto-submit
-        // This works inside Telegram WebView (miniapp)
-        const form = document.createElement('form');
-        form.method = 'POST';
-        form.action = data.paymentUrl;
-        form.style.display = 'none';
-        
-        // Add all fields as hidden inputs
-        for (const [key, value] of Object.entries(data.fields)) {
-          const input = document.createElement('input');
-          input.type = 'hidden';
-          input.name = key;
-          input.value = String(value);
-          form.appendChild(input);
-        }
-        
-        // Append form to body and submit
-        document.body.appendChild(form);
-        form.submit();
+        // Save payment data for later submission
+        setPaymentData({
+          url: data.paymentUrl,
+          fields: data.fields,
+        });
+        // Show debug modal
+        setShowDebugModal(true);
       } else if (data.html) {
         // Fallback: if HTML is provided (for backward compatibility)
         document.open();
@@ -191,6 +181,70 @@ export default function SubscriptionClient() {
     } finally {
       setLoading(false);
     }
+  };
+
+  const handleCopyDebug = () => {
+    if (!debugData) return;
+    
+    // Формируем минималистичную debug-информацию для Error 29
+    const keyInfo = {
+      timestamp: debugData.timestamp || new Date().toISOString(),
+      merchantLogin: debugData.debug?.merchantLogin || 'N/A',
+      outSum: debugData.debug?.outSum || 'N/A',
+      invId: debugData.debug?.invId || 'N/A',
+      signatureValue: debugData.debug?.signatureValue || 'N/A',
+      signatureBaseStringMasked: debugData.debug?.signatureBaseStringMasked || 'N/A',
+      shpParams: debugData.debug?.shpParams || [],
+      receiptEncodedLen: debugData.debug?.receiptEncodedLen || 0,
+      isTest: debugData.debug?.isTest || false,
+      formFields: paymentData?.fields || {},
+    };
+
+    const text = JSON.stringify(keyInfo, null, 2);
+    
+    navigator.clipboard.writeText(text).then(() => {
+      alert('✅ Debug-информация скопирована в буфер обмена!');
+    }).catch(() => {
+      // Fallback
+      const textarea = document.createElement('textarea');
+      textarea.value = text;
+      textarea.style.position = 'fixed';
+      textarea.style.opacity = '0';
+      document.body.appendChild(textarea);
+      textarea.select();
+      try {
+        document.execCommand('copy');
+        alert('✅ Debug-информация скопирована!');
+      } catch (e) {
+        alert('❌ Не удалось скопировать. Выделите текст вручную.');
+      }
+      document.body.removeChild(textarea);
+    });
+  };
+
+  const handleContinuePayment = () => {
+    if (!paymentData) return;
+    
+    setShowDebugModal(false);
+    
+    // Create hidden HTML form and auto-submit
+    const form = document.createElement('form');
+    form.method = 'POST';
+    form.action = paymentData.url;
+    form.style.display = 'none';
+    
+    // Add all fields as hidden inputs
+    for (const [key, value] of Object.entries(paymentData.fields)) {
+      const input = document.createElement('input');
+      input.type = 'hidden';
+      input.name = key;
+      input.value = String(value);
+      form.appendChild(input);
+    }
+    
+    // Append form to body and submit
+    document.body.appendChild(form);
+    form.submit();
   };
 
   return (
@@ -227,33 +281,85 @@ export default function SubscriptionClient() {
           {loading ? 'Обработка...' : 'Start trial for 1 ₽'}
         </button>
 
-        {/* TEMP DEBUG: Collapsible Debug JSON panel */}
-        {debugData && (
-          <div className="mt-4">
-            <button
-              onClick={() => setShowDebug(!showDebug)}
-              className="w-full bg-gray-800 hover:bg-gray-700 text-white font-semibold py-2 px-4 rounded-lg mb-2 flex items-center justify-between"
-            >
-              <span>🔍 Debug JSON {showDebug ? '(скрыть)' : '(показать)'}</span>
-              <span>{showDebug ? '▲' : '▼'}</span>
-            </button>
-            
-            {showDebug && (
-              <div className="bg-gray-900 rounded-lg p-4">
-                <div className="mb-2">
-                  <p className="text-xs text-gray-400 mb-1">
-                    {debugData.error 
-                      ? '❌ Error Response (ok=false)' 
-                      : debugData.response?.body?.ok 
-                        ? '✅ Success Response (ok=true)' 
-                        : '⚠️ Response Data'}
-                  </p>
-                </div>
-                <pre className="text-xs text-green-400 overflow-auto max-h-96 bg-black p-3 rounded">
-                  {JSON.stringify(debugData, null, 2)}
-                </pre>
+        {/* Debug Modal */}
+        {showDebugModal && debugData && (
+          <div className="fixed inset-0 bg-black/50 flex items-center justify-center p-4 z-50">
+            <div className="bg-white rounded-2xl shadow-xl max-w-lg w-full max-h-[90vh] overflow-hidden flex flex-col">
+              {/* Header */}
+              <div className="bg-gray-900 text-white p-4 flex justify-between items-center">
+                <h2 className="text-lg font-semibold">🔍 Debug информация</h2>
+                <button
+                  onClick={() => setShowDebugModal(false)}
+                  className="text-gray-400 hover:text-white"
+                >
+                  ✕
+                </button>
               </div>
-            )}
+
+              {/* Content */}
+              <div className="p-4 overflow-y-auto flex-1">
+                <div className="space-y-3 text-sm">
+                  <div>
+                    <span className="text-gray-600 font-medium">MerchantLogin:</span>
+                    <span className="ml-2 text-gray-900">{debugData.debug?.merchantLogin || 'N/A'}</span>
+                  </div>
+                  <div>
+                    <span className="text-gray-600 font-medium">OutSum:</span>
+                    <span className="ml-2 text-gray-900">{debugData.debug?.outSum || 'N/A'}</span>
+                  </div>
+                  <div>
+                    <span className="text-gray-600 font-medium">InvId:</span>
+                    <span className="ml-2 text-gray-900">{debugData.debug?.invId || 'N/A'}</span>
+                  </div>
+                  <div>
+                    <span className="text-gray-600 font-medium">SignatureValue:</span>
+                    <span className="ml-2 text-gray-900 font-mono text-xs break-all">
+                      {debugData.debug?.signatureValue || 'N/A'}
+                    </span>
+                  </div>
+                  <div>
+                    <span className="text-gray-600 font-medium">Signature String:</span>
+                    <div className="mt-1 text-gray-700 font-mono text-xs break-all bg-gray-50 p-2 rounded">
+                      {debugData.debug?.signatureBaseStringMasked || 'N/A'}
+                    </div>
+                  </div>
+                  {debugData.debug?.shpParams && debugData.debug.shpParams.length > 0 && (
+                    <div>
+                      <span className="text-gray-600 font-medium">Shp_* параметры:</span>
+                      <div className="mt-1 text-gray-700 text-xs">
+                        {debugData.debug.shpParams.join(', ')}
+                      </div>
+                    </div>
+                  )}
+                  {debugData.debug?.receiptEncodedLen > 0 && (
+                    <div>
+                      <span className="text-gray-600 font-medium">Receipt (encoded):</span>
+                      <span className="ml-2 text-gray-900">Длина: {debugData.debug.receiptEncodedLen}</span>
+                    </div>
+                  )}
+                  <div>
+                    <span className="text-gray-600 font-medium">Test Mode:</span>
+                    <span className="ml-2 text-gray-900">{debugData.debug?.isTest ? 'Да' : 'Нет'}</span>
+                  </div>
+                </div>
+              </div>
+
+              {/* Footer */}
+              <div className="border-t p-4 flex gap-3">
+                <button
+                  onClick={handleCopyDebug}
+                  className="flex-1 bg-gray-900 hover:bg-gray-800 text-white font-medium py-2 px-4 rounded-lg transition-colors"
+                >
+                  📋 Скопировать всё
+                </button>
+                <button
+                  onClick={handleContinuePayment}
+                  className="flex-1 bg-blue-600 hover:bg-blue-700 text-white font-medium py-2 px-4 rounded-lg transition-colors"
+                >
+                  Продолжить оплату
+                </button>
+              </div>
+            </div>
           </div>
         )}
       </div>
