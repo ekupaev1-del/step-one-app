@@ -1654,26 +1654,256 @@ export function buildRobokassaForm(params: {
 }
 
 /**
- * Generate safe InvId (digits only, <= 2_000_000_000)
+ * Generate safe InvoiceID for recurring payments (digits only, <= 2_000_000_000)
  * Format: timestamp_seconds + random_4_digits
  * Returns as string (digits only) for consistency
+ * CRITICAL: For recurring payments, use InvoiceID (not InvId)
  */
-export function generateSafeInvId(): string {
+export function generateSafeInvoiceId(): string {
   // Use seconds since epoch + random 4 digits
   const timestampSeconds = Math.floor(Date.now() / 1000);
   const randomDigits = Math.floor(Math.random() * 9000 + 1000); // 1000-9999
-  const invIdString = `${timestampSeconds}${randomDigits}`;
+  const invoiceIdString = `${timestampSeconds}${randomDigits}`;
   
   // Ensure it's within safe range (Robokassa limit)
-  const maxInvId = 2000000000;
-  const invIdNum = parseInt(invIdString, 10);
+  const maxInvoiceId = 2000000000;
+  const invoiceIdNum = parseInt(invoiceIdString, 10);
   
-  if (invIdNum > maxInvId) {
+  if (invoiceIdNum > maxInvoiceId) {
     // Wrap around if exceeds limit
-    return String(invIdNum % maxInvId);
+    return String(invoiceIdNum % maxInvoiceId);
   }
   
-  return invIdString;
+  // Ensure it's positive and non-zero
+  if (invoiceIdNum <= 0) {
+    return String(Math.floor(Math.random() * 9000000 + 1000000)); // Fallback: 7-8 digits
+  }
+  
+  return invoiceIdString;
+}
+
+/**
+ * Generate safe InvId (digits only, <= 2_000_000_000)
+ * Format: timestamp_seconds + random_4_digits
+ * Returns as string (digits only) for consistency
+ * @deprecated Use generateSafeInvoiceId() for recurring payments
+ */
+export function generateSafeInvId(): string {
+  return generateSafeInvoiceId();
+}
+
+/**
+ * Create parent recurring payment form for Robokassa
+ * 
+ * Per Robokassa official docs:
+ * - POST to https://auth.robokassa.ru/Merchant/Index.aspx
+ * - Fields: MerchantLogin, InvoiceID, Description, SignatureValue, OutSum, Recurring=true, Shp_userId
+ * - NO Receipt for now
+ * - Signature: MD5(MerchantLogin:OutSum:InvoiceID:Password1:Shp_userId=...)
+ * 
+ * @param config - Robokassa configuration
+ * @param invoiceId - InvoiceID as string (digits only, positive, non-zero)
+ * @param outSum - Payment amount as string with 2 decimals (e.g., "1.00")
+ * @param description - Payment description (ASCII, max 128 chars)
+ * @param telegramUserId - Telegram user ID (for Shp_userId)
+ * @returns HTML form and debug info
+ */
+export function createParentRecurringPaymentForm(
+  config: RobokassaConfig,
+  invoiceId: string,
+  outSum: string,
+  description: string,
+  telegramUserId: number
+): {
+  html: string;
+  debug: {
+    merchantLogin: string;
+    outSum: string;
+    invoiceId: string;
+    signatureBaseMasked: string;
+    signatureValue: string;
+    formFields: string[]; // Field names only
+    envCheck: {
+      pass1Len: number;
+      pass2Len: number;
+      pass1Prefix2: string;
+      pass1Suffix2: string;
+      pass2Prefix2: string;
+      pass2Suffix2: string;
+      vercelEnv: string;
+      nodeEnv: string;
+    };
+  };
+} {
+  // ========== VALIDATION ==========
+  
+  // Validate InvoiceID
+  if (!/^\d+$/.test(invoiceId)) {
+    throw new Error(`Invalid InvoiceID: ${invoiceId} (must be digits only)`);
+  }
+  const invoiceIdNum = parseInt(invoiceId, 10);
+  if (invoiceIdNum <= 0 || invoiceIdNum > 2000000000) {
+    throw new Error(`InvoiceID out of range: ${invoiceId} (must be 1-2000000000)`);
+  }
+  
+  // Validate OutSum format
+  if (!/^\d+(\.\d{2})$/.test(outSum)) {
+    throw new Error(`Invalid OutSum format: ${outSum} (must be "X.00" format)`);
+  }
+  
+  // Validate description
+  if (!description || description.length === 0) {
+    throw new Error('Description is required');
+  }
+  if (description.length > 128) {
+    throw new Error(`Description too long: ${description.length} chars (max 128)`);
+  }
+  
+  // Validate telegramUserId
+  if (!Number.isFinite(telegramUserId) || telegramUserId <= 0) {
+    throw new Error(`Invalid telegramUserId: ${telegramUserId}`);
+  }
+  
+  // ========== BUILD FORM FIELDS ==========
+  
+  const fields: Record<string, string> = {
+    MerchantLogin: config.merchantLogin.trim(),
+    InvoiceID: invoiceId, // CRITICAL: Use InvoiceID (not InvId) for recurring
+    OutSum: outSum,
+    Description: description.substring(0, 128),
+    Recurring: 'true', // CRITICAL: Recurring=true for parent payment
+    Shp_userId: String(telegramUserId),
+  };
+  
+  // Add IsTest if test mode (NOT in signature)
+  if (config.isTest) {
+    fields.IsTest = '1';
+  }
+  
+  // ========== BUILD SIGNATURE ==========
+  
+  // Signature format: MerchantLogin:OutSum:InvoiceID:Password1:Shp_userId=...
+  // Shp_* params must be sorted alphabetically and appended AFTER Password1
+  const merchantLogin = config.merchantLogin.trim();
+  const password1 = config.pass1.trim();
+  
+  // Build Shp_* params (sorted alphabetically)
+  const shpParams: string[] = [];
+  for (const [key, value] of Object.entries(fields)) {
+    if (key.startsWith('Shp_')) {
+      shpParams.push(`${key}=${String(value).trim()}`);
+    }
+  }
+  shpParams.sort(); // Alphabetical sort by parameter name
+  
+  // Build signature parts in correct order
+  const signatureParts: string[] = [
+    merchantLogin,
+    outSum,
+    invoiceId, // Use InvoiceID in signature
+    password1,
+  ];
+  
+  // Add Shp_* params AFTER Password1 (sorted)
+  if (shpParams.length > 0) {
+    signatureParts.push(...shpParams);
+  }
+  
+  // Calculate signature
+  const signatureBaseString = signatureParts.join(':');
+  const signatureBaseMasked = signatureParts.map(p => 
+    p === password1 ? '[PASSWORD1_HIDDEN]' : p
+  ).join(':');
+  
+  const signatureValue = calculateSignature(...signatureParts);
+  
+  // Validate signature format
+  if (!/^[0-9a-f]{32}$/.test(signatureValue)) {
+    throw new Error(`Invalid signature format: ${signatureValue} (must be 32-char lowercase hex)`);
+  }
+  
+  // Add SignatureValue to form fields
+  fields.SignatureValue = signatureValue;
+  
+  // ========== BUILD HTML FORM ==========
+  
+  const actionUrl = 'https://auth.robokassa.ru/Merchant/Index.aspx';
+  
+  const formInputs = Object.entries(fields)
+    .map(([name, value]) => {
+      const escapedValue = value
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;')
+        .replace(/'/g, '&#39;');
+      return `    <input type="hidden" name="${name}" value="${escapedValue}">`;
+    })
+    .join('\n');
+  
+  const html = `<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Robokassa Payment</title>
+</head>
+<body>
+  <form id="robokassa-form" method="POST" action="${actionUrl}">
+${formInputs}
+  </form>
+  <script>
+    document.getElementById('robokassa-form').submit();
+  </script>
+</body>
+</html>`;
+  
+  // ========== BUILD SAFE DEBUG INFO ==========
+  
+  const pass1Len = password1.length;
+  const pass2Len = config.pass2.trim().length;
+  const pass1Prefix2 = password1.substring(0, 2);
+  const pass1Suffix2 = password1.substring(pass1Len - 2);
+  const pass2Prefix2 = config.pass2.trim().substring(0, 2);
+  const pass2Suffix2 = config.pass2.trim().substring(pass2Len - 2);
+  
+  const debug = {
+    merchantLogin,
+    outSum,
+    invoiceId,
+    signatureBaseMasked,
+    signatureValue,
+    formFields: Object.keys(fields), // Field names only
+    envCheck: {
+      pass1Len,
+      pass2Len,
+      pass1Prefix2,
+      pass1Suffix2,
+      pass2Prefix2,
+      pass2Suffix2,
+      vercelEnv: process.env.VERCEL_ENV || 'not-set',
+      nodeEnv: process.env.NODE_ENV || 'not-set',
+    },
+  };
+  
+  // ========== SERVER LOGS ==========
+  
+  if (typeof window === 'undefined') {
+    console.log('[robokassa] ========== PARENT RECURRING PAYMENT FORM ==========');
+    console.log('[robokassa] Signature base (masked):', signatureBaseMasked);
+    console.log('[robokassa] Signature value:', signatureValue);
+    console.log('[robokassa] Form fields:', Object.keys(fields));
+    console.log('[robokassa] MerchantLogin:', merchantLogin);
+    console.log('[robokassa] OutSum:', outSum);
+    console.log('[robokassa] InvoiceID:', invoiceId);
+    console.log('[robokassa] Shp_userId:', telegramUserId);
+    console.log('[robokassa] ===================================================');
+  }
+  
+  return {
+    html,
+    debug,
+  };
 }
 
 /**
