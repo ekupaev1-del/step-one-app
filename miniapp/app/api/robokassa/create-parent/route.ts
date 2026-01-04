@@ -174,13 +174,19 @@ export async function POST(req: Request) {
 
       if (existingSubscription) {
         // Update existing subscription
+        const updateData: any = {
+          parent_invoice_id: Number(invoiceId),
+          updated_at: new Date().toISOString(),
+        };
+        
+        // Only update status if it's not already set
+        if (!existingSubscription.status || existingSubscription.status === 'trial') {
+          updateData.status = 'trial';
+        }
+        
         const { error: updateError } = await supabase
           .from('subscriptions')
-          .update({
-            parent_invoice_id: Number(invoiceId),
-            status: 'trial',
-            updated_at: new Date().toISOString(),
-          })
+          .update(updateData)
           .eq('telegram_user_id', telegramUserId);
 
         if (updateError) {
@@ -191,16 +197,20 @@ export async function POST(req: Request) {
         }
       } else {
         // Create new subscription
+        const insertData: any = {
+          telegram_user_id: telegramUserId,
+          user_id: user.id,
+          parent_invoice_id: Number(invoiceId),
+          status: 'trial',
+          plan_type: 'trial',
+          started_at: null, // Will be set after payment confirmation
+          expires_at: new Date(Date.now() + 3 * 24 * 60 * 60 * 1000).toISOString(), // 3 days from now
+          trial_ends_at: null, // Will be set after payment confirmation
+        };
+        
         const { error: insertError } = await supabase
           .from('subscriptions')
-          .insert({
-            telegram_user_id: telegramUserId,
-            user_id: user.id,
-            parent_invoice_id: Number(invoiceId),
-            status: 'trial',
-            trial_started_at: null, // Will be set after payment confirmation
-            trial_ends_at: null, // Will be set after payment confirmation
-          });
+          .insert(insertData);
 
         if (insertError) {
           console.warn('[robokassa/create-parent] ⚠️ Subscription insert failed:', insertError);
