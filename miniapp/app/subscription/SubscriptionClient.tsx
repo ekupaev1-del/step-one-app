@@ -33,8 +33,9 @@ export default function SubscriptionClient() {
   const [showDebug, setShowDebug] = useState(false);
   const [showDebugModal, setShowDebugModal] = useState(false);
   const [paymentData, setPaymentData] = useState<{ url: string; fields: Record<string, string> } | null>(null);
+  const [consentAccepted, setConsentAccepted] = useState(false);
 
-  const handleStartTrial = async () => {
+  const handlePayMonthly = async () => {
     if (!userId || loading) return;
 
     try {
@@ -68,14 +69,13 @@ export default function SubscriptionClient() {
         return;
       }
 
-      // Prepare request details
-      // Parent payment always uses 'recurring' mode for card binding
-      const requestUrl = `/api/robokassa/create-trial?telegramUserId=${userData.telegram_id}`;
+      // Prepare request details for monthly payment (199 RUB)
+      const requestUrl = `/api/robokassa/create-monthly?telegramUserId=${userData.telegram_id}`;
       const requestPayload = {
         telegramUserId: userData.telegram_id,
       };
 
-      // Create trial payment (parent recurring payment)
+      // Create monthly payment (simple one-time payment)
       const response = await fetch(requestUrl, {
         method: 'POST',
         headers: {
@@ -145,14 +145,18 @@ export default function SubscriptionClient() {
         setPaymentData({
           url: data.paymentUrl,
           fields: data.fields,
-        });
+          html: data.html, // Store HTML if available
+        } as any);
         // Show debug modal
         setShowDebugModal(true);
       } else if (data.html) {
-        // Fallback: if HTML is provided (for backward compatibility)
-        document.open();
-        document.write(data.html);
-        document.close();
+        // Fallback: if only HTML is provided
+        setPaymentData({
+          url: data.paymentUrl || 'https://auth.robokassa.ru/Merchant/Index.aspx',
+          fields: {},
+          html: data.html,
+        } as any);
+        setShowDebugModal(true);
       } else {
         const errorMsg = 'Payment creation failed: No payment URL or fields returned';
         setError(errorMsg);
@@ -256,7 +260,17 @@ export default function SubscriptionClient() {
     
     setShowDebugModal(false);
     
-    // Create hidden HTML form and auto-submit
+    // Check if we have HTML (from create-monthly)
+    const html = (paymentData as any).html;
+    if (html) {
+      // Use HTML directly (auto-submit form)
+      document.open();
+      document.write(html);
+      document.close();
+      return;
+    }
+    
+    // Otherwise create form from fields
     const form = document.createElement('form');
     form.method = 'POST';
     form.action = paymentData.url;
@@ -279,22 +293,21 @@ export default function SubscriptionClient() {
   return (
     <div className="min-h-screen bg-gray-50 p-4">
       <div className="max-w-md mx-auto mt-8">
-        <h1 className="text-2xl font-bold text-center mb-6">Get full access</h1>
+        <h1 className="text-2xl font-bold text-center mb-6">Подписка</h1>
         
         <div className="bg-white rounded-lg shadow-md p-6 mb-6">
           <div className="text-center mb-4">
             <div className="text-3xl font-bold text-gray-900 mb-2">
-              Trial 3 days for 1 ₽
+              199 ₽ в месяц
             </div>
             <div className="text-gray-600">
-              After trial — 199 ₽ per month
+              Полный доступ ко всем функциям
             </div>
             <div className="text-sm text-gray-500 mt-2">
-              Auto-renewal
+              Оплата разовая, без автопродления
             </div>
           </div>
         </div>
-
 
         {error && (
           <div className="mb-4 p-4 bg-red-50 border border-red-200 rounded-lg">
@@ -302,12 +315,27 @@ export default function SubscriptionClient() {
           </div>
         )}
 
+        {/* Consent checkbox */}
+        <div className="mb-4 p-4 bg-gray-50 rounded-lg">
+          <label className="flex items-start gap-3 cursor-pointer">
+            <input
+              type="checkbox"
+              checked={consentAccepted}
+              onChange={(e) => setConsentAccepted(e.target.checked)}
+              className="mt-1 w-5 h-5 text-blue-600 border-gray-300 rounded focus:ring-blue-500"
+            />
+            <span className="text-sm text-gray-700">
+              Я согласен с условиями оплаты и обработкой персональных данных
+            </span>
+          </label>
+        </div>
+
         <button
-          onClick={() => handleStartTrial()}
-          disabled={loading}
+          onClick={() => handlePayMonthly()}
+          disabled={loading || !consentAccepted}
           className="w-full bg-blue-600 hover:bg-blue-700 text-white font-semibold py-3 px-6 rounded-lg disabled:opacity-50 disabled:cursor-not-allowed mb-4"
         >
-          {loading ? 'Обработка...' : 'Start trial for 1 ₽'}
+          {loading ? 'Обработка...' : 'Оплатить 199 ₽'}
         </button>
 
         {/* Debug Modal */}

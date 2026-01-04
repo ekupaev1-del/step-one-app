@@ -11,7 +11,7 @@ export type { RobokassaConfig };
 export { getRobokassaConfig };
 
 export interface Receipt {
-  sno: string;
+  sno?: string; // Optional - only if ROBOKASSA_SNO is set
   items: Array<{
     name: string;
     quantity: number;
@@ -122,16 +122,20 @@ function validateCustomParamsInSignature(
 function buildSignatureBaseParts(
   merchantLogin: string,
   outSum: string,
-  invId: number,
+  invId: string, // String (digits only)
   encodedReceipt: string | undefined,
   pass1: string,
   customParams: string[]
 ): string[] {
-  // CRITICAL: Convert invId to string to match Robokassa's exact format
+  // CRITICAL: InvId must be digits only string
+  if (!/^\d+$/.test(invId)) {
+    throw new Error(`Invalid InvId format: ${invId} (must be digits only)`);
+  }
+  
   const parts: string[] = [
     merchantLogin.trim(), // Trim to avoid trailing spaces
     outSum,
-    String(invId), // Convert to string
+    invId, // Already string, digits only
   ];
   
   // Add ReceiptEncoded if present (recurring mode) - BEFORE Pass1
@@ -151,30 +155,74 @@ function buildSignatureBaseParts(
 }
 
 /**
+ * Allowed SNO values for Robokassa Receipt
+ */
+const ALLOWED_SNO_VALUES = ['osn', 'usn_income', 'usn_income_outcome', 'esn', 'patent'] as const;
+
+/**
+ * Validate SNO value
+ */
+function validateSNO(sno: string | undefined): boolean {
+  if (!sno) return true; // SNO is optional
+  return ALLOWED_SNO_VALUES.includes(sno as any);
+}
+
+/**
  * Generate Receipt for fiscalization (54-FZ)
- * For Robocheki SMZ, use "npd" (налог на профессиональный доход)
  * 
- * @param amount - Payment amount (must match OutSum exactly, e.g., 1.00)
+ * IMPORTANT: 
+ * - If ROBOKASSA_SNO is not set, omit sno field (most common case)
+ * - If ROBOKASSA_SNO is set, use it (must be from allowed list)
+ * - Default to "usn_income" if invalid value provided
+ * 
+ * @param amount - Payment amount (must match OutSum exactly, e.g., 199.00)
+ * @param description - Item description (max 128 chars, Russian/English only)
  * @returns Receipt object
  */
-export function generateReceipt(amount: number): Receipt {
+export function generateReceipt(amount: number, description: string = 'Subscription'): Receipt {
   // CRITICAL: Ensure sum matches OutSum format exactly
-  // Format amount to 2 decimal places to match OutSum format (e.g., "1.00")
   const formattedAmount = parseFloat(amount.toFixed(2));
   
-  return {
-    sno: 'npd', // НПД (налог на профессиональный доход) for Robocheki SMZ
+  // Get SNO from environment (optional)
+  const snoEnv = process.env.ROBOKASSA_SNO?.trim();
+  
+  // Validate and set SNO
+  let sno: string | undefined = undefined;
+  if (snoEnv) {
+    if (validateSNO(snoEnv)) {
+      sno = snoEnv;
+    } else {
+      console.warn(`[robokassa] Invalid ROBOKASSA_SNO="${snoEnv}", defaulting to "usn_income"`);
+      sno = 'usn_income';
+    }
+  }
+  // If snoEnv is empty/undefined, sno remains undefined (omitted from JSON)
+  
+  // Sanitize description (max 128 chars, escape quotes)
+  const sanitizedDescription = description
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;')
+    .substring(0, 128);
+  
+  const receipt: Receipt = {
     items: [
       {
-        name: 'Trial subscription 3 days',
+        name: sanitizedDescription,
         quantity: 1,
-        sum: formattedAmount, // MUST equal OutSum exactly (1.00)
+        sum: formattedAmount, // MUST equal OutSum exactly
         payment_method: 'full_payment',
         payment_object: 'service',
         tax: 'none',
       },
     ],
   };
+  
+  // Only add sno if it's set
+  if (sno) {
+    receipt.sno = sno;
+  }
+  
+  return receipt;
 }
 
 /**
@@ -193,7 +241,7 @@ export function generateReceipt(amount: number): Receipt {
 function calculateRobokassaSignature(
   config: RobokassaConfig,
   outSum: string,
-  invId: number,
+  invId: string, // String (digits only)
   receiptEncoded: string | undefined,
   customParams: string[] = []
 ): { signature: string; signatureBase: string; signatureBaseFull: string; signatureParts: string[] } {
@@ -253,7 +301,7 @@ function calculateRobokassaSignature(
 export function signMinimal(
   config: RobokassaConfig,
   outSum: string,
-  invId: number,
+  invId: string, // String (digits only)
   customParams: string[] = []
 ): { signature: string; signatureBase: string; signatureBaseFull: string; signatureParts: string[] } {
   return calculateRobokassaSignature(
@@ -280,7 +328,7 @@ export function signWithReceipt(
   config: RobokassaConfig,
   outSum: string,
   receiptEncoded: string,
-  invId: number,
+  invId: string, // String (digits only)
   customParams: string[] = []
 ): { signature: string; signatureBase: string; signatureBaseFull: string; signatureParts: string[] } {
   return calculateRobokassaSignature(
@@ -327,7 +375,7 @@ function formatOutSum(amount: number | string): string {
 function buildRobokassaFields(payload: {
   merchantLogin: string;
   outSum: string | number;
-  invId: number;
+  invId: string; // String (digits only)
   description: string;
   mode: PaymentMode;
   receipt?: Receipt;
@@ -348,28 +396,49 @@ function buildRobokassaFields(payload: {
   }
   // #endregion
   
-  // Build base fields
+  // Validate InvId is digits only
+  if (!/^\d+$/.test(payload.invId)) {
+    throw new Error(`Invalid InvId: ${payload.invId} (must be digits only)`);
+  }
+  
+  // Build base fields - CRITICAL: Use InvId (not InvoiceID)
   const fields: Record<string, string> = {
     MerchantLogin: payload.merchantLogin,
     OutSum: outSumFormatted,
-    InvId: String(payload.invId),
+    InvId: payload.invId, // Already string, digits only
     Description: payload.description,
   };
   
-  // Add Shp_* params if telegramUserId provided
+  // Add Shp_userId if telegramUserId provided (only once, no duplicates)
   if (payload.telegramUserId) {
-    fields.Shp_userId = String(payload.telegramUserId);
+    // Ensure no duplicate
+    if (!fields.Shp_userId) {
+      fields.Shp_userId = String(payload.telegramUserId);
+    }
   }
   
-  // Add Receipt and Recurring for recurring mode
-  if (payload.mode === 'recurring') {
+  // Add Receipt and Recurring ONLY if recurring mode AND feature flag is enabled
+  // Check feature flag to ensure we don't add Recurring when it's disabled
+  const featureRecurring = process.env.FEATURE_RECURRING === 'true' || process.env.FEATURE_RECURRING === '1';
+  
+  if (payload.mode === 'recurring' && featureRecurring) {
     if (!payload.receipt) {
       throw new Error('Receipt is required for recurring mode');
     }
     
     // CRITICAL: Robokassa requires Receipt to be URL-encoded exactly ONCE
     // The same encoded value is used both in the form field AND in the signature
-    const receiptJson = JSON.stringify(payload.receipt);
+    // Serialize JSON deterministically (sorted keys for consistent output)
+    const receiptJson = JSON.stringify(payload.receipt, (key, value) => {
+      if (value && typeof value === 'object' && !Array.isArray(value)) {
+        // Sort object keys for deterministic output
+        return Object.keys(value).sort().reduce((acc, k) => {
+          acc[k] = value[k];
+          return acc;
+        }, {} as any);
+      }
+      return value;
+    });
     const receiptEncoded = encodeURIComponent(receiptJson); // Single encoding for both form and signature
     
     // #region agent log
@@ -388,7 +457,13 @@ function buildRobokassaFields(payload: {
     
     // Send receiptEncoded in the form (single-encoded, same as in signature)
     fields.Receipt = receiptEncoded;
-    fields.Recurring = 'true';
+    // Only add Recurring if feature flag is enabled
+    if (featureRecurring) {
+      fields.Recurring = 'true';
+    }
+  } else if (payload.mode === 'recurring' && !featureRecurring) {
+    // If recurring mode requested but feature flag is off, fall back to minimal
+    console.warn('[robokassa] Recurring mode requested but FEATURE_RECURRING is disabled, using minimal mode');
   }
   
   // Add IsTest if test mode
@@ -638,9 +713,9 @@ function buildRobokassaSignature(
  * Generate HTML form for Robokassa payment
  * 
  * @param config - Robokassa configuration
- * @param outSum - Payment amount as string (e.g., "1.00")
- * @param invId - Unique InvId (integer, <= 2_000_000_000)
- * @param description - Payment description (ASCII, no emojis)
+ * @param outSum - Payment amount as string (e.g., "199.00")
+ * @param invId - Unique InvId (string, digits only)
+ * @param description - Payment description (ASCII, no emojis, max 128 chars)
  * @param mode - Payment mode: 'minimal' or 'recurring'
  * @param receipt - Receipt object (only used in recurring mode)
  * @param telegramUserId - Telegram user ID (for Shp_userId)
@@ -650,7 +725,7 @@ function buildRobokassaSignature(
 export function generatePaymentForm(
   config: RobokassaConfig,
   outSum: string | number,
-  invId: number,
+  invId: string, // String (digits only)
   description: string,
   mode: PaymentMode,
   receipt?: Receipt,
@@ -766,11 +841,14 @@ export function generatePaymentForm(
     outSumLength: outSumFormatted.length,
     outSumHasTwoDecimals: /^\d+\.\d{2}$/.test(outSumFormatted),
     
-    // InvId checks
-    invIdIsNumber: typeof invId === 'number',
-    invIdIsInteger: Number.isInteger(invId),
-    invIdWithinRange: invId > 0 && invId <= 2000000000,
-    invIdString: String(invId),
+    // InvId checks (invId is now string, digits only)
+    invIdIsString: typeof invId === 'string',
+    invIdIsDigitsOnly: /^\d+$/.test(invId),
+    invIdWithinRange: (() => {
+      const invIdNum = parseInt(invId, 10);
+      return invIdNum > 0 && invIdNum <= 2000000000;
+    })(),
+    invIdString: invId, // Already string
     
     // Signature checks
     signatureLength: signatureResult.signatureValue.length === 32,
@@ -1359,19 +1437,26 @@ Match: ${receipt?.items[0]?.sum === parseFloat(outSumFormatted) ? '✅ YES' : '�
 }
 
 /**
- * Generate safe InvId (<= 2_000_000_000)
- * Uses timestamp modulo to ensure it's within safe range
+ * Generate safe InvId (digits only, <= 2_000_000_000)
+ * Format: timestamp_seconds + random_4_digits
+ * Returns as string (digits only) for consistency
  */
-export function generateSafeInvId(): number {
-  const maxInvId = 2_000_000_000;
-  const timestamp = Date.now();
-  const random = Math.floor(Math.random() * 1000000);
+export function generateSafeInvId(): string {
+  // Use seconds since epoch + random 4 digits
+  const timestampSeconds = Math.floor(Date.now() / 1000);
+  const randomDigits = Math.floor(Math.random() * 9000 + 1000); // 1000-9999
+  const invIdString = `${timestampSeconds}${randomDigits}`;
   
-  // Use timestamp % maxInvId + random, then ensure it's within range
-  const invId = (timestamp % maxInvId) + random;
+  // Ensure it's within safe range (Robokassa limit)
+  const maxInvId = 2000000000;
+  const invIdNum = parseInt(invIdString, 10);
   
-  // If it exceeds max, wrap around
-  return invId > maxInvId ? invId % maxInvId : invId;
+  if (invIdNum > maxInvId) {
+    // Wrap around if exceeds limit
+    return String(invIdNum % maxInvId);
+  }
+  
+  return invIdString;
 }
 
 /**

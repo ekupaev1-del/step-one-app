@@ -12,13 +12,14 @@ export const dynamic = 'force-dynamic';
 
 /**
  * Generate unique InvId with DB collision check
+ * Returns string (digits only) for consistency
  */
 async function generateUniqueInvId(
   supabase: any,
   maxAttempts: number = 5
-): Promise<number> {
+): Promise<string> {
   for (let attempt = 0; attempt < maxAttempts; attempt++) {
-    const invId = generateSafeInvId();
+    const invId = generateSafeInvId(); // Returns string
     
     // Check if invId already exists in public.payments (default schema)
     const { data: existing } = await supabase
@@ -47,7 +48,7 @@ async function storePaymentAttempt(
   supabase: any,
   userId: string, // UUID from users table
   telegramUserId: number,
-  invId: number,
+  invId: string, // String (digits only)
   outSum: string,
   mode: PaymentMode,
   description: string,
@@ -319,19 +320,24 @@ export async function POST(req: Request) {
 
     debug.stage = 'generate_inv_id';
 
-    // Generate unique InvId (<= 2_000_000_000)
-    let invId: number;
+    // Generate unique InvId (digits only string)
+    let invId: string;
     try {
       invId = await generateUniqueInvId(supabase);
       debug.invId = invId;
       debug.invIdGenerated = true;
       
-      // #region agent log
-      fetch('http://127.0.0.1:7242/ingest/43e8883f-375d-4d43-af6f-fef79b5ebbe3',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'create-trial/route.ts:generateInvId',message:'InvId generated',data:{invId:invId,invIdType:typeof invId,invIdIsInteger:Number.isInteger(invId),invIdWithinRange:invId>0&&invId<=2000000000,invIdString:String(invId)},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'D'})}).catch(()=>{});
-      // #endregion
+      // Validate InvId is digits only
+      if (!/^\d+$/.test(invId)) {
+        throw new Error(`Invalid InvId format: ${invId} (must be digits only)`);
+      }
       
-      // TEMP DEBUG: Log invId for error 26 diagnosis
-      console.log('[robokassa/create-trial] TEMP DEBUG: Generated InvId:', invId);
+      const invIdNum = parseInt(invId, 10);
+      if (invIdNum <= 0 || invIdNum > 2000000000) {
+        throw new Error(`InvId out of range: ${invId} (must be 1-2000000000)`);
+      }
+      
+      console.log('[robokassa/create-trial] Generated InvId:', invId, '(digits only, valid)');
     } catch (invIdError: any) {
       console.error('[robokassa/create-trial] ❌ InvId generation error:', invIdError.message);
       return NextResponse.json({
@@ -343,12 +349,16 @@ export async function POST(req: Request) {
     }
 
     // Payment amount: 1.00 (exactly 2 decimals as string)
-    // CRITICAL: For parent recurring payment, always use 'recurring' mode with Recurring=true
     const outSum = '1.00';
-    const description = 'Trial subscription 3 days'; // ASCII, no emojis
+    const description = 'Trial subscription 3 days'; // ASCII, no emojis, max 128 chars
     
-    // Force recurring mode for parent payment (card binding)
-    const actualMode: PaymentMode = 'recurring';
+    // Check if recurring is enabled (feature flag)
+    const featureRecurring = process.env.FEATURE_RECURRING === 'true' || process.env.FEATURE_RECURRING === '1';
+    debug.featureRecurring = featureRecurring;
+    
+    // Use recurring mode only if feature flag is enabled
+    // Otherwise use minimal mode (simple one-time payment)
+    const actualMode: PaymentMode = featureRecurring ? 'recurring' : 'minimal';
 
     debug.outSum = outSum;
     debug.description = description;
@@ -363,16 +373,21 @@ export async function POST(req: Request) {
 
     debug.stage = 'generate_form';
 
-    // Generate Receipt for recurring mode (parent payment)
-    // CRITICAL: Parent payment MUST have Recurring=true for card binding
-    const receipt = generateReceipt(1.00);
-    const receiptJson = JSON.stringify(receipt);
-    // CRITICAL: Single encoding for Robokassa (same value for form and signature)
-    const receiptEncoded = encodeURIComponent(receiptJson);
-    debug.receipt = receipt;
-    debug.receiptItemSum = receipt.items[0].sum;
-    debug.receiptMatchesOutSum = receipt.items[0].sum === 1.00;
-    debug.receiptEncodedLength = receiptEncoded.length;
+    // Generate Receipt only if recurring mode is enabled
+    let receipt = undefined;
+    let receiptJson: string | undefined;
+    let receiptEncoded: string | undefined;
+    
+    if (actualMode === 'recurring') {
+      receipt = generateReceipt(1.00, description);
+      receiptJson = JSON.stringify(receipt);
+      // CRITICAL: Single encoding for Robokassa (same value for form and signature)
+      receiptEncoded = encodeURIComponent(receiptJson);
+      debug.receipt = receipt;
+      debug.receiptItemSum = receipt.items[0].sum;
+      debug.receiptMatchesOutSum = receipt.items[0].sum === 1.00;
+      debug.receiptEncodedLength = receiptEncoded.length;
+    }
 
     // Use auto-submit for production, debug mode for development
     const debugMode = process.env.NODE_ENV === 'development';
@@ -411,7 +426,8 @@ export async function POST(req: Request) {
     console.log('[robokassa/create-trial] MerchantLogin is "steopone":', config.merchantLogin === 'steopone');
     console.log('[robokassa/create-trial] OutSum:', outSum, '(type:', typeof outSum, ')');
     console.log('[robokassa/create-trial] OutSum formatted:', formDebug.outSum);
-    console.log('[robokassa/create-trial] InvId:', invId, '(type:', typeof invId, ', <= 2B:', invId <= 2000000000, ')');
+    const invIdNum = parseInt(invId, 10);
+    console.log('[robokassa/create-trial] InvId:', invId, '(type:', typeof invId, ', <= 2B:', invIdNum <= 2000000000, ')');
     console.log('[robokassa/create-trial] Description:', description);
     console.log('[robokassa/create-trial] TelegramUserId:', telegramUserId);
     console.log('[robokassa/create-trial] IsTest:', config.isTest);
@@ -484,18 +500,30 @@ export async function POST(req: Request) {
     }
     shpParamsDebug.sort();
 
-    // Log success summary with final signature base string
-    console.log('[robokassa/create-trial] ========== SUCCESS ==========');
-    console.log('[robokassa/create-trial] Payment form generated successfully');
-    console.log('[robokassa/create-trial] Payment URL:', paymentUrl);
-    console.log('[robokassa/create-trial] Final signature base string (masked):', formDebug.exactSignatureStringMasked);
-    console.log('[robokassa/create-trial] Final form fields:', Object.keys(finalFormFields));
-    console.log('[robokassa/create-trial] Shp_* params:', shpParamsDebug);
-    console.log('[robokassa/create-trial] Receipt encoded length:', formDebug.receiptEncodedLength || 0);
+    // CRITICAL: Server-side logging before returning form
+    console.log('[robokassa/create-trial] ========== PAYMENT FORM READY ==========');
+    console.log('[robokassa/create-trial] MerchantLogin:', debug.merchantLogin);
+    console.log('[robokassa/create-trial] OutSum:', debug.outSum);
+    console.log('[robokassa/create-trial] InvId:', debug.invId);
+    console.log('[robokassa/create-trial] Description:', debug.description);
+    console.log('[robokassa/create-trial] HasReceipt:', !!receipt);
+    console.log('[robokassa/create-trial] ReceiptLength:', formDebug.receiptEncodedLength || 0);
+    console.log('[robokassa/create-trial] ShpParams:', shpParamsDebug);
+    console.log('[robokassa/create-trial] SignatureString (masked):', formDebug.exactSignatureStringMasked);
+    console.log('[robokassa/create-trial] FormFields keys:', Object.keys(finalFormFields));
+    console.log('[robokassa/create-trial] FormFields (no passwords):', 
+      Object.fromEntries(
+        Object.entries(finalFormFields).map(([k, v]) => [
+          k,
+          k === 'SignatureValue' ? `${String(v).substring(0, 8)}...` : v
+        ])
+      )
+    );
     console.log('[robokassa/create-trial] DB store result:', dbStoreResult.ok ? 'OK' : 'FAILED');
     if (!dbStoreResult.ok) {
       console.error('[robokassa/create-trial] DB error details:', JSON.stringify(dbStoreResult.error, null, 2));
     }
+    console.log('[robokassa/create-trial] =========================================');
 
     // Критичная информация для диагностики Error 29
     const receiptEncodedForDebug = formDebug.receiptEncoded || (finalFormFields.Receipt || null);
@@ -529,8 +557,8 @@ export async function POST(req: Request) {
       merchantLoginIsSteopone: formDebug.merchantLoginIsSteopone || false,
       outSum: debug.outSum || 'N/A',
       outSumFormat: debug.outSum === '1.00',
-      invId: debug.invId || 0,
-      invIdString: String(debug.invId || 0),
+      invId: debug.invId || '0',
+      invIdString: debug.invId || '0',
       
       // 6. Shp_* параметры
       shpParams: shpParamsDebug,
@@ -549,7 +577,10 @@ export async function POST(req: Request) {
       validation: {
         merchantLoginCorrect: debug.merchantLogin === 'steopone',
         outSumFormat: debug.outSum === '1.00',
-        invIdValid: (debug.invId || 0) > 0 && (debug.invId || 0) <= 2000000000,
+        invIdValid: (() => {
+          const invIdNum = parseInt(debug.invId || '0', 10);
+          return invIdNum > 0 && invIdNum <= 2000000000;
+        })(),
         signatureFormat: formDebug.signatureValue ? /^[0-9a-f]{32}$/.test(formDebug.signatureValue) : false,
         shpParamsSorted: JSON.stringify(shpParamsDebug) === JSON.stringify([...shpParamsDebug].sort()),
         receiptConsistent: receiptEncodedForDebug ? finalFormFields.Receipt === receiptEncodedForDebug : true,
