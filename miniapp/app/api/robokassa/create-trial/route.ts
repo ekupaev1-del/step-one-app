@@ -204,7 +204,7 @@ export async function POST(req: Request) {
         stage: 'validate_input',
         message: 'telegramUserId is required in query string',
         debug,
-      }, { status: 500 });
+      }, { status: 400 });
     }
 
     if (modeParam !== 'minimal' && modeParam !== 'recurring') {
@@ -214,7 +214,7 @@ export async function POST(req: Request) {
         stage: 'validate_input',
         message: 'mode must be "minimal" or "recurring"',
         debug,
-      }, { status: 500 });
+      }, { status: 400 });
     }
 
     const telegramUserId = Number(telegramUserIdParam);
@@ -343,11 +343,16 @@ export async function POST(req: Request) {
     }
 
     // Payment amount: 1.00 (exactly 2 decimals as string)
+    // CRITICAL: For parent recurring payment, always use 'recurring' mode with Recurring=true
     const outSum = '1.00';
     const description = 'Trial subscription 3 days'; // ASCII, no emojis
+    
+    // Force recurring mode for parent payment (card binding)
+    const actualMode: PaymentMode = 'recurring';
 
     debug.outSum = outSum;
     debug.description = description;
+    debug.actualMode = actualMode;
 
     // #region agent log
     fetch('http://127.0.0.1:7242/ingest/43e8883f-375d-4d43-af6f-fef79b5ebbe3',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'create-trial/route.ts:outSum',message:'OutSum validation',data:{outSum:outSum,outSumType:typeof outSum,outSumIs100:outSum==='1.00',outSumHasTwoDecimals:/^\d+\.\d{2}$/.test(outSum),outSumLength:outSum.length},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'C'})}).catch(()=>{});
@@ -358,34 +363,30 @@ export async function POST(req: Request) {
 
     debug.stage = 'generate_form';
 
-    // Generate Receipt only for recurring mode
-    let receipt;
-    let receiptJson: string | undefined;
-    let receiptEncoded: string | undefined; // Single-encoded (for both form and signature)
-    if (modeParam === 'recurring') {
-      receipt = generateReceipt(1.00);
-      receiptJson = JSON.stringify(receipt);
-      // CRITICAL: Single encoding for Robokassa (same value for form and signature)
-      receiptEncoded = encodeURIComponent(receiptJson);
-      debug.receipt = receipt;
-      debug.receiptItemSum = receipt.items[0].sum;
-      debug.receiptMatchesOutSum = receipt.items[0].sum === 1.00;
-      debug.receiptEncodedLength = receiptEncoded.length;
-    }
+    // Generate Receipt for recurring mode (parent payment)
+    // CRITICAL: Parent payment MUST have Recurring=true for card binding
+    const receipt = generateReceipt(1.00);
+    const receiptJson = JSON.stringify(receipt);
+    // CRITICAL: Single encoding for Robokassa (same value for form and signature)
+    const receiptEncoded = encodeURIComponent(receiptJson);
+    debug.receipt = receipt;
+    debug.receiptItemSum = receipt.items[0].sum;
+    debug.receiptMatchesOutSum = receipt.items[0].sum === 1.00;
+    debug.receiptEncodedLength = receiptEncoded.length;
 
-    // Always use debug mode (no auto-submit) for easier debugging
-    const debugMode = true; // Always true to show debug page
+    // Use auto-submit for production, debug mode for development
+    const debugMode = process.env.NODE_ENV === 'development';
 
-    // Generate payment form - IMPORTANT: pass telegramUserId so Shp_userId is included in signature
+    // Generate payment form - IMPORTANT: use 'recurring' mode for parent payment
     // #region agent log
-    fetch('http://127.0.0.1:7242/ingest/43e8883f-375d-4d43-af6f-fef79b5ebbe3',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'create-trial/route.ts:POST',message:'Before generatePaymentForm',data:{configMerchantLogin:config.merchantLogin,configIsTest:config.isTest,outSum:outSum,outSumType:typeof outSum,invId:invId,invIdType:typeof invId,description:description,modeParam:modeParam,hasReceipt:!!receipt,telegramUserId:telegramUserId,telegramUserIdType:typeof telegramUserId},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'J'})}).catch(()=>{});
+    fetch('http://127.0.0.1:7242/ingest/43e8883f-375d-4d43-af6f-fef79b5ebbe3',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'create-trial/route.ts:POST',message:'Before generatePaymentForm',data:{configMerchantLogin:config.merchantLogin,configIsTest:config.isTest,outSum:outSum,outSumType:typeof outSum,invId:invId,invIdType:typeof invId,description:description,actualMode:actualMode,hasReceipt:!!receipt,telegramUserId:telegramUserId,telegramUserIdType:typeof telegramUserId},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'J'})}).catch(()=>{});
     // #endregion
     const { html, debug: formDebug } = generatePaymentForm(
       config,
       outSum,
       invId,
       description,
-      modeParam,
+      actualMode, // Always 'recurring' for parent payment
       receipt,
       telegramUserId, // Pass telegramUserId so Shp_userId is included in form AND signature
       debugMode
@@ -439,10 +440,10 @@ export async function POST(req: Request) {
       supabase,
       user.id, // UUID
       telegramUserId,
-      invId,
-      outSum,
-      modeParam,
-      description,
+        invId,
+        outSum,
+        actualMode, // Always 'recurring' for parent payment
+        description,
       receiptJson,
       receiptEncoded, // Pass receiptEncoded (single-encoded) for debug
       formDebug.signatureBaseWithoutPassword,

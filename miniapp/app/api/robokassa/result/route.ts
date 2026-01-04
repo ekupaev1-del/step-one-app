@@ -107,6 +107,7 @@ export async function POST(req: Request) {
     }
 
     console.log('[robokassa/result] Payment found:', payment.id);
+    console.log('[robokassa/result] Payment type:', payment.parent_invoice_id ? 'child (recurring)' : 'parent (trial)');
 
     // Обновляем статус платежа
     const { error: updateError } = await supabase

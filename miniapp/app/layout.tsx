@@ -3,6 +3,7 @@ import Script from "next/script";
 import { Nunito } from "next/font/google";
 import type { ReactNode } from "react";
 import "./globals.css";
+import BuildStamp from "./components/BuildStamp";
 
 const nunito = Nunito({
   subsets: ["latin", "cyrillic"],
@@ -24,36 +25,6 @@ export const viewport: Viewport = {
   themeColor: "#F7F5F2"
 };
 
-// Build stamp component for deployment verification
-function BuildStamp() {
-  const gitSha = process.env.NEXT_PUBLIC_VERCEL_GIT_COMMIT_SHA || process.env.VERCEL_GIT_COMMIT_SHA || 'local';
-  const env = process.env.NEXT_PUBLIC_VERCEL_ENV || process.env.VERCEL_ENV || 'development';
-  const buildDate = new Date().toISOString().split('T')[0];
-  
-  return (
-    <div 
-      id="build-stamp" 
-      style={{ 
-        position: 'fixed', 
-        bottom: 0, 
-        right: 0, 
-        padding: '4px 8px', 
-        fontSize: '10px', 
-        color: '#666', 
-        backgroundColor: '#f0f0f0',
-        zIndex: 9999,
-        fontFamily: 'monospace',
-        opacity: 0.7,
-        pointerEvents: 'none',
-        borderTop: '1px solid #ddd',
-        borderLeft: '1px solid #ddd',
-        borderRadius: '4px 0 0 0'
-      }}
-    >
-      build: {gitSha.substring(0, 7)} | env: {env} | {buildDate}
-    </div>
-  );
-}
 
 export default function RootLayout({
   children

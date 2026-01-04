@@ -29,9 +29,8 @@ export default function SubscriptionClient() {
   const [error, setError] = useState<string | null>(null);
   const [debugData, setDebugData] = useState<any>(null);
   const [showDebug, setShowDebug] = useState(false);
-  const [debugMode, setDebugMode] = useState<'recurring' | 'minimal'>('recurring');
 
-  const handleStartTrial = async (mode: 'recurring' | 'minimal' = 'recurring') => {
+  const handleStartTrial = async () => {
     if (!userId || loading) return;
 
     try {
@@ -66,16 +65,35 @@ export default function SubscriptionClient() {
       }
 
       // Prepare request details
-      const requestUrl = `/api/robokassa/create-trial?telegramUserId=${userData.telegram_id}&mode=${mode}`;
+      // Parent payment always uses 'recurring' mode for card binding
+      const requestUrl = `/api/robokassa/create-trial?telegramUserId=${userData.telegram_id}`;
       const requestPayload = {
         telegramUserId: userData.telegram_id,
-        mode,
       };
 
-      // Create trial payment
+      // Create trial payment (parent recurring payment)
       const response = await fetch(requestUrl, {
         method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
       });
+      
+      // Check if response is JSON
+      const contentType = response.headers.get('content-type');
+      if (!contentType || !contentType.includes('application/json')) {
+        const text = await response.text();
+        const errorMsg = `Expected JSON response, got: ${contentType}. Response: ${text.substring(0, 200)}`;
+        setError(errorMsg);
+        setDebugData({
+          request: { url: requestUrl, method: 'POST', payload: requestPayload },
+          response: { status: response.status, body: text.substring(0, 500) },
+          error: { message: errorMsg },
+        });
+        setShowDebug(true);
+        alert(`Ошибка: ${errorMsg}`);
+        return;
+      }
       
       const data: CreateTrialResponse = await response.json();
       
@@ -117,25 +135,17 @@ export default function SubscriptionClient() {
         return;
       }
 
-      // If ok=true → open HTML in new window/iframe
+      // If ok=true → open HTML in new window/iframe or replace document
       if (data.html) {
-        // Open in new window (better for debugging)
-        const newWindow = window.open('', '_blank');
-        if (newWindow) {
-          newWindow.document.write(data.html);
-          newWindow.document.close();
-        } else {
-          // Fallback: create iframe
-          const iframe = document.createElement('iframe');
-          iframe.style.width = '100%';
-          iframe.style.height = '600px';
-          iframe.style.border = 'none';
-          iframe.srcdoc = data.html;
-          document.body.appendChild(iframe);
-        }
+        // For Mini App: replace current document to submit form
+        // This ensures form submits properly in Telegram WebView
+        document.open();
+        document.write(data.html);
+        document.close();
       } else {
         const errorMsg = 'Payment creation failed: No HTML form returned';
         setError(errorMsg);
+        alert(`Ошибка: ${errorMsg}`);
       }
     } catch (error: any) {
       console.error('Error starting trial:', error);
@@ -143,9 +153,9 @@ export default function SubscriptionClient() {
       setError(errorMsg);
       setDebugData({
         request: {
-          url: `/api/robokassa/create-trial?telegramUserId=${userId}&mode=${mode}`,
+          url: `/api/robokassa/create-trial?telegramUserId=${userId}`,
           method: 'POST',
-          payload: { telegramUserId: userId, mode },
+          payload: { telegramUserId: userId },
         },
         response: null,
         error: {
@@ -181,34 +191,6 @@ export default function SubscriptionClient() {
           </div>
         </div>
 
-        {/* Debug Mode Toggle (temporary) */}
-        <div className="mb-4 p-3 bg-yellow-50 border border-yellow-200 rounded-lg">
-          <label className="block text-sm font-semibold text-yellow-800 mb-2">
-            Debug Mode (temporary):
-          </label>
-          <div className="flex gap-2">
-            <button
-              onClick={() => setDebugMode('recurring')}
-              className={`flex-1 px-3 py-2 rounded text-sm font-medium ${
-                debugMode === 'recurring'
-                  ? 'bg-blue-600 text-white'
-                  : 'bg-gray-200 text-gray-700'
-              }`}
-            >
-              Recurring (with Receipt)
-            </button>
-            <button
-              onClick={() => setDebugMode('minimal')}
-              className={`flex-1 px-3 py-2 rounded text-sm font-medium ${
-                debugMode === 'minimal'
-                  ? 'bg-blue-600 text-white'
-                  : 'bg-gray-200 text-gray-700'
-              }`}
-            >
-              Minimal (no Receipt)
-            </button>
-          </div>
-        </div>
 
         {error && (
           <div className="mb-4 p-4 bg-red-50 border border-red-200 rounded-lg">
@@ -217,11 +199,11 @@ export default function SubscriptionClient() {
         )}
 
         <button
-          onClick={() => handleStartTrial(debugMode)}
+          onClick={() => handleStartTrial()}
           disabled={loading}
           className="w-full bg-blue-600 hover:bg-blue-700 text-white font-semibold py-3 px-6 rounded-lg disabled:opacity-50 disabled:cursor-not-allowed mb-4"
         >
-          {loading ? 'Обработка...' : `Start trial for 1 ₽ (${debugMode})`}
+          {loading ? 'Обработка...' : 'Start trial for 1 ₽'}
         </button>
 
         {/* TEMP DEBUG: Collapsible Debug JSON panel */}
