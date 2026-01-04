@@ -497,28 +497,70 @@ export async function POST(req: Request) {
       console.error('[robokassa/create-trial] DB error details:', JSON.stringify(dbStoreResult.error, null, 2));
     }
 
+    // Критичная информация для диагностики Error 29
+    const receiptEncoded = formDebug.receiptEncoded || (finalFormFields.Receipt || null);
+    const criticalDebug = {
+      // 1. Точная строка подписи (самое важное!)
+      exactSignatureStringMasked: formDebug.exactSignatureStringMasked || 'N/A',
+      exactSignatureStringLength: formDebug.exactSignatureString?.length || formDebug.exactSignatureStringMasked?.length || 0,
+      
+      // 2. Все части подписи по порядку
+      signatureParts: formDebug.signatureParts?.map((p: any, i: number) => {
+        const partStr = String(p);
+        return {
+          index: i + 1,
+          part: partStr.length > 80 ? `${partStr.substring(0, 80)}...` : partStr,
+          isPassword: false, // Не показываем пароль
+          isShp: partStr.startsWith('Shp_'),
+          isReceipt: partStr.length > 100 && partStr !== config.pass1, // Receipt обычно длинный
+        };
+      }) || [],
+      
+      // 3. Значение подписи
+      signatureValue: formDebug.signatureValue || 'N/A',
+      signatureLength: formDebug.signatureValue?.length || 0,
+      signatureIsValid: formDebug.signatureValue ? /^[0-9a-f]{32}$/.test(formDebug.signatureValue) : false,
+      
+      // 4. Все поля формы (что реально отправляется)
+      formFields: finalFormFields,
+      
+      // 5. Ключевые параметры
+      merchantLogin: debug.merchantLogin || 'N/A',
+      merchantLoginIsSteopone: formDebug.merchantLoginIsSteopone || false,
+      outSum: debug.outSum || 'N/A',
+      outSumFormat: debug.outSum === '1.00',
+      invId: debug.invId || 0,
+      invIdString: String(debug.invId || 0),
+      
+      // 6. Shp_* параметры
+      shpParams: shpParamsDebug,
+      shpParamsSorted: JSON.stringify(shpParamsDebug) === JSON.stringify([...shpParamsDebug].sort()),
+      
+      // 7. Receipt (если есть)
+      hasReceipt: !!receiptEncoded,
+      receiptEncodedLength: formDebug.receiptEncodedLength || (receiptEncoded?.length || 0),
+      receiptInSignature: formDebug.includeReceiptInSignature || false,
+      
+      // 8. Test mode
+      isTest: debug.isTest || false,
+      hasIsTestInForm: 'IsTest' in finalFormFields,
+      
+      // 9. Проверки валидности
+      validation: {
+        merchantLoginCorrect: debug.merchantLogin === 'steopone',
+        outSumFormat: debug.outSum === '1.00',
+        invIdValid: (debug.invId || 0) > 0 && (debug.invId || 0) <= 2000000000,
+        signatureFormat: formDebug.signatureValue ? /^[0-9a-f]{32}$/.test(formDebug.signatureValue) : false,
+        shpParamsSorted: JSON.stringify(shpParamsDebug) === JSON.stringify([...shpParamsDebug].sort()),
+        receiptConsistent: receiptEncoded ? finalFormFields.Receipt === receiptEncoded : true,
+      },
+    };
+
     return NextResponse.json({
       ok: true,
       paymentUrl,
       fields: finalFormFields,
-      debug: {
-        hashAlgo: 'MD5',
-        signatureBaseStringMasked: formDebug.exactSignatureStringMasked,
-        outSum: debug.outSum,
-        invId: debug.invId,
-        receiptEncodedLen: formDebug.receiptEncodedLength || 0,
-        shpParams: shpParamsDebug,
-        endpoint: paymentUrl,
-        stage: debug.stage,
-        mode: debug.mode,
-        merchantLogin: debug.merchantLogin,
-        merchantLoginIsSteopone: formDebug.merchantLoginIsSteopone,
-        description: debug.description,
-        isTest: debug.isTest,
-        signatureValue: formDebug.signatureValue, // Will be masked in UI
-        dbInsertOk: dbStoreResult.ok,
-        dbError: dbStoreResult.error || undefined,
-      },
+      debug: criticalDebug,
     });
   } catch (error: any) {
     console.error('[robokassa/create-trial] ❌ CRITICAL ERROR:', error);

@@ -184,23 +184,52 @@ export default function SubscriptionClient() {
   };
 
   const handleCopyDebug = () => {
-    if (!debugData) return;
+    if (!debugData?.debug) return;
     
-    // Формируем минималистичную debug-информацию для Error 29
-    const keyInfo = {
+    const dbg = debugData.debug;
+    
+    // Формируем критичную информацию для Error 29
+    const criticalInfo = {
+      // Самое важное - точная строка подписи
+      exactSignatureString: dbg.exactSignatureStringMasked || 'N/A',
+      signatureValue: dbg.signatureValue || 'N/A',
+      signatureLength: dbg.signatureLength || 0,
+      signatureIsValid: dbg.signatureIsValid || false,
+      
+      // Параметры подписи
+      merchantLogin: dbg.merchantLogin || 'N/A',
+      merchantLoginIsSteopone: dbg.merchantLoginIsSteopone || false,
+      outSum: dbg.outSum || 'N/A',
+      outSumFormat: dbg.outSumFormat || false,
+      invId: dbg.invId || 'N/A',
+      invIdString: dbg.invIdString || 'N/A',
+      
+      // Shp_* параметры
+      shpParams: dbg.shpParams || [],
+      shpParamsSorted: dbg.shpParamsSorted || false,
+      
+      // Receipt
+      hasReceipt: dbg.hasReceipt || false,
+      receiptEncodedLength: dbg.receiptEncodedLength || 0,
+      receiptInSignature: dbg.receiptInSignature || false,
+      
+      // Test mode
+      isTest: dbg.isTest || false,
+      hasIsTestInForm: dbg.hasIsTestInForm || false,
+      
+      // Все поля формы
+      formFields: dbg.formFields || {},
+      
+      // Проверки валидности
+      validation: dbg.validation || {},
+      
+      // Части подписи по порядку
+      signatureParts: dbg.signatureParts || [],
+      
       timestamp: debugData.timestamp || new Date().toISOString(),
-      merchantLogin: debugData.debug?.merchantLogin || 'N/A',
-      outSum: debugData.debug?.outSum || 'N/A',
-      invId: debugData.debug?.invId || 'N/A',
-      signatureValue: debugData.debug?.signatureValue || 'N/A',
-      signatureBaseStringMasked: debugData.debug?.signatureBaseStringMasked || 'N/A',
-      shpParams: debugData.debug?.shpParams || [],
-      receiptEncodedLen: debugData.debug?.receiptEncodedLen || 0,
-      isTest: debugData.debug?.isTest || false,
-      formFields: paymentData?.fields || {},
     };
 
-    const text = JSON.stringify(keyInfo, null, 2);
+    const text = JSON.stringify(criticalInfo, null, 2);
     
     navigator.clipboard.writeText(text).then(() => {
       alert('✅ Debug-информация скопирована в буфер обмена!');
@@ -298,50 +327,117 @@ export default function SubscriptionClient() {
 
               {/* Content */}
               <div className="p-4 overflow-y-auto flex-1">
-                <div className="space-y-3 text-sm">
-                  <div>
-                    <span className="text-gray-600 font-medium">MerchantLogin:</span>
-                    <span className="ml-2 text-gray-900">{debugData.debug?.merchantLogin || 'N/A'}</span>
-                  </div>
-                  <div>
-                    <span className="text-gray-600 font-medium">OutSum:</span>
-                    <span className="ml-2 text-gray-900">{debugData.debug?.outSum || 'N/A'}</span>
-                  </div>
-                  <div>
-                    <span className="text-gray-600 font-medium">InvId:</span>
-                    <span className="ml-2 text-gray-900">{debugData.debug?.invId || 'N/A'}</span>
-                  </div>
-                  <div>
-                    <span className="text-gray-600 font-medium">SignatureValue:</span>
-                    <span className="ml-2 text-gray-900 font-mono text-xs break-all">
-                      {debugData.debug?.signatureValue || 'N/A'}
-                    </span>
-                  </div>
-                  <div>
-                    <span className="text-gray-600 font-medium">Signature String:</span>
-                    <div className="mt-1 text-gray-700 font-mono text-xs break-all bg-gray-50 p-2 rounded">
-                      {debugData.debug?.signatureBaseStringMasked || 'N/A'}
-                    </div>
-                  </div>
-                  {debugData.debug?.shpParams && debugData.debug.shpParams.length > 0 && (
-                    <div>
-                      <span className="text-gray-600 font-medium">Shp_* параметры:</span>
-                      <div className="mt-1 text-gray-700 text-xs">
-                        {debugData.debug.shpParams.join(', ')}
+                {debugData?.debug && (
+                  <div className="space-y-4 text-sm">
+                    {/* 1. Точная строка подписи - САМОЕ ВАЖНОЕ */}
+                    <div className="bg-red-50 border border-red-200 rounded-lg p-3">
+                      <div className="font-semibold text-red-900 mb-2">🔴 Точная строка подписи (для Error 29):</div>
+                      <div className="text-gray-800 font-mono text-xs break-all bg-white p-2 rounded border">
+                        {debugData.debug.exactSignatureStringMasked || 'N/A'}
+                      </div>
+                      <div className="mt-1 text-xs text-gray-600">
+                        Длина: {debugData.debug.exactSignatureStringLength || 0} символов
                       </div>
                     </div>
-                  )}
-                  {debugData.debug?.receiptEncodedLen > 0 && (
+
+                    {/* 2. Значение подписи */}
                     <div>
-                      <span className="text-gray-600 font-medium">Receipt (encoded):</span>
-                      <span className="ml-2 text-gray-900">Длина: {debugData.debug.receiptEncodedLen}</span>
+                      <div className="font-semibold text-gray-900 mb-1">SignatureValue (MD5):</div>
+                      <div className="text-gray-800 font-mono text-xs break-all bg-gray-50 p-2 rounded">
+                        {debugData.debug.signatureValue || 'N/A'}
+                      </div>
+                      <div className="mt-1 text-xs">
+                        Длина: {debugData.debug.signatureLength || 0} | 
+                        Валидна: {debugData.debug.signatureIsValid ? '✅' : '❌'}
+                      </div>
                     </div>
-                  )}
-                  <div>
-                    <span className="text-gray-600 font-medium">Test Mode:</span>
-                    <span className="ml-2 text-gray-900">{debugData.debug?.isTest ? 'Да' : 'Нет'}</span>
+
+                    {/* 3. Части подписи по порядку */}
+                    {debugData.debug.signatureParts && debugData.debug.signatureParts.length > 0 && (
+                      <div>
+                        <div className="font-semibold text-gray-900 mb-1">Части подписи (по порядку):</div>
+                        <div className="bg-gray-50 p-2 rounded text-xs space-y-1">
+                          {debugData.debug.signatureParts.map((part: any, idx: number) => (
+                            <div key={idx} className="flex items-start gap-2">
+                              <span className="text-gray-500 w-6">{part.index}.</span>
+                              <span className="text-gray-800 font-mono break-all flex-1">
+                                {part.isShp ? '🔵 ' : part.isReceipt ? '🟡 Receipt (encoded)' : ''}
+                                {part.part}
+                              </span>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+
+                    {/* 4. Ключевые параметры */}
+                    <div className="grid grid-cols-2 gap-2">
+                      <div>
+                        <span className="text-gray-600">MerchantLogin:</span>
+                        <div className="font-mono text-xs">
+                          {debugData.debug.merchantLogin || 'N/A'}
+                          {debugData.debug.merchantLoginIsSteopone ? ' ✅' : ' ❌'}
+                        </div>
+                      </div>
+                      <div>
+                        <span className="text-gray-600">OutSum:</span>
+                        <div className="font-mono text-xs">
+                          {debugData.debug.outSum || 'N/A'}
+                          {debugData.debug.outSumFormat ? ' ✅' : ' ❌'}
+                        </div>
+                      </div>
+                      <div>
+                        <span className="text-gray-600">InvId:</span>
+                        <div className="font-mono text-xs">{debugData.debug.invIdString || 'N/A'}</div>
+                      </div>
+                      <div>
+                        <span className="text-gray-600">Test Mode:</span>
+                        <div className="text-xs">{debugData.debug.isTest ? 'Да' : 'Нет'}</div>
+                      </div>
+                    </div>
+
+                    {/* 5. Shp_* параметры */}
+                    {debugData.debug.shpParams && debugData.debug.shpParams.length > 0 && (
+                      <div>
+                        <div className="font-semibold text-gray-900 mb-1">
+                          Shp_* параметры:
+                          {debugData.debug.shpParamsSorted ? ' ✅ Отсортированы' : ' ❌ НЕ отсортированы!'}
+                        </div>
+                        <div className="text-xs text-gray-700 bg-gray-50 p-2 rounded">
+                          {debugData.debug.shpParams.join(', ')}
+                        </div>
+                      </div>
+                    )}
+
+                    {/* 6. Receipt */}
+                    {debugData.debug.hasReceipt && (
+                      <div>
+                        <div className="font-semibold text-gray-900 mb-1">Receipt:</div>
+                        <div className="text-xs text-gray-700">
+                          Длина: {debugData.debug.receiptEncodedLength} | 
+                          В подписи: {debugData.debug.receiptInSignature ? '✅ Да' : '❌ Нет'}
+                        </div>
+                      </div>
+                    )}
+
+                    {/* 7. Проверки валидности */}
+                    {debugData.debug.validation && (
+                      <div className="bg-blue-50 border border-blue-200 rounded-lg p-3">
+                        <div className="font-semibold text-blue-900 mb-2">Проверки валидности:</div>
+                        <div className="text-xs space-y-1">
+                          <div>MerchantLogin = "steopone": {debugData.debug.validation.merchantLoginCorrect ? '✅' : '❌'}</div>
+                          <div>OutSum = "1.00": {debugData.debug.validation.outSumFormat ? '✅' : '❌'}</div>
+                          <div>InvId валиден: {debugData.debug.validation.invIdValid ? '✅' : '❌'}</div>
+                          <div>Signature формат: {debugData.debug.validation.signatureFormat ? '✅' : '❌'}</div>
+                          <div>Shp_* отсортированы: {debugData.debug.validation.shpParamsSorted ? '✅' : '❌'}</div>
+                          {debugData.debug.hasReceipt && (
+                            <div>Receipt консистентен: {debugData.debug.validation.receiptConsistent ? '✅' : '❌'}</div>
+                          )}
+                        </div>
+                      </div>
+                    )}
                   </div>
-                </div>
+                )}
               </div>
 
               {/* Footer */}
