@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server';
-import { getRobokassaConfig } from '../../../../lib/robokassa';
+import { getRobokassaConfig } from '../../../../lib/robokassaConfig';
 
 export const dynamic = 'force-dynamic';
 
@@ -25,8 +25,8 @@ export async function GET() {
         ? 'Signature includes Receipt (raw JSON, NOT URL-encoded)'
         : 'Signature does NOT include Receipt (default, recommended)',
       signatureFormat: includeReceiptInSignature
-        ? 'MD5(MerchantLogin:OutSum:InvId:ReceiptRawJson:Password1[:Shp_*])'
-        : 'MD5(MerchantLogin:OutSum:InvId:Password1[:Shp_*])',
+        ? 'MD5(MerchantLogin:OutSum:InvId:ReceiptEncoded:Pass1[:Shp_*])'
+        : 'MD5(MerchantLogin:OutSum:InvId:Pass1[:Shp_*])',
     });
   } catch (error: any) {
     return NextResponse.json({

@@ -1,10 +1,10 @@
 import { NextResponse } from 'next/server';
 import { createClient } from '@supabase/supabase-js';
 import {
-  getRobokassaConfig,
   generateRecurringForm,
   generateSafeInvId,
 } from '../../../../lib/robokassa';
+import { getRobokassaConfig } from '../../../../lib/robokassaConfig';
 
 export const dynamic = 'force-dynamic';
 

@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import { createClient } from '@supabase/supabase-js';
 import { createHash } from 'crypto';
+import { getRobokassaConfig } from '../../../../lib/robokassaConfig';
 
 export const dynamic = 'force-dynamic';
 
@@ -41,13 +42,9 @@ export async function POST(req: Request) {
     }
 
     // Получаем конфигурацию Robokassa
-    const password2 = process.env.ROBOKASSA_PASSWORD2;
-    if (!password2) {
-      console.error('[robokassa/result] ❌ ROBOKASSA_PASSWORD2 not set');
-      return new NextResponse('ERROR: Configuration error', { status: 500 });
-    }
+    const config = getRobokassaConfig();
 
-    // Проверяем подпись: MD5(OutSum:InvId:Password2[:Shp_*])
+    // Проверяем подпись: MD5(OutSum:InvId:Pass2[:Shp_*])
     // Shp_* параметры должны быть отсортированы алфавитно
     const shpParams: string[] = [];
     for (const [key, value] of formData.entries()) {
@@ -64,7 +61,7 @@ export async function POST(req: Request) {
     shpParams.sort(); // Алфавитная сортировка
 
     // Формируем строку для проверки подписи
-    const signatureParts = [outSum, invId, password2];
+    const signatureParts = [outSum, invId, config.pass2];
     if (shpParams.length > 0) {
       signatureParts.push(...shpParams);
     }

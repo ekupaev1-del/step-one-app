@@ -9,11 +9,13 @@ export const dynamic = 'force-dynamic';
 export async function GET() {
   const gitCommit = process.env.VERCEL_GIT_COMMIT_SHA || null;
   const buildTime = new Date().toISOString();
+  const env = process.env.VERCEL_ENV || process.env.NODE_ENV || 'unknown';
   const app = 'miniapp';
 
   return NextResponse.json({
-    gitCommit,
+    commit: gitCommit,
     buildTime,
+    env,
     app,
   });
 }

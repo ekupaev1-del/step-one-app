@@ -1,12 +1,12 @@
 import { NextResponse } from 'next/server';
 import { createClient } from '@supabase/supabase-js';
 import {
-  getRobokassaConfig,
   generateReceipt,
   generatePaymentForm,
   generateSafeInvId,
   PaymentMode,
 } from '../../../../lib/robokassa';
+import { getRobokassaConfig } from '../../../../lib/robokassaConfig';
 
 export const dynamic = 'force-dynamic';
 
@@ -292,7 +292,7 @@ export async function POST(req: Request) {
       debug.robokassaTestMode = process.env.ROBOKASSA_TEST_MODE;
       
       // #region agent log
-      fetch('http://127.0.0.1:7242/ingest/43e8883f-375d-4d43-af6f-fef79b5ebbe3',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'create-trial/route.ts:getRobokassaConfig',message:'Config loaded',data:{merchantLogin:config.merchantLogin,merchantLoginIsSteopone:config.merchantLogin==='steopone',merchantLoginLength:config.merchantLogin?.length||0,password1Set:!!config.password1,password1Length:config.password1?.length||0,password2Set:!!config.password2,password2Length:config.password2?.length||0,isTest:config.isTest,testModeEnv:process.env.ROBOKASSA_TEST_MODE},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'A'})}).catch(()=>{});
+      fetch('http://127.0.0.1:7242/ingest/43e8883f-375d-4d43-af6f-fef79b5ebbe3',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'create-trial/route.ts:getRobokassaConfig',message:'Config loaded',data:{merchantLogin:config.merchantLogin,merchantLoginIsSteopone:config.merchantLogin==='steopone',merchantLoginLength:config.merchantLogin?.length||0,pass1Set:!!config.pass1,pass1Length:config.pass1?.length||0,pass2Set:!!config.pass2,pass2Length:config.pass2?.length||0,isTest:config.isTest,testModeEnv:process.env.ROBOKASSA_IS_TEST},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'A'})}).catch(()=>{});
       // #endregion
       
       // TEMP DEBUG: Log merchantLogin value (not masked) for error 26 diagnosis
@@ -396,12 +396,12 @@ export async function POST(req: Request) {
     const formFieldsForDebug = formDebug.finalFormFields || {};
     const shpParamsForLog = formDebug.customParams || [];
     const shpSorted = JSON.stringify(shpParamsForLog) === JSON.stringify([...shpParamsForLog].sort());
-    const password1Index = formDebug.signatureParts?.findIndex((p: any) => p === config.password1) ?? -1;
-    const shpAfterPassword1 = password1Index >= 0 && shpParamsForLog.length > 0 ? 
-      formDebug.signatureParts?.slice(password1Index + 1).some((p: any) => typeof p === 'string' && p.startsWith('Shp_')) : 
+    const pass1Index = formDebug.signatureParts?.findIndex((p: any) => p === config.pass1) ?? -1;
+    const shpAfterPass1 = pass1Index >= 0 && shpParamsForLog.length > 0 ? 
+      formDebug.signatureParts?.slice(pass1Index + 1).some((p: any) => typeof p === 'string' && p.startsWith('Shp_')) : 
       shpParamsForLog.length === 0;
     
-    fetch('http://127.0.0.1:7242/ingest/43e8883f-375d-4d43-af6f-fef79b5ebbe3',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'create-trial/route.ts:POST',message:'After generatePaymentForm - Error 29 diagnostics',data:{signatureValue:formDebug.signatureValue,signatureLength:formDebug.signatureLength,signatureIsLowercase:formDebug.signatureValue===formDebug.signatureValue.toLowerCase(),signatureIsHex:/^[0-9a-f]{32}$/.test(formDebug.signatureValue),merchantLogin:formDebug.merchantLogin,merchantLoginIsSteopone:formDebug.merchantLoginIsSteopone,outSum:formDebug.outSum,outSumIs100:formDebug.outSum==='1.00',invId:formDebug.invId,invIdString:String(formDebug.invId),hasReceipt:!!formDebug.receiptEncoded,receiptEncodedLength:formDebug.receiptEncodedLength||0,shpParamsCount:shpParamsForLog.length,shpParams:shpParamsForLog,shpParamsSorted:shpSorted,shpAfterPassword1:shpAfterPassword1,password1Index:password1Index,isTest:formDebug.isTest,formHasIsTest:'IsTest' in formFieldsForDebug,formIsTestValue:formFieldsForDebug.IsTest||'NOT_PRESENT',formFieldsKeys:Object.keys(formFieldsForDebug),formFieldsCount:Object.keys(formFieldsForDebug).length},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'ALL'})}).catch(()=>{});
+      fetch('http://127.0.0.1:7242/ingest/43e8883f-375d-4d43-af6f-fef79b5ebbe3',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'create-trial/route.ts:POST',message:'After generatePaymentForm - Error 29 diagnostics',data:{signatureValue:formDebug.signatureValue,signatureLength:formDebug.signatureLength,signatureIsLowercase:formDebug.signatureValue===formDebug.signatureValue.toLowerCase(),signatureIsHex:/^[0-9a-f]{32}$/.test(formDebug.signatureValue),merchantLogin:formDebug.merchantLogin,merchantLoginIsSteopone:formDebug.merchantLoginIsSteopone,outSum:formDebug.outSum,outSumIs100:formDebug.outSum==='1.00',invId:formDebug.invId,invIdString:String(formDebug.invId),hasReceipt:!!formDebug.receiptEncoded,receiptEncodedLength:formDebug.receiptEncodedLength||0,shpParamsCount:shpParamsForLog.length,shpParams:shpParamsForLog,shpParamsSorted:shpSorted,shpAfterPass1:shpAfterPass1,pass1Index:pass1Index,isTest:formDebug.isTest,formHasIsTest:'IsTest' in formFieldsForDebug,formIsTestValue:formFieldsForDebug.IsTest||'NOT_PRESENT',formFieldsKeys:Object.keys(formFieldsForDebug),formFieldsCount:Object.keys(formFieldsForDebug).length},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'ALL'})}).catch(()=>{});
     // #endregion
 
     // ========== DETAILED DEBUG FOR ERROR 29 ==========

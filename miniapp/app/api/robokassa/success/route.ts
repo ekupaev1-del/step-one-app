@@ -1,4 +1,5 @@
 import { NextResponse } from 'next/server';
+import { getRobokassaConfig } from '../../../../lib/robokassaConfig';
 
 export const dynamic = 'force-dynamic';
 
@@ -29,19 +30,24 @@ export async function GET(req: Request) {
 
     // Проверяем подпись (опционально, т.к. result уже проверил)
     // Но для безопасности лучше проверить и здесь
-    const password1 = process.env.ROBOKASSA_PASSWORD1;
-    if (password1 && invId && outSum && signatureValue) {
-      const { createHash } = await import('crypto');
-      const signatureString = `${outSum}:${invId}:${password1}`;
-      const calculatedSignature = createHash('md5')
-        .update(signatureString)
-        .digest('hex')
-        .toLowerCase();
+    try {
+      const config = getRobokassaConfig();
+      if (invId && outSum && signatureValue) {
+        const { createHash } = await import('crypto');
+        const signatureString = `${outSum}:${invId}:${config.pass1}`;
+        const calculatedSignature = createHash('md5')
+          .update(signatureString)
+          .digest('hex')
+          .toLowerCase();
 
-      if (calculatedSignature !== signatureValue.toLowerCase()) {
-        console.error('[robokassa/success] ❌ Invalid signature');
-        // Все равно редиректим, но логируем ошибку
+        if (calculatedSignature !== signatureValue.toLowerCase()) {
+          console.error('[robokassa/success] ❌ Invalid signature');
+          // Все равно редиректим, но логируем ошибку
+        }
       }
+    } catch (error) {
+      console.error('[robokassa/success] ⚠️ Config error (non-fatal):', error);
+      // Continue with redirect even if config fails
     }
 
     // Редиректим пользователя на страницу подписки или профиля
