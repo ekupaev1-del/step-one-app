@@ -85,10 +85,15 @@ export default function PaymentDebugModal({ debugInfo, onClose, errorMessage }: 
   const signatureString = robokassa?.signature?.signatureStringMasked || '';
 
   // Verification checklist
+  // CRITICAL: For Merchant/Index.aspx, form must use InvId (NOT InvoiceID)
+  const hasInvId = robokassa?.form?.fieldsSent?.InvId !== undefined;
+  const hasInvoiceID = robokassa?.form?.fieldsSent?.InvoiceID !== undefined;
+  const usesCorrectField = hasInvId && !hasInvoiceID;
+  
   const checklist = {
-    hasInvoiceID: robokassa?.form?.fieldsSent?.InvoiceID !== undefined && robokassa?.form?.fieldsSent?.InvId === undefined,
+    usesInvId: usesCorrectField, // Must use InvId, NOT InvoiceID for Index.aspx
     hasRecurring: robokassa?.hasRecurring === true && robokassa?.recurringValue === 'true',
-    signatureUsesInvoiceID: robokassa?.signature?.signatureStringMasked?.includes(robokassa?.invoiceId || '') || false,
+    signatureUsesInvId: robokassa?.signature?.signatureStringMasked?.includes(robokassa?.invoiceId || '') || false,
     shpInForm: robokassa?.form?.fieldsSent?.Shp_userId !== undefined,
     shpInSignature: robokassa?.shp?.sortedList?.some(p => p.startsWith('Shp_userId=')) || false,
     signatureIsHex32: robokassa?.signature?.isHex32 === true,
@@ -149,12 +154,18 @@ export default function PaymentDebugModal({ debugInfo, onClose, errorMessage }: 
               {/* Verification Checklist */}
               <div className="bg-gray-50 p-4 rounded-lg">
                 <h3 className="font-bold text-gray-900 mb-3">Verification Checklist</h3>
+                {hasInvoiceID && !hasInvId && (
+                  <div className="mb-3 p-3 bg-red-100 border border-red-300 rounded text-red-800 text-sm">
+                    ⚠️ <strong>WARNING:</strong> Form contains InvoiceID instead of InvId! This will cause Error 29.
+                    Merchant/Index.aspx requires InvId (NOT InvoiceID).
+                  </div>
+                )}
                 <div className="space-y-2 text-sm">
                   <div className="flex items-center gap-2">
-                    <span className={checklist.hasInvoiceID ? 'text-green-600' : 'text-red-600'}>
-                      {checklist.hasInvoiceID ? '✅' : '❌'}
+                    <span className={checklist.usesInvId ? 'text-green-600' : 'text-red-600'}>
+                      {checklist.usesInvId ? '✅' : '❌'}
                     </span>
-                    <span>Form includes InvoiceID (NOT InvId)</span>
+                    <span>Form uses InvId (correct for Merchant/Index.aspx)</span>
                   </div>
                   <div className="flex items-center gap-2">
                     <span className={checklist.hasRecurring ? 'text-green-600' : 'text-red-600'}>
@@ -163,10 +174,10 @@ export default function PaymentDebugModal({ debugInfo, onClose, errorMessage }: 
                     <span>Form includes Recurring=true</span>
                   </div>
                   <div className="flex items-center gap-2">
-                    <span className={checklist.signatureUsesInvoiceID ? 'text-green-600' : 'text-red-600'}>
-                      {checklist.signatureUsesInvoiceID ? '✅' : '❌'}
+                    <span className={checklist.signatureUsesInvId ? 'text-green-600' : 'text-red-600'}>
+                      {checklist.signatureUsesInvId ? '✅' : '❌'}
                     </span>
-                    <span>Signature string uses InvoiceID</span>
+                    <span>Signature string uses InvId (same value as form)</span>
                   </div>
                   <div className="flex items-center gap-2">
                     <span className={checklist.shpInForm && checklist.shpInSignature ? 'text-green-600' : 'text-red-600'}>
@@ -203,8 +214,13 @@ export default function PaymentDebugModal({ debugInfo, onClose, errorMessage }: 
 
                 {robokassa?.invoiceId && (
                   <div>
-                    <span className="text-gray-600 font-medium">InvoiceID:</span>
+                    <span className="text-gray-600 font-medium">InvId:</span>
                     <div className="text-gray-900 mt-1">{robokassa.invoiceId}</div>
+                    {hasInvoiceID && (
+                      <div className="text-red-600 text-sm mt-1">
+                        ⚠️ WARNING: Form also contains InvoiceID field - this is wrong for Merchant/Index.aspx!
+                      </div>
+                    )}
                   </div>
                 )}
 
@@ -259,6 +275,29 @@ export default function PaymentDebugModal({ debugInfo, onClose, errorMessage }: 
                         Encoded length: {robokassa.receipt.encodedLength} chars
                       </div>
                     )}
+                  </div>
+                )}
+
+                {/* Form Fields List */}
+                {robokassa?.form?.fieldsSent && (
+                  <div className="mt-4">
+                    <span className="text-gray-600 font-medium">Form Fields Sent:</span>
+                    <div className="mt-2 bg-gray-50 p-3 rounded text-xs font-mono">
+                      {Object.entries(robokassa.form.fieldsSent).map(([key, value]) => (
+                        <div key={key} className="mb-1">
+                          <span className="font-semibold text-gray-700">{key}:</span>{' '}
+                          <span className="text-gray-600 break-all">
+                            {key === 'SignatureValue' ? String(value).substring(0, 20) + '...' : String(value)}
+                          </span>
+                          {key === 'InvoiceID' && (
+                            <span className="ml-2 text-red-600 font-bold">⚠️ WRONG! Should be InvId</span>
+                          )}
+                          {key === 'InvId' && (
+                            <span className="ml-2 text-green-600 font-bold">✅ Correct</span>
+                          )}
+                        </div>
+                      ))}
+                    </div>
                   </div>
                 )}
               </div>

@@ -1695,15 +1695,18 @@ export function generateSafeInvId(): string {
  * 
  * Per Robokassa official docs for FIRST (mother) recurring payment:
  * - POST to https://auth.robokassa.ru/Merchant/Index.aspx
- * - Fields MUST include: MerchantLogin, OutSum, InvoiceID, Description, SignatureValue, Recurring=true
+ * - Fields MUST include: MerchantLogin, OutSum, InvId, Description, SignatureValue, Recurring=true
  * - Custom params Shp_* may be included (we use Shp_userId)
  * - Receipt is OPTIONAL (controlled by ROBOKASSA_USE_RECEIPT env flag, default false)
  * 
- * Signature WITHOUT Receipt: MD5(MerchantLogin:OutSum:InvoiceID:Password1:Shp_userId=...)
- * Signature WITH Receipt: MD5(MerchantLogin:OutSum:InvoiceID:ReceiptEncoded:Password1:Shp_userId=...)
+ * Signature WITHOUT Receipt: MD5(MerchantLogin:OutSum:InvId:Password1:Shp_userId=...)
+ * Signature WITH Receipt: MD5(MerchantLogin:OutSum:InvId:ReceiptEncoded:Password1:Shp_userId=...)
+ * 
+ * CRITICAL: Use InvId (NOT InvoiceID) for Merchant/Index.aspx
+ * InvoiceID is only used for Merchant/Recurring endpoint (child payments)
  * 
  * @param config - Robokassa configuration
- * @param invoiceId - InvoiceID value as string (digits only, positive, non-zero). Will be used as InvoiceID field in form.
+ * @param invoiceId - InvId value as string (digits only, positive, non-zero). Will be used as InvId field in form.
  * @param outSum - Payment amount as string with 2 decimals (e.g., "1.00")
  * @param description - Payment description (ASCII, max 128 chars)
  * @param telegramUserId - Telegram user ID (for Shp_userId)
@@ -1764,13 +1767,13 @@ export function createParentRecurringPaymentForm(
 } {
   // ========== VALIDATION ==========
   
-  // Validate InvoiceID
+  // Validate InvId (for Merchant/Index.aspx)
   if (!/^\d+$/.test(invoiceId)) {
-    throw new Error(`Invalid InvoiceID: ${invoiceId} (must be digits only)`);
+    throw new Error(`Invalid InvId: ${invoiceId} (must be digits only)`);
   }
   const invoiceIdNum = parseInt(invoiceId, 10);
   if (invoiceIdNum <= 0 || invoiceIdNum > 2000000000) {
-    throw new Error(`InvoiceID out of range: ${invoiceId} (must be 1-2000000000)`);
+    throw new Error(`InvId out of range: ${invoiceId} (must be 1-2000000000)`);
   }
   
   // Validate OutSum format
@@ -1827,10 +1830,11 @@ export function createParentRecurringPaymentForm(
   
   // ========== BUILD FORM FIELDS ==========
   
-  // CRITICAL: For mother recurring payment, use InvoiceID (NOT InvId) and Recurring=true
+  // CRITICAL: For Merchant/Index.aspx (mother recurring payment), use InvId (NOT InvoiceID) and Recurring=true
+  // InvoiceID is only used for Merchant/Recurring endpoint (child payments)
   const fields: Record<string, string> = {
     MerchantLogin: config.merchantLogin.trim(),
-    InvoiceID: invoiceId, // CRITICAL: Use InvoiceID (not InvId) for recurring mother payment
+    InvId: invoiceId, // CRITICAL: Use InvId (not InvoiceID) for Merchant/Index.aspx
     OutSum: outSum,
     Description: description.substring(0, 128),
     Recurring: 'true', // CRITICAL: Must be present for recurring mother payment
@@ -1849,9 +1853,9 @@ export function createParentRecurringPaymentForm(
   
   // ========== BUILD SIGNATURE ==========
   
-  // Signature WITHOUT Receipt: MerchantLogin:OutSum:InvoiceID:Password1:Shp_userId=...
-  // Signature WITH Receipt: MerchantLogin:OutSum:InvoiceID:ReceiptEncoded:Password1:Shp_userId=...
-  // CRITICAL: Use InvoiceID (same as form field) in signature
+  // Signature WITHOUT Receipt: MerchantLogin:OutSum:InvId:Password1:Shp_userId=...
+  // Signature WITH Receipt: MerchantLogin:OutSum:InvId:ReceiptEncoded:Password1:Shp_userId=...
+  // CRITICAL: Use InvId (same as form field) in signature for Merchant/Index.aspx
   // CRITICAL: Receipt must be included BEFORE Password1 if present
   // Shp_* params must be sorted alphabetically and appended AFTER Password1
   const merchantLogin = config.merchantLogin.trim();
@@ -1872,7 +1876,7 @@ export function createParentRecurringPaymentForm(
   const signatureParts: string[] = [
     merchantLogin,
     outSum,
-    invoiceId, // Use InvoiceID value (same as form field InvoiceID)
+    invoiceId, // Use InvId value (same as form field InvId)
   ];
   
   // CRITICAL: Add Receipt BEFORE Password1 if present
@@ -1880,7 +1884,7 @@ export function createParentRecurringPaymentForm(
     signatureParts.push(receiptEncoded); // SAME encoded value as in form field
   }
   
-  // Add Password1 AFTER Receipt (if present) or after InvoiceID
+  // Add Password1 AFTER Receipt (if present) or after InvId
   signatureParts.push(password1);
   
   // Add Shp_* params AFTER Password1 (sorted)
@@ -1902,15 +1906,15 @@ export function createParentRecurringPaymentForm(
   }
   
   // ========== RUNTIME VALIDATION ==========
-  // CRITICAL: Ensure InvoiceID is present (NOT InvId)
-  if (!fields.InvoiceID || fields.InvoiceID.length === 0) {
-    throw new Error('CRITICAL: InvoiceID is missing in form fields');
+  // CRITICAL: Ensure InvId is present (NOT InvoiceID) for Merchant/Index.aspx
+  if (!fields.InvId || fields.InvId.length === 0) {
+    throw new Error('CRITICAL: InvId is missing in form fields for Merchant/Index.aspx');
   }
-  if (!/^\d+$/.test(fields.InvoiceID)) {
-    throw new Error(`CRITICAL: InvoiceID must be digits only, got: ${fields.InvoiceID}`);
+  if (!/^\d+$/.test(fields.InvId)) {
+    throw new Error(`CRITICAL: InvId must be digits only, got: ${fields.InvId}`);
   }
-  if ('InvId' in fields) {
-    throw new Error('CRITICAL: InvId must NOT be present in form fields (use InvoiceID instead)');
+  if ('InvoiceID' in fields) {
+    throw new Error('CRITICAL: InvoiceID must NOT be present in form fields for Merchant/Index.aspx (use InvId instead)');
   }
   // CRITICAL: Recurring field MUST be present and equal to "true"
   if (!fields.Recurring || fields.Recurring !== 'true') {
@@ -1928,10 +1932,10 @@ export function createParentRecurringPaymentForm(
       throw new Error('CRITICAL: Receipt in form does not match receiptEncoded!');
     }
   }
-  // Validate signature uses InvoiceID (same value as form field)
-  const invoiceIdIndex = 2; // MerchantLogin:OutSum:InvoiceID[:Receipt]:Password1
-  if (signatureParts[invoiceIdIndex] !== fields.InvoiceID) {
-    throw new Error(`CRITICAL: Signature InvoiceID mismatch: signature uses "${signatureParts[invoiceIdIndex]}", form uses "${fields.InvoiceID}"`);
+  // Validate signature uses InvId (same value as form field)
+  const invIdIndex = 2; // MerchantLogin:OutSum:InvId[:Receipt]:Password1
+  if (signatureParts[invIdIndex] !== fields.InvId) {
+    throw new Error(`CRITICAL: Signature InvId mismatch: signature uses "${signatureParts[invIdIndex]}", form uses "${fields.InvId}"`);
   }
   // Validate OutSum format
   if (!/^\d+(\.\d{2})$/.test(fields.OutSum)) {
@@ -1957,7 +1961,7 @@ export function createParentRecurringPaymentForm(
   const fieldOrder = [
     'MerchantLogin',
     'OutSum',
-    'InvoiceID',
+    'InvId',
     'Description',
     'Recurring',
     ...(receiptEncoded ? ['Receipt'] : []),
@@ -2058,9 +2062,9 @@ ${formInputs}
     console.log('[robokassa] Mode: recurring-mother');
     console.log('[robokassa] Receipt enabled:', receiptEnabled);
     console.log('[robokassa] ========== VERIFICATION CHECKLIST ==========');
-    console.log('[robokassa] ✅ Form includes InvoiceID (NOT InvId):', 'InvoiceID' in fields && !('InvId' in fields));
+    console.log('[robokassa] ✅ Form includes InvId (NOT InvoiceID):', 'InvId' in fields && !('InvoiceID' in fields));
     console.log('[robokassa] ✅ Form includes Recurring=true:', fields.Recurring === 'true');
-    console.log('[robokassa] ✅ Signature string uses InvoiceID:', signatureParts[2] === fields.InvoiceID);
+    console.log('[robokassa] ✅ Signature string uses InvId:', signatureParts[2] === fields.InvId);
     console.log('[robokassa] ✅ Shp_userId in form:', 'Shp_userId' in fields);
     console.log('[robokassa] ✅ Shp_userId in signature:', shpParams.some(p => p.startsWith('Shp_userId=')));
     console.log('[robokassa] ✅ SignatureValue is lowercase hex 32 chars:', debug.robokassa.signature.isHex32);
