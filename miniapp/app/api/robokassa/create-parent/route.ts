@@ -168,7 +168,7 @@ export async function POST(req: Request) {
       // Check if subscription already exists
       const { data: existingSubscription } = await supabase
         .from('subscriptions')
-        .select('id')
+        .select('id, status')
         .eq('telegram_user_id', telegramUserId)
         .maybeSingle();
 
@@ -180,7 +180,8 @@ export async function POST(req: Request) {
         };
         
         // Only update status if it's not already set
-        if (!existingSubscription.status || existingSubscription.status === 'trial') {
+        const currentStatus = (existingSubscription as any).status;
+        if (!currentStatus || currentStatus === 'trial') {
           updateData.status = 'trial';
         }
         
