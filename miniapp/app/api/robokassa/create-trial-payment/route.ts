@@ -314,12 +314,26 @@ ${formInputs}
       },
     };
 
+    // Build debug output (only if debug=1)
+    const requestUrl = new URL(req.url);
+    const debugMode = requestUrl.searchParams.get('debug') === '1';
+    
+    const debugOutput = debugMode ? {
+      exactSignatureStringMasked: formResult.signature.baseString,
+      signatureValue: formResult.signature.value,
+      fieldsKeys: Object.keys(finalFormFields),
+      actionUrl: baseUrl,
+      receiptIncluded: true,
+      note: 'Parent recurring payment: Receipt included in signature',
+    } : undefined;
+
     return NextResponse.json({
       ok: true,
-      html,
-      paymentUrl: baseUrl,
-      fields: finalFormFields,
-      debug: unifiedDebug,
+      actionUrl: baseUrl, // For form action
+      fields: finalFormFields, // Form fields
+      html, // HTML form for auto-submit (backward compatibility)
+      paymentUrl: baseUrl, // Backward compatibility
+      debug: debugOutput, // Only if debug=1
     });
 
   } catch (error: any) {

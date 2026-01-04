@@ -3,14 +3,22 @@
 import { useEffect, useState } from 'react';
 import { useSearchParams } from 'next/navigation';
 
-interface CreateMonthlyResponse {
+interface PaymentResponse {
   ok: boolean;
-  html?: string;
-  paymentUrl?: string;
-  fields?: Record<string, string>;
+  actionUrl?: string; // For form action
+  fields?: Record<string, string>; // Form fields
+  html?: string; // HTML form (backward compatibility)
+  paymentUrl?: string; // Backward compatibility
   stage?: string;
   message?: string;
-  debug?: any;
+  debug?: {
+    exactSignatureStringMasked?: string;
+    signatureValue?: string;
+    fieldsKeys?: string[];
+    actionUrl?: string;
+    receiptIncluded?: boolean;
+    note?: string;
+  };
 }
 
 export default function SubscriptionClient() {
@@ -39,13 +47,11 @@ export default function SubscriptionClient() {
         return;
       }
 
-      // Prepare request details for monthly payment (199 RUB)
-      const requestUrl = `/api/robokassa/create-monthly?telegramUserId=${userData.telegram_id}`;
-      const requestPayload = {
-        telegramUserId: userData.telegram_id,
-      };
+      // Use trial payment endpoint (1 RUB with Recurring=true for card binding)
+      const debugParam = debugMode ? '&debug=1' : '';
+      const requestUrl = `/api/robokassa/create-trial-payment?telegramUserId=${userData.telegram_id}${debugParam}`;
 
-      // Create monthly payment (simple one-time payment)
+      // Create trial payment (parent recurring payment)
       const response = await fetch(requestUrl, {
         method: 'POST',
         headers: {
@@ -63,7 +69,7 @@ export default function SubscriptionClient() {
         return;
       }
       
-      const data: CreateMonthlyResponse = await response.json();
+      const data: PaymentResponse = await response.json();
 
       // If ok=false → show error
       if (!response.ok || !data.ok) {
@@ -86,16 +92,13 @@ export default function SubscriptionClient() {
       }
 
       // Submit form immediately (if not in debug mode)
-      if (data.html) {
-        // Use HTML directly (auto-submit form) - preferred method
-        document.open();
-        document.write(data.html);
-        document.close();
-      } else if (data.paymentUrl && data.fields) {
-        // Fallback: create form from fields
+      // Use actionUrl and fields to create form
+      const actionUrl = data.actionUrl || data.paymentUrl;
+      if (actionUrl && data.fields) {
+        // Create form from actionUrl and fields
         const form = document.createElement('form');
         form.method = 'POST';
-        form.action = data.paymentUrl;
+        form.action = actionUrl;
         form.style.display = 'none';
         
         for (const [key, value] of Object.entries(data.fields)) {
@@ -108,8 +111,13 @@ export default function SubscriptionClient() {
         
         document.body.appendChild(form);
         form.submit();
+      } else if (data.html) {
+        // Fallback: use HTML directly (auto-submit form)
+        document.open();
+        document.write(data.html);
+        document.close();
       } else {
-        const errorMsg = 'Payment creation failed: No payment URL or fields returned';
+        const errorMsg = 'Payment creation failed: No actionUrl or fields returned';
         setError(errorMsg);
         alert(`Ошибка: ${errorMsg}`);
       }
@@ -136,7 +144,7 @@ export default function SubscriptionClient() {
               Полный доступ ко всем функциям
             </div>
             <div className="text-sm text-gray-500 mt-2">
-              Оплата разовая, без автопродления
+              Пробный период 3 дня (1 ₽), затем 199 ₽/месяц
             </div>
           </div>
         </div>
@@ -167,16 +175,43 @@ export default function SubscriptionClient() {
           disabled={loading || !consentAccepted}
           className="w-full bg-blue-600 hover:bg-blue-700 text-white font-semibold py-3 px-6 rounded-lg disabled:opacity-50 disabled:cursor-not-allowed mb-4"
         >
-          {loading ? 'Обработка...' : 'Оплатить 199 ₽'}
+          {loading ? 'Обработка...' : 'Начать пробный период (1 ₽)'}
         </button>
 
         {/* Debug info block (only shown when ?debug=1) */}
         {debugMode && debugInfo && (
           <div className="mt-4 p-4 bg-gray-900 text-white rounded-lg font-mono text-xs overflow-auto max-h-96">
             <h3 className="text-sm font-bold mb-2 text-green-400">🔍 Debug информация</h3>
-            <pre className="whitespace-pre-wrap break-words">
-              {JSON.stringify(debugInfo, null, 2)}
-            </pre>
+            <div className="space-y-2">
+              <div>
+                <span className="text-green-400">Signature (masked):</span>
+                <div className="text-gray-300 break-all">{debugInfo.exactSignatureStringMasked || 'N/A'}</div>
+              </div>
+              <div>
+                <span className="text-green-400">Signature Value:</span>
+                <div className="text-gray-300 break-all">{debugInfo.signatureValue || 'N/A'}</div>
+              </div>
+              <div>
+                <span className="text-green-400">Fields:</span>
+                <div className="text-gray-300">
+                  {debugInfo.fieldsKeys ? debugInfo.fieldsKeys.join(', ') : 'N/A'}
+                </div>
+              </div>
+              <div>
+                <span className="text-green-400">Action URL:</span>
+                <div className="text-gray-300 break-all">{debugInfo.actionUrl || 'N/A'}</div>
+              </div>
+              <div>
+                <span className="text-green-400">Receipt included:</span>
+                <div className="text-gray-300">{debugInfo.receiptIncluded ? 'Yes' : 'No'}</div>
+              </div>
+              {debugInfo.note && (
+                <div>
+                  <span className="text-green-400">Note:</span>
+                  <div className="text-gray-300">{debugInfo.note}</div>
+                </div>
+              )}
+            </div>
           </div>
         )}
       </div>

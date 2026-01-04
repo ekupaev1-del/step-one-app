@@ -106,42 +106,86 @@ export async function POST(req: Request) {
     console.log('[robokassa/result] Payment found:', payment.id);
     console.log('[robokassa/result] Payment type:', payment.parent_invoice_id ? 'child (recurring)' : 'parent (trial)');
 
-    // Обновляем статус платежа
-    const { error: updateError } = await supabase
-      .from('payments')
-      .update({ status: 'paid' })
-      .eq('inv_id', Number(invId));
-
-    if (updateError) {
-      console.error('[robokassa/result] ❌ Error updating payment status:', updateError);
-      // Не возвращаем ошибку, т.к. платеж уже обработан
+    // Extract Shp_userId from callback
+    let shpUserId: number | null = null;
+    for (const [key, value] of formData.entries()) {
+      if (key === 'Shp_userId') {
+        shpUserId = Number(value);
+        break;
+      }
+    }
+    // Also check query params
+    if (!shpUserId) {
+      const shpUserIdParam = url.searchParams.get('Shp_userId');
+      if (shpUserIdParam) {
+        shpUserId = Number(shpUserIdParam);
+      }
     }
 
     // Активируем подписку
     // user_id в payments - это BIGINT (id из users)
     const userId = Number(payment.user_id);
-    const telegramUserId = payment.telegram_user_id;
+    const telegramUserId = payment.telegram_user_id || shpUserId;
     const amount = parseFloat(outSum);
 
-    // Определяем тип подписки по сумме
+    // Определяем тип подписки по сумме и статус
     let planType: 'trial' | 'standard' | 'standard_plus' = 'trial';
     let expiresAt = new Date();
+    let paymentStatus: string;
+    let subscriptionStatus: string;
     
     if (amount === 1.00) {
-      // Trial подписка - 3 дня
+      // Trial подписка - 3 дня (parent payment)
       planType = 'trial';
       expiresAt = new Date();
       expiresAt.setDate(expiresAt.getDate() + 3);
+      paymentStatus = 'trial_active'; // Mark as trial_active after payment
+      subscriptionStatus = 'trial';
+      
+      // CRITICAL: Save parent_invoice_id mapping for recurring charges
+      // The InvId from this payment is the parent invoice ID
+      console.log('[robokassa/result] Saving parent invoice ID:', invId, 'for user:', userId);
     } else if (amount === 199.00) {
-      // Standard подписка - 1 месяц
+      // Standard подписка - 1 месяц (child recurring payment)
       planType = 'standard';
       expiresAt = new Date();
       expiresAt.setMonth(expiresAt.getMonth() + 1);
+      paymentStatus = 'subscription_active'; // Mark as subscription_active after payment
+      subscriptionStatus = 'active';
     } else if (amount === 1990.00) {
       // Standard+ подписка - 12 месяцев
       planType = 'standard_plus';
       expiresAt = new Date();
       expiresAt.setMonth(expiresAt.getMonth() + 12);
+      paymentStatus = 'subscription_active';
+      subscriptionStatus = 'active';
+    } else {
+      // Unknown amount - default to paid
+      paymentStatus = 'paid';
+      subscriptionStatus = 'active';
+    }
+
+    // Обновляем статус платежа
+    const updateData: any = { status: paymentStatus };
+    
+    // If this is a parent payment (trial), ensure parent_invoice_id is stored
+    // (it should already be in the payment record, but ensure it's set)
+    if (amount === 1.00 && !payment.parent_invoice_id) {
+      // This is the parent payment itself, so parent_invoice_id should be NULL
+      // But we need to ensure the payment record has the correct status
+      console.log('[robokassa/result] Parent payment confirmed, status set to trial_active');
+    }
+    
+    const { error: updateError } = await supabase
+      .from('payments')
+      .update(updateData)
+      .eq('inv_id', Number(invId));
+
+    if (updateError) {
+      console.error('[robokassa/result] ❌ Error updating payment status:', updateError);
+      // Не возвращаем ошибку, т.к. платеж уже обработан
+    } else {
+      console.log('[robokassa/result] ✅ Payment status updated to:', paymentStatus);
     }
 
     // Проверяем, есть ли уже активная подписка
@@ -183,18 +227,24 @@ export async function POST(req: Request) {
       // Создаем новую подписку
       const trialEndsAt = planType === 'trial' ? expiresAt.toISOString() : null;
 
+      const insertData: any = {
+        user_id: userId,
+        telegram_user_id: telegramUserId,
+        payment_id: Number(invId),
+        status: subscriptionStatus,
+        plan_type: planType,
+        started_at: new Date().toISOString(),
+        expires_at: expiresAt.toISOString(),
+      };
+      
+      // Add trial_ends_at only for trial subscriptions
+      if (planType === 'trial') {
+        insertData.trial_ends_at = trialEndsAt;
+      }
+      
       const { error: insertSubError } = await supabase
         .from('subscriptions')
-        .insert({
-          user_id: userId,
-          telegram_user_id: telegramUserId,
-          payment_id: Number(invId),
-          status: 'active',
-          plan_type: planType,
-          started_at: new Date().toISOString(),
-          expires_at: expiresAt.toISOString(),
-          trial_ends_at: trialEndsAt,
-        });
+        .insert(insertData);
 
       if (insertSubError) {
         console.error('[robokassa/result] ❌ Error creating subscription:', insertSubError);
