@@ -54,7 +54,7 @@ export default function SubscriptionClient() {
       // Use new parent recurring payment endpoint
       const requestUrl = `/api/robokassa/create-parent?telegramUserId=${userData.telegram_id}`;
 
-      // Create parent recurring payment (1 RUB with Recurring=true)
+      // Create parent payment (1 RUB, normal payment, NO Recurring field)
       const response = await fetch(requestUrl, {
         method: 'POST',
         headers: {
@@ -296,6 +296,27 @@ export default function SubscriptionClient() {
                 <div>
                   <span className="text-green-400">Target URL:</span>
                   <div className="text-gray-300 mt-1 break-all">{debugInfo.targetUrl}</div>
+                </div>
+              )}
+              {debugInfo.hasRecurring !== undefined && (
+                <div>
+                  <span className={debugInfo.hasRecurring ? "text-red-400" : "text-green-400"}>
+                    Has Recurring:
+                  </span>
+                  <div className={debugInfo.hasRecurring ? "text-red-300 mt-1" : "text-green-300 mt-1"}>
+                    {debugInfo.hasRecurring ? '❌ YES (ERROR! Must be false for Index.aspx)' : '✅ NO (correct)'}
+                  </div>
+                </div>
+              )}
+              {debugInfo.formFields && (
+                <div>
+                  <span className="text-green-400">Form Fields:</span>
+                  <div className="text-gray-300 mt-1">{debugInfo.formFields.join(', ')}</div>
+                  {debugInfo.formFields.includes('Recurring') && (
+                    <div className="text-red-300 mt-1 text-xs">
+                      ⚠️ WARNING: Recurring field found! This will cause Error 29.
+                    </div>
+                  )}
                 </div>
               )}
               {debugInfo.formFields && (

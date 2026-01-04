@@ -37,7 +37,7 @@ async function generateUniqueInvoiceId(
  * POST /api/robokassa/create-parent?telegramUserId=...
  * 
  * Creates parent recurring payment (1 RUB) for card binding
- * Per Robokassa docs: POST to Index.aspx with Recurring=true
+ * Per Robokassa docs: POST to Index.aspx (NO Recurring field! Recurring is only for Merchant/Recurring endpoint)
  * 
  * Returns: { ok: true, html, debug } or { ok: false, stage, message, debug }
  */
@@ -133,7 +133,7 @@ export async function POST(req: Request) {
       }, { status: 500 });
     }
 
-    // Parent payment: 1.00 RUB with Recurring=true
+    // Parent payment: 1.00 RUB (normal payment, NO Recurring field)
     const outSum = '1.00';
     const description = 'Step One — trial 3 days';
 

@@ -1693,11 +1693,12 @@ export function generateSafeInvId(): string {
 }
 
 /**
- * Create parent recurring payment form for Robokassa
+ * Create parent payment form for Robokassa Index.aspx
  * 
  * Per Robokassa official docs:
  * - POST to https://auth.robokassa.ru/Merchant/Index.aspx
- * - Fields: MerchantLogin, InvId, Description, SignatureValue, OutSum, Recurring=true, Shp_userId
+ * - Fields: MerchantLogin, InvId, Description, SignatureValue, OutSum, Shp_userId
+ * - CRITICAL: NO Recurring field! Recurring is ONLY for server-to-server Merchant/Recurring endpoint.
  * - NO Receipt for now
  * - Signature: MD5(MerchantLogin:OutSum:InvId:Password1:Shp_userId=...)
  * - CRITICAL: For Index.aspx, use InvId (NOT InvoiceID). InvoiceID is only for Merchant/Recurring endpoint.
@@ -1769,12 +1770,14 @@ export function createParentRecurringPaymentForm(
   
   // CRITICAL: For Index.aspx, Robokassa requires InvId (NOT InvoiceID)
   // InvoiceID is only used for Merchant/Recurring endpoint
+  // CRITICAL: DO NOT include Recurring field! Recurring is ONLY for server-to-server Merchant/Recurring endpoint.
+  // The first payment is a normal payment. Trial logic is handled in our DB, not by Robokassa.
   const fields: Record<string, string> = {
     MerchantLogin: config.merchantLogin.trim(),
     InvId: invoiceId, // CRITICAL: Use InvId (not InvoiceID) for Index.aspx
     OutSum: outSum,
     Description: description.substring(0, 128),
-    Recurring: 'true', // CRITICAL: Recurring=true for parent payment
+    // NO Recurring field - this causes Error 29!
     Shp_userId: String(telegramUserId),
   };
   
@@ -1837,9 +1840,18 @@ export function createParentRecurringPaymentForm(
   if ('InvoiceID' in fields) {
     throw new Error('CRITICAL: InvoiceID must NOT be present in form fields for Index.aspx (use InvId instead)');
   }
+  // CRITICAL: Recurring field must NOT be present in Index.aspx form (causes Error 29)
+  if ('Recurring' in fields) {
+    const formKeys = Object.keys(fields).join(', ');
+    throw new Error(`CRITICAL: Recurring field must NOT be present in Index.aspx form! Form fields: ${formKeys}`);
+  }
   // Validate signature uses InvId (same value as form field)
   if (signatureParts[2] !== fields.InvId) {
     throw new Error(`CRITICAL: Signature InvId mismatch: signature uses "${signatureParts[2]}", form uses "${fields.InvId}"`);
+  }
+  // Validate OutSum format
+  if (!/^\d+(\.\d{2})$/.test(fields.OutSum)) {
+    throw new Error(`CRITICAL: OutSum format invalid: "${fields.OutSum}" (must be "X.00" format)`);
   }
   
   // Add SignatureValue to form fields
@@ -1909,21 +1921,25 @@ ${formInputs}
   // ========== SERVER LOGS ==========
   
   if (typeof window === 'undefined') {
-    console.log('[robokassa] ========== PARENT RECURRING PAYMENT FORM ==========');
+    console.log('[robokassa] ========== PARENT PAYMENT FORM (Index.aspx) ==========');
     console.log('[robokassa] Target URL: https://auth.robokassa.ru/Merchant/Index.aspx');
     console.log('[robokassa] Signature base (masked):', signatureBaseMasked);
     console.log('[robokassa] Signature value:', signatureValue);
-    console.log('[robokassa] Form fields:', Object.keys(fields), '(MUST include InvId, NOT InvoiceID for Index.aspx)');
+    console.log('[robokassa] Form fields:', Object.keys(fields), '(MUST include InvId, NOT InvoiceID, NOT Recurring for Index.aspx)');
     console.log('[robokassa] MerchantLogin:', merchantLogin);
     console.log('[robokassa] OutSum:', outSum);
     console.log('[robokassa] InvId:', invoiceId, '(CRITICAL: Using InvId for Index.aspx, NOT InvoiceID)');
     console.log('[robokassa] Shp_userId:', telegramUserId);
-    // Validate: Ensure InvId is present and InvoiceID is NOT present
+    console.log('[robokassa] HasRecurring:', 'Recurring' in fields, '(MUST be false for Index.aspx)');
+    // Validate: Ensure InvId is present and InvoiceID/Recurring are NOT present
     if (!fields.InvId) {
       console.error('[robokassa] ❌ CRITICAL ERROR: InvId is missing in form fields!');
     }
     if (fields.InvoiceID) {
       console.error('[robokassa] ❌ CRITICAL ERROR: InvoiceID is present in form fields (should be InvId for Index.aspx)!');
+    }
+    if (fields.Recurring) {
+      console.error('[robokassa] ❌ CRITICAL ERROR: Recurring is present in form fields (causes Error 29! Must be removed for Index.aspx)!');
     }
     console.log('[robokassa] ===================================================');
   }
