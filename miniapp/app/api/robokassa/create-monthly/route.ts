@@ -238,17 +238,8 @@ export async function POST(req: Request) {
       exactSignatureStringMasked: formDebug.exactSignatureStringMasked || 'N/A',
       exactSignatureStringLength: formDebug.exactSignatureString?.length || formDebug.exactSignatureStringMasked?.length || 0,
       
-      // 2. Все части подписи по порядку
-      signatureParts: formDebug.signatureParts?.map((p: any, i: number) => {
-        const partStr = String(p);
-        return {
-          index: i + 1,
-          part: partStr.length > 80 ? `${partStr.substring(0, 80)}...` : partStr,
-          isPassword: false,
-          isShp: partStr.startsWith('Shp_'),
-          isReceipt: partStr.length > 100 && partStr !== config.pass1,
-        };
-      }) || [],
+      // 2. Все части подписи по порядку (массив строк)
+      signatureParts: formDebug.signatureParts?.map((p: any) => String(p)) || [],
       
       // 3. Значение подписи
       signatureValue: formDebug.signatureValue || 'N/A',

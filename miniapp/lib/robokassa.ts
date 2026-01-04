@@ -928,14 +928,9 @@ export function generatePaymentForm(
     signatureLength: signatureResult.signatureValue.length,
     signatureVariant: signatureResult.variant, // 'with-receipt' or 'without-receipt'
     includeReceiptInSignature: includeReceiptInSignature,
-    signatureParts: signatureResult.signatureParts.map((p, i) => ({
-      index: i + 1,
-      part: typeof p === 'string' && p === config.pass1 ? '[PASSWORD1_HIDDEN]' : String(p),
-      type: typeof p,
-      isPassword: typeof p === 'string' && p === config.pass1,
-      isShp: typeof p === 'string' && p.startsWith('Shp_'),
-      isReceipt: typeof p === 'string' && p === receiptEncoded,
-    })),
+    signatureParts: signatureResult.signatureParts.map((p) => 
+      typeof p === 'string' && p === config.pass1 ? '[PASSWORD1_HIDDEN]' : String(p)
+    ), // Array of strings, not objects
     customParams: customParams, // Show which Shp_* params were included in signature (after Pass1)
     customParamsSorted: customParams, // Confirmed sorted alphabetically
     customParamsCount: customParams.length,
@@ -1457,6 +1452,352 @@ export function generateSafeInvId(): string {
   }
   
   return invIdString;
+}
+
+/**
+ * Build parent recurring payment for Merchant/Index.aspx
+ * 
+ * Fields: MerchantLogin, OutSum, InvId, Description, SignatureValue, Recurring=true,
+ *         plus optional Receipt, plus shp_* custom params.
+ * 
+ * Signature formula:
+ * - If Receipt is present and will be sent: MD5(MerchantLogin:OutSum:InvId:Receipt:Pass1:Shp_...sorted)
+ * - If Receipt is absent: MD5(MerchantLogin:OutSum:InvId:Pass1:Shp_...sorted)
+ * 
+ * IMPORTANT: Receipt in signature must be EXACTLY the same string as the "Receipt" field value (same encoding).
+ * 
+ * @param config - Robokassa configuration
+ * @param outSum - Payment amount as string with 2 decimals (e.g., "1.00")
+ * @param invId - Unique InvId (string, digits only, non-zero)
+ * @param description - Payment description (ASCII, max 128 chars)
+ * @param receipt - Optional Receipt object (if provided, will be included in form AND signature)
+ * @param telegramUserId - Optional Telegram user ID (for Shp_userId)
+ * @returns Form fields, HTML, and debug info
+ */
+export function buildParentRecurringPayment(
+  config: RobokassaConfig,
+  outSum: string,
+  invId: string,
+  description: string,
+  receipt?: Receipt,
+  telegramUserId?: number
+): {
+  fields: Record<string, string>;
+  html: string;
+  debug: {
+    exactSignatureStringMasked: string;
+    signatureValue: string;
+    signatureParts: string[]; // Array of strings, not objects
+    formFields: Record<string, string>;
+    hasReceipt: boolean;
+    receiptInSignature: boolean;
+    shpParams: string[];
+    [key: string]: any;
+  };
+} {
+  // Format OutSum to ensure 2 decimals
+  const outSumFormatted = formatOutSum(outSum);
+  
+  // Validate InvId
+  if (!/^\d+$/.test(invId)) {
+    throw new Error(`Invalid InvId: ${invId} (must be digits only)`);
+  }
+  const invIdNum = parseInt(invId, 10);
+  if (invIdNum <= 0 || invIdNum > 2000000000) {
+    throw new Error(`InvId out of range: ${invId} (must be 1-2000000000)`);
+  }
+  
+  // Build form fields (without SignatureValue)
+  const fields: Record<string, string> = {
+    MerchantLogin: config.merchantLogin,
+    OutSum: outSumFormatted,
+    InvId: invId,
+    Description: description.substring(0, 128),
+  };
+  
+  // Add Shp_userId if provided
+  if (telegramUserId) {
+    fields.Shp_userId = String(telegramUserId);
+  }
+  
+  // Process Receipt if provided
+  let receiptEncoded: string | undefined;
+  let receiptJson: string | undefined;
+  if (receipt) {
+    // Serialize Receipt JSON deterministically
+    receiptJson = JSON.stringify(receipt, (key, value) => {
+      if (value && typeof value === 'object' && !Array.isArray(value)) {
+        return Object.keys(value).sort().reduce((acc, k) => {
+          acc[k] = value[k];
+          return acc;
+        }, {} as any);
+      }
+      return value;
+    });
+    // URL-encode ONCE - this exact value will be used in BOTH form field AND signature
+    receiptEncoded = encodeURIComponent(receiptJson);
+    fields.Receipt = receiptEncoded; // Add to form fields
+  }
+  
+  // Add Recurring flag (only if feature flag is enabled)
+  const featureRecurring = process.env.FEATURE_RECURRING === 'true' || process.env.FEATURE_RECURRING === '1';
+  if (featureRecurring) {
+    fields.Recurring = 'true';
+  }
+  
+  // Add IsTest if test mode
+  if (config.isTest === true) {
+    fields.IsTest = '1';
+  }
+  
+  // Build signature
+  // CRITICAL: If Receipt is in fields, it MUST be included in signature using EXACT same encoded value
+  const includeReceiptInSignature = !!receiptEncoded;
+  
+  // Extract and sort Shp_* parameters
+  const shpEntries: Array<[string, string]> = [];
+  for (const [key, value] of Object.entries(fields)) {
+    if (key.startsWith('Shp_')) {
+      shpEntries.push([key, value]);
+    }
+  }
+  // Sort by parameter name (key) alphabetically
+  shpEntries.sort(([keyA], [keyB]) => keyA.localeCompare(keyB, undefined, { sensitivity: 'case' }));
+  
+  // Build Shp_* params in format "Shp_key=value"
+  const shpParams: string[] = shpEntries.map(([key, value]) => `${key}=${String(value).trim()}`);
+  
+  // Build signature parts in correct order
+  const signatureParts: string[] = [
+    config.merchantLogin,
+    outSumFormatted,
+    invId,
+  ];
+  
+  // Add Receipt if present (using EXACT same encoded value as in form field)
+  if (includeReceiptInSignature && receiptEncoded) {
+    signatureParts.push(receiptEncoded);
+  }
+  
+  // Add Pass1
+  signatureParts.push(config.pass1.trim());
+  
+  // Add Shp_* params AFTER Pass1 (sorted)
+  if (shpParams.length > 0) {
+    signatureParts.push(...shpParams);
+  }
+  
+  // Calculate signature
+  const exactSignatureString = signatureParts.join(':');
+  const exactSignatureStringMasked = signatureParts.map(p => 
+    p === config.pass1.trim() ? '[PASS1_HIDDEN]' : p
+  ).join(':');
+  const signatureValue = calculateSignature(...signatureParts);
+  
+  // Add SignatureValue to form fields
+  fields.SignatureValue = signatureValue;
+  
+  // Build HTML form
+  const baseUrl = 'https://auth.robokassa.ru/Merchant/Index.aspx';
+  const formInputs = Object.entries(fields)
+    .map(([name, value]) => {
+      const escapedValue = escapeHtmlAttribute(value);
+      return `    <input type="hidden" name="${name}" value="${escapedValue}">`;
+    })
+    .join('\n');
+  
+  const html = `<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Robokassa Payment</title>
+</head>
+<body>
+  <form id="robokassa-form" method="POST" action="${baseUrl}">
+${formInputs}
+  </form>
+  <script>
+    document.getElementById('robokassa-form').submit();
+  </script>
+</body>
+</html>`;
+  
+  return {
+    fields,
+    html,
+    debug: {
+      exactSignatureStringMasked,
+      signatureValue,
+      signatureParts, // Array of strings
+      formFields: fields,
+      hasReceipt: !!receiptEncoded,
+      receiptInSignature: includeReceiptInSignature,
+      shpParams,
+      merchantLogin: config.merchantLogin,
+      outSum: outSumFormatted,
+      invId,
+      isTest: config.isTest,
+    },
+  };
+}
+
+/**
+ * Build child recurring payment for Merchant/Recurring
+ * 
+ * Fields: MerchantLogin, OutSum, InvoiceID (generated, non-zero), PreviousInvoiceID (the first payment InvId),
+ *         Description, SignatureValue, shp_*.
+ * 
+ * Do NOT send: Receipt, IncCurrLabel, ExpirationDate, Recurring.
+ * 
+ * Signature formula: MD5(MerchantLogin:OutSum:InvoiceID:Pass1[:Shp_...sorted])
+ * CRITICAL: PreviousInvoiceID is NOT included in SignatureValue!
+ * 
+ * @param config - Robokassa configuration
+ * @param outSum - Payment amount as string with 2 decimals (e.g., "199.00")
+ * @param invoiceId - Child invoice ID (string, digits only, non-zero)
+ * @param previousInvoiceId - Parent invoice ID from first payment (string, digits only)
+ * @param description - Payment description (ASCII, max 128 chars)
+ * @param telegramUserId - Optional Telegram user ID (for Shp_userId)
+ * @returns Form fields, HTML, and debug info
+ */
+export function buildChildRecurringPayment(
+  config: RobokassaConfig,
+  outSum: string,
+  invoiceId: string,
+  previousInvoiceId: string,
+  description: string,
+  telegramUserId?: number
+): {
+  fields: Record<string, string>;
+  html: string;
+  debug: {
+    exactSignatureStringMasked: string;
+    signatureValue: string;
+    signatureParts: string[]; // Array of strings, not objects
+    formFields: Record<string, string>;
+    shpParams: string[];
+    [key: string]: any;
+  };
+} {
+  // Format OutSum to ensure 2 decimals
+  const outSumFormatted = formatOutSum(outSum);
+  
+  // Validate InvoiceID
+  if (!/^\d+$/.test(invoiceId)) {
+    throw new Error(`Invalid InvoiceID: ${invoiceId} (must be digits only)`);
+  }
+  const invoiceIdNum = parseInt(invoiceId, 10);
+  if (invoiceIdNum <= 0 || invoiceIdNum > 2000000000) {
+    throw new Error(`InvoiceID out of range: ${invoiceId} (must be 1-2000000000)`);
+  }
+  
+  // Validate PreviousInvoiceID
+  if (!/^\d+$/.test(previousInvoiceId)) {
+    throw new Error(`Invalid PreviousInvoiceID: ${previousInvoiceId} (must be digits only)`);
+  }
+  
+  // Build form fields (without SignatureValue)
+  // CRITICAL: DO NOT include Receipt, IncCurrLabel, ExpirationDate, Recurring
+  const fields: Record<string, string> = {
+    MerchantLogin: config.merchantLogin,
+    OutSum: outSumFormatted,
+    InvoiceID: invoiceId, // Use InvoiceID (not InvId) for child payment
+    PreviousInvoiceID: previousInvoiceId,
+    Description: description.substring(0, 128),
+  };
+  
+  // Add Shp_userId if provided
+  if (telegramUserId) {
+    fields.Shp_userId = String(telegramUserId);
+  }
+  
+  // Add IsTest if test mode
+  if (config.isTest === true) {
+    fields.IsTest = '1';
+  }
+  
+  // Extract and sort Shp_* parameters
+  const shpEntries: Array<[string, string]> = [];
+  for (const [key, value] of Object.entries(fields)) {
+    if (key.startsWith('Shp_')) {
+      shpEntries.push([key, value]);
+    }
+  }
+  // Sort by parameter name (key) alphabetically
+  shpEntries.sort(([keyA], [keyB]) => keyA.localeCompare(keyB, undefined, { sensitivity: 'case' }));
+  
+  // Build Shp_* params in format "Shp_key=value"
+  const shpParams: string[] = shpEntries.map(([key, value]) => `${key}=${String(value).trim()}`);
+  
+  // Build signature parts in correct order
+  // CRITICAL: PreviousInvoiceID is NOT included in signature!
+  const signatureParts: string[] = [
+    config.merchantLogin,
+    outSumFormatted,
+    invoiceId, // Use InvoiceID (not PreviousInvoiceID) in signature
+  ];
+  
+  // Add Pass1
+  signatureParts.push(config.pass1.trim());
+  
+  // Add Shp_* params AFTER Pass1 (sorted)
+  if (shpParams.length > 0) {
+    signatureParts.push(...shpParams);
+  }
+  
+  // Calculate signature
+  const exactSignatureString = signatureParts.join(':');
+  const exactSignatureStringMasked = signatureParts.map(p => 
+    p === config.pass1.trim() ? '[PASS1_HIDDEN]' : p
+  ).join(':');
+  const signatureValue = calculateSignature(...signatureParts);
+  
+  // Add SignatureValue to form fields
+  fields.SignatureValue = signatureValue;
+  
+  // Build HTML form
+  const baseUrl = 'https://auth.robokassa.ru/Merchant/Recurring';
+  const formInputs = Object.entries(fields)
+    .map(([name, value]) => {
+      const escapedValue = escapeHtmlAttribute(value);
+      return `    <input type="hidden" name="${name}" value="${escapedValue}">`;
+    })
+    .join('\n');
+  
+  const html = `<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Robokassa Recurring Payment</title>
+</head>
+<body>
+  <form id="robokassa-form" method="POST" action="${baseUrl}">
+${formInputs}
+  </form>
+  <script>
+    document.getElementById('robokassa-form').submit();
+  </script>
+</body>
+</html>`;
+  
+  return {
+    fields,
+    html,
+    debug: {
+      exactSignatureStringMasked,
+      signatureValue,
+      signatureParts, // Array of strings
+      formFields: fields,
+      shpParams,
+      merchantLogin: config.merchantLogin,
+      outSum: outSumFormatted,
+      invoiceId,
+      previousInvoiceId,
+      isTest: config.isTest,
+    },
+  };
 }
 
 /**

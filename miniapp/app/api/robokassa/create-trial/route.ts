@@ -193,10 +193,12 @@ export async function POST(req: Request) {
     const url = new URL(req.url);
     const telegramUserIdParam = url.searchParams.get('telegramUserId');
     const modeParam = (url.searchParams.get('mode') || 'recurring') as PaymentMode;
+    const debugMode = url.searchParams.get('debug') === '1';
 
     debug.stage = 'validate_input';
     debug.telegramUserIdParam = telegramUserIdParam;
     debug.modeParam = modeParam;
+    debug.debugMode = debugMode;
 
     if (!telegramUserIdParam) {
       console.error('[robokassa/create-trial] ❌ telegramUserId missing');
@@ -532,17 +534,8 @@ export async function POST(req: Request) {
       exactSignatureStringMasked: formDebug.exactSignatureStringMasked || 'N/A',
       exactSignatureStringLength: formDebug.exactSignatureString?.length || formDebug.exactSignatureStringMasked?.length || 0,
       
-      // 2. Все части подписи по порядку
-      signatureParts: formDebug.signatureParts?.map((p: any, i: number) => {
-        const partStr = String(p);
-        return {
-          index: i + 1,
-          part: partStr.length > 80 ? `${partStr.substring(0, 80)}...` : partStr,
-          isPassword: false, // Не показываем пароль
-          isShp: partStr.startsWith('Shp_'),
-          isReceipt: partStr.length > 100 && partStr !== config.pass1, // Receipt обычно длинный
-        };
-      }) || [],
+      // 2. Все части подписи по порядку (массив строк)
+      signatureParts: formDebug.signatureParts?.map((p: any) => String(p)) || [],
       
       // 3. Значение подписи
       signatureValue: formDebug.signatureValue || 'N/A',
@@ -587,12 +580,33 @@ export async function POST(req: Request) {
       },
     };
 
-    return NextResponse.json({
+    // If debug=1, return more detailed debug info
+    const response: any = {
       ok: true,
       paymentUrl,
       fields: finalFormFields,
       debug: criticalDebug,
-    });
+    };
+    
+    if (debugMode) {
+      // Add additional debug info when debug=1
+      response.debugDetailed = {
+        exactSignatureString: formDebug.exactSignatureString || formDebug.exactSignatureStringMasked,
+        signatureParts: formDebug.signatureParts || [],
+        formFieldsRaw: finalFormFields,
+        receiptJson: receiptJson || null,
+        receiptEncoded: receiptEncodedForDebug || null,
+        config: {
+          merchantLogin: config.merchantLogin,
+          isTest: config.isTest,
+          pass1Length: config.pass1?.length || 0,
+          pass2Length: config.pass2?.length || 0,
+        },
+        validation: criticalDebug.validation,
+      };
+    }
+    
+    return NextResponse.json(response);
   } catch (error: any) {
     console.error('[robokassa/create-trial] ❌ CRITICAL ERROR:', error);
     console.error('[robokassa/create-trial] Error stack:', error.stack);
