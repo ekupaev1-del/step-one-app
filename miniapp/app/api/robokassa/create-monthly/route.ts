@@ -232,20 +232,73 @@ export async function POST(req: Request) {
 
     debug.stage = 'success';
 
+    // Критичная информация для диагностики Error 29 (как в create-trial)
+    const criticalDebug = {
+      // 1. Точная строка подписи (самое важное!)
+      exactSignatureStringMasked: formDebug.exactSignatureStringMasked || 'N/A',
+      exactSignatureStringLength: formDebug.exactSignatureString?.length || formDebug.exactSignatureStringMasked?.length || 0,
+      
+      // 2. Все части подписи по порядку
+      signatureParts: formDebug.signatureParts?.map((p: any, i: number) => {
+        const partStr = String(p);
+        return {
+          index: i + 1,
+          part: partStr.length > 80 ? `${partStr.substring(0, 80)}...` : partStr,
+          isPassword: false,
+          isShp: partStr.startsWith('Shp_'),
+          isReceipt: partStr.length > 100 && partStr !== config.pass1,
+        };
+      }) || [],
+      
+      // 3. Значение подписи
+      signatureValue: formDebug.signatureValue || 'N/A',
+      signatureLength: formDebug.signatureValue?.length || 0,
+      signatureIsValid: formDebug.signatureValue ? /^[0-9a-f]{32}$/.test(formDebug.signatureValue) : false,
+      
+      // 4. Все поля формы (что реально отправляется)
+      formFields: finalFormFields,
+      
+      // 5. Ключевые параметры
+      merchantLogin: config.merchantLogin || 'N/A',
+      merchantLoginIsSteopone: config.merchantLogin === 'steopone',
+      outSum: outSum || 'N/A',
+      outSumFormat: outSum === '199.00',
+      invId: invId || '0',
+      invIdString: invId || '0',
+      
+      // 6. Shp_* параметры
+      shpParams: shpParams,
+      shpParamsSorted: JSON.stringify(shpParams) === JSON.stringify([...shpParams].sort()),
+      
+      // 7. Receipt (если есть)
+      hasReceipt: !!receipt,
+      receiptEncodedLength: formDebug.receiptEncodedLength || 0,
+      receiptInSignature: formDebug.includeReceiptInSignature || false,
+      
+      // 8. Test mode
+      isTest: config.isTest || false,
+      hasIsTestInForm: 'IsTest' in finalFormFields,
+      
+      // 9. Проверки валидности
+      validation: {
+        merchantLoginCorrect: config.merchantLogin === 'steopone',
+        outSumFormat: outSum === '199.00',
+        invIdValid: (() => {
+          const invIdNum = parseInt(invId || '0', 10);
+          return invIdNum > 0 && invIdNum <= 2000000000;
+        })(),
+        signatureFormat: formDebug.signatureValue ? /^[0-9a-f]{32}$/.test(formDebug.signatureValue) : false,
+        shpParamsSorted: JSON.stringify(shpParams) === JSON.stringify([...shpParams].sort()),
+        receiptConsistent: true, // For minimal mode, no receipt
+      },
+    };
+
     return NextResponse.json({
       ok: true,
       html, // HTML form for auto-submit
       paymentUrl: 'https://auth.robokassa.ru/Merchant/Index.aspx',
       fields: finalFormFields, // Form fields for manual form creation
-      debug: {
-        invId,
-        outSum,
-        merchantLogin: config.merchantLogin,
-        hasReceipt: !!receipt,
-        mode,
-        signatureValue: formDebug.signatureValue,
-        exactSignatureStringMasked: formDebug.exactSignatureStringMasked,
-      },
+      debug: criticalDebug,
     });
 
   } catch (error: any) {
