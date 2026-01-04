@@ -55,9 +55,8 @@ function getMainMenuKeyboard(userId: number | null = null): any {
   // URLs must be correct: /profile, /report (not /reports!)
   const reportUrl = userId ? `${finalBaseUrl}/report?id=${userId}` : undefined;
   const profileUrl = userId ? `${finalBaseUrl}/profile?id=${userId}` : undefined;
-  const subscriptionUrl = userId ? `${finalBaseUrl}/subscription?id=${userId}` : undefined;
 
-  // ЕДИНСТВЕННОЕ правильное меню - 5 кнопок с правильными URL
+  // ЕДИНСТВЕННОЕ правильное меню - 4 кнопки с правильными URL
   // Кнопки с web_app открывают Mini App напрямую
   const keyboard = {
     keyboard: [
@@ -66,9 +65,6 @@ function getMainMenuKeyboard(userId: number | null = null): any {
       ],
       [
         { text: "📊 Получить отчёт", web_app: reportUrl ? { url: reportUrl } : undefined }
-      ],
-      [
-        { text: "💳 Subscription", web_app: subscriptionUrl ? { url: subscriptionUrl } : undefined }
       ],
       [
         { text: "⏰ Напомнить о приёме пищи" }
@@ -121,14 +117,12 @@ async function sendMainMenu(
     const baseUrl = (MINIAPP_BASE_URL || "https://step-one-app-emins-projects-4717eabc.vercel.app").trim().replace(/\/$/, '');
     const profileUrl = userId ? `${baseUrl}/profile?id=${userId}` : undefined;
     const reportUrl = userId ? `${baseUrl}/report?id=${userId}` : undefined;
-    const subscriptionUrl = userId ? `${baseUrl}/subscription?id=${userId}` : undefined;
     
     console.log("[sendMainMenu] ========== MINI APP URL DEBUG ==========");
     console.log("[sendMainMenu] MINIAPP_BASE_URL from env:", MINIAPP_BASE_URL);
     console.log("[sendMainMenu] Final baseUrl:", baseUrl);
     console.log("[sendMainMenu] Profile URL:", profileUrl);
     console.log("[sendMainMenu] Report URL:", reportUrl);
-    console.log("[sendMainMenu] Subscription URL:", subscriptionUrl);
     console.log("[sendMainMenu] Expected production domain: step-one-app-emins-projects-4717eabc.vercel.app");
     console.log("[sendMainMenu] URL matches production:", baseUrl.includes("step-one-app-emins-projects-4717eabc.vercel.app"));
     console.log("[sendMainMenu] ========================================");

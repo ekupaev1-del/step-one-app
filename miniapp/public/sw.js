@@ -34,7 +34,6 @@ self.addEventListener("fetch", (event) => {
   // Это гарантирует, что изменения сразу видны
   const isPageRequest = url.pathname.startsWith('/profile') || 
                         url.pathname.startsWith('/report') || 
-                        url.pathname.startsWith('/subscription') ||
                         url.pathname.startsWith('/registration') ||
                         url.pathname === '/' ||
                         (!url.pathname.includes('.') && !url.pathname.startsWith('/api'));
