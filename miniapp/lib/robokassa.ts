@@ -364,18 +364,6 @@ function escapeHtmlAttribute(value: string): string {
     .replace(/'/g, '&#39;');
 }
 
-/**
- * Format OutSum to stable string format (always 2 decimals)
- * Ensures consistent formatting: "1.00", "199.00", etc.
- */
-function formatOutSum(amount: number | string): string {
-  const num = typeof amount === 'string' ? parseFloat(amount) : amount;
-  if (isNaN(num) || num < 0) {
-    throw new Error(`Invalid OutSum: ${amount}`);
-  }
-  // Format to exactly 2 decimal places
-  return num.toFixed(2);
-}
 
 /**
  * Build Robokassa form fields (pure function)
