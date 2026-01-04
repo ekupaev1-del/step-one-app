@@ -1,5 +1,9 @@
 "use client";
 
+// Force dynamic rendering - no caching
+export const dynamic = 'force-dynamic';
+export const revalidate = 0;
+
 import { useSearchParams } from "next/navigation";
 import { useState, useEffect, Suspense, useRef } from "react";
 import Link from "next/link";

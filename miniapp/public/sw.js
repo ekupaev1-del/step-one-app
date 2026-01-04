@@ -1,4 +1,5 @@
-const CACHE_KEY = "nutrition-app-v1";
+// Обновляем версию кэша при каждом деплое - это очистит старый кэш
+const CACHE_KEY = "nutrition-app-v2";
 const ASSETS_TO_CACHE = [
   "/",
   "/manifest.json",
@@ -27,6 +28,29 @@ self.addEventListener("fetch", (event) => {
     return;
   }
 
+  const url = new URL(event.request.url);
+  
+  // НЕ кэшируем страницы приложения - только статические ресурсы
+  // Это гарантирует, что изменения сразу видны
+  const isPageRequest = url.pathname.startsWith('/profile') || 
+                        url.pathname.startsWith('/report') || 
+                        url.pathname.startsWith('/subscription') ||
+                        url.pathname.startsWith('/registration') ||
+                        url.pathname === '/' ||
+                        (!url.pathname.includes('.') && !url.pathname.startsWith('/api'));
+  
+  if (isPageRequest) {
+    // Для страниц - всегда используем network-first (без кэша)
+    event.respondWith(
+      fetch(event.request).catch(() => {
+        // Fallback только если сеть недоступна
+        return caches.match(event.request);
+      })
+    );
+    return;
+  }
+
+  // Для статических ресурсов (изображения, иконки) - используем кэш
   event.respondWith(
     caches.match(event.request).then((cachedResponse) => {
       if (cachedResponse) {
@@ -39,6 +63,7 @@ self.addEventListener("fetch", (event) => {
             return response;
           }
 
+          // Кэшируем только статические ресурсы
           const responseToCache = response.clone();
           caches.open(CACHE_KEY).then((cache) => cache.put(event.request, responseToCache));
           return response;

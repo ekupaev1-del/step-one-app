@@ -41,7 +41,15 @@ const MINIAPP_BASE_URL =
 function getMainMenuKeyboard(userId: number | null = null): any {
   // ВАЖНО: Используем ТОЛЬКО production URL для стабильности
   // Preview деплои создают разные домены - это ломает web_app URLs в Telegram
-  const baseUrl = (MINIAPP_BASE_URL || "https://step-one-gr745cr7n-emins-projects-4717eabc.vercel.app").trim().replace(/\/$/, '');
+  const baseUrl = (MINIAPP_BASE_URL || "https://step-one-app-emins-projects-4717eabc.vercel.app").trim().replace(/\/$/, '');
+  
+  // КРИТИЧЕСКАЯ ПРОВЕРКА: Убеждаемся что используем production домен
+  const isProductionDomain = baseUrl.includes("step-one-app-emins-projects-4717eabc.vercel.app");
+  if (!isProductionDomain) {
+    console.error("[getMainMenuKeyboard] ⚠️ ВНИМАНИЕ: Используется НЕ production домен!");
+    console.error("[getMainMenuKeyboard] Текущий URL:", baseUrl);
+    console.error("[getMainMenuKeyboard] Ожидаемый production:", "step-one-app-emins-projects-4717eabc.vercel.app");
+  }
   
   // ВАЖНО: URL должны быть правильными - /profile и /report (не /reports!)
   const reportUrl = userId ? `${baseUrl}/report?id=${userId}` : undefined;
@@ -109,8 +117,22 @@ async function sendMainMenu(
     const menu = getMainMenuKeyboard(userId);
     const menuText = message || "Выберите действие:";
     
+    const baseUrl = (MINIAPP_BASE_URL || "https://step-one-app-emins-projects-4717eabc.vercel.app").trim().replace(/\/$/, '');
+    const profileUrl = userId ? `${baseUrl}/profile?id=${userId}` : undefined;
+    const reportUrl = userId ? `${baseUrl}/report?id=${userId}` : undefined;
+    const subscriptionUrl = userId ? `${baseUrl}/subscription?id=${userId}` : undefined;
+    
+    console.log("[sendMainMenu] ========== MINI APP URL DEBUG ==========");
+    console.log("[sendMainMenu] MINIAPP_BASE_URL from env:", MINIAPP_BASE_URL);
+    console.log("[sendMainMenu] Final baseUrl:", baseUrl);
+    console.log("[sendMainMenu] Profile URL:", profileUrl);
+    console.log("[sendMainMenu] Report URL:", reportUrl);
+    console.log("[sendMainMenu] Subscription URL:", subscriptionUrl);
+    console.log("[sendMainMenu] Expected production domain: step-one-app-emins-projects-4717eabc.vercel.app");
+    console.log("[sendMainMenu] URL matches production:", baseUrl.includes("step-one-app-emins-projects-4717eabc.vercel.app"));
+    console.log("[sendMainMenu] ========================================");
+    
     console.log("[sendMainMenu] Отправка меню для userId:", userId);
-    console.log("[sendMainMenu] MINIAPP_BASE_URL:", MINIAPP_BASE_URL);
     console.log("[sendMainMenu] Chat ID:", targetChatId);
     
     await ctx.telegram.sendMessage(
