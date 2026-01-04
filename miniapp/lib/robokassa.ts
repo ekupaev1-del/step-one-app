@@ -426,12 +426,15 @@ function buildRobokassaFields(payload: {
  */
 function buildRobokassaSignature(
   fields: Record<string, string>,
-  password1: string
+  password1: string,
+  receiptRawJson?: string,
+  includeReceiptInSignature: boolean = false
 ): {
   signatureValue: string;
   exactSignatureString: string;
   exactSignatureStringMasked: string;
   signatureParts: string[];
+  variant: 'with-receipt' | 'without-receipt';
 } {
   // #region agent log
   if (typeof window === 'undefined') {
@@ -467,10 +470,13 @@ function buildRobokassaSignature(
     invId, // String, not number
   ];
   
-  // Add Receipt (single-encoded) ONLY if it's present
-  // CRITICAL: Use the same receipt value that is sent in the form
-  if (receipt) {
-    signatureParts.push(receipt);
+  // Add Receipt (RAW JSON, NOT URL-encoded) ONLY if includeReceiptInSignature=true
+  // CRITICAL: Receipt in signature must be RAW JSON (not URL-encoded)
+  // Receipt in form field is still URL-encoded (encodeURIComponent)
+  let variant: 'with-receipt' | 'without-receipt' = 'without-receipt';
+  if (includeReceiptInSignature && receiptRawJson) {
+    signatureParts.push(receiptRawJson); // RAW JSON, NOT encoded
+    variant = 'with-receipt';
   }
   
   // Add Password1
@@ -621,6 +627,7 @@ function buildRobokassaSignature(
     exactSignatureString,
     exactSignatureStringMasked,
     signatureParts,
+    variant,
   };
 }
 
@@ -668,9 +675,27 @@ export function generatePaymentForm(
   // #endregion
   
   // Step 2: Calculate signature based on exact fields
+  // CRITICAL: By default, Receipt is NOT included in signature
+  // Only include if ROBOKASSA_INCLUDE_RECEIPT_IN_SIGNATURE=true
+  const includeReceiptInSignature = process.env.ROBOKASSA_INCLUDE_RECEIPT_IN_SIGNATURE === 'true';
+  const receiptRawJson = mode === 'recurring' && receipt ? JSON.stringify(receipt) : undefined;
+  
+  // #region agent log
+  if (typeof window === 'undefined') {
+    console.log('[robokassa] ========== SIGNATURE VARIANT SELECTION ==========');
+    console.log('[robokassa] includeReceiptInSignature:', includeReceiptInSignature);
+    console.log('[robokassa] Receipt in form:', !!formFieldsWithoutSignature.Receipt);
+    console.log('[robokassa] Receipt raw JSON length:', receiptRawJson?.length || 0);
+    console.log('[robokassa] Variant:', includeReceiptInSignature ? 'with-receipt' : 'without-receipt');
+    console.log('[robokassa] =================================================');
+  }
+  // #endregion
+  
   const signatureResult = buildRobokassaSignature(
     formFieldsWithoutSignature,
-    config.password1
+    config.password1,
+    receiptRawJson,
+    includeReceiptInSignature
   );
   
   // #region agent log
@@ -693,10 +718,10 @@ export function generatePaymentForm(
   
   // Extract receipt info for debug (if present)
   let receiptJson: string | undefined;
-  let receiptEncoded: string | undefined; // Single-encoded (used in both form and signature)
+  let receiptEncoded: string | undefined; // URL-encoded (used in form field)
   if (mode === 'recurring' && receipt) {
     receiptJson = JSON.stringify(receipt);
-    receiptEncoded = formFieldsWithoutSignature.Receipt; // Single-encoded for both form and signature
+    receiptEncoded = formFieldsWithoutSignature.Receipt; // URL-encoded for form field
   }
   
   // Extract custom params for debug
@@ -795,8 +820,10 @@ export function generatePaymentForm(
       ? formFields.Receipt === receiptEncoded 
       : null,
     receiptUsedInSignature: mode === 'recurring' 
-      ? signatureResult.signatureParts.some(p => typeof p === 'string' && p === receiptEncoded)
+      ? includeReceiptInSignature
       : null,
+    signatureVariant: signatureResult.variant,
+    includeReceiptInSignature: includeReceiptInSignature,
   };
   
   const debugInfo = {
@@ -818,6 +845,8 @@ export function generatePaymentForm(
     signatureValue: signatureResult.signatureValue,
     signatureValueLowercase: signatureResult.signatureValue, // Confirmed lowercase
     signatureLength: signatureResult.signatureValue.length,
+    signatureVariant: signatureResult.variant, // 'with-receipt' or 'without-receipt'
+    includeReceiptInSignature: includeReceiptInSignature,
     signatureParts: signatureResult.signatureParts.map((p, i) => ({
       index: i + 1,
       part: typeof p === 'string' && p === config.password1 ? '[PASSWORD1_HIDDEN]' : String(p),
@@ -843,9 +872,11 @@ export function generatePaymentForm(
     // Receipt info (safe)
     receiptRaw: receiptJson,
     receiptRawLength: receiptJson?.length || 0,
-    receiptEncoded: receiptEncoded, // Single-encoded (used in both form and signature)
+    receiptEncoded: receiptEncoded, // URL-encoded (used in form field)
     receiptEncodedLength: receiptEncoded?.length || 0,
     receiptEncodedPreview: receiptEncoded ? receiptEncoded.substring(0, 80) + '...' : undefined,
+    receiptRawJson: receiptRawJson, // Raw JSON (used in signature if includeReceiptInSignature=true)
+    receiptRawJsonLength: receiptRawJson?.length || 0,
     receiptFull: receipt,
     telegramUserId: telegramUserId || undefined,
     // Validation checks for Error 29

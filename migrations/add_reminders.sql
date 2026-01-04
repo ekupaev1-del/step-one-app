@@ -49,3 +49,4 @@ COMMENT ON COLUMN reminders.is_active IS 'Активно ли напоминан
 
 
 
+
