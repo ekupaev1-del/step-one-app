@@ -41,6 +41,9 @@ interface DebugInfo {
         vercelEnv?: string;
         nodeEnv?: string;
         receiptEnabled?: boolean;
+        hasReceiptInFinalFields?: boolean;
+        recurringEnabled?: boolean;
+        hasRecurringInFinalFields?: boolean;
         pass1Len?: number;
         pass1Prefix2?: string;
         pass1Suffix2?: string;
@@ -207,6 +210,16 @@ export default function PaymentDebugModal({ debugInfo, onClose, errorMessage }: 
                 </div>
               </div>
 
+              {/* Final Fields Info */}
+              {robokassa?.form?.fieldOrder && (
+                <div className="bg-blue-50 p-4 rounded-lg">
+                  <h3 className="font-bold text-gray-900 mb-2">Final Fields (exact order):</h3>
+                  <div className="text-sm font-mono text-gray-700">
+                    {robokassa.form.fieldOrder.join(' → ')}
+                  </div>
+                </div>
+              )}
+
               {/* Key Fields */}
               <div className="space-y-3">
                 <h3 className="font-bold text-gray-900">Key Fields</h3>
@@ -290,6 +303,25 @@ export default function PaymentDebugModal({ debugInfo, onClose, errorMessage }: 
                     )}
                   </div>
                 )}
+
+                {/* Receipt and Recurring Status */}
+                <div className="mt-4 bg-yellow-50 p-4 rounded-lg">
+                  <h3 className="font-bold text-gray-900 mb-2">Field Status:</h3>
+                  <div className="text-sm space-y-1">
+                    <div className={debugInfo.env?.receiptEnabled ? 'text-green-700' : 'text-red-700'}>
+                      Receipt Enabled: {debugInfo.env?.receiptEnabled ? '✅ YES' : '❌ NO'}
+                    </div>
+                    <div className={debugInfo.env?.hasReceiptInFinalFields ? 'text-green-700' : 'text-red-700'}>
+                      Has Receipt in finalFields: {debugInfo.env?.hasReceiptInFinalFields ? '✅ YES' : '❌ NO'}
+                    </div>
+                    <div className={debugInfo.env?.recurringEnabled ? 'text-green-700' : 'text-gray-700'}>
+                      Recurring Enabled: {debugInfo.env?.recurringEnabled ? '✅ YES' : 'NO'}
+                    </div>
+                    <div className={debugInfo.env?.hasRecurringInFinalFields ? 'text-green-700' : 'text-red-700'}>
+                      Has Recurring in finalFields: {debugInfo.env?.hasRecurringInFinalFields ? '✅ YES' : '❌ NO'}
+                    </div>
+                  </div>
+                </div>
 
                 {/* Env Fingerprint */}
                 {debugInfo.env && (
