@@ -232,55 +232,72 @@ export async function POST(req: Request) {
 
     debug.stage = 'success';
 
-    // Критичная информация для диагностики Error 29 (как в create-trial)
-    const criticalDebug = {
-      // 1. Точная строка подписи (самое важное!)
-      exactSignatureStringMasked: formDebug.exactSignatureStringMasked || 'N/A',
-      exactSignatureStringLength: formDebug.exactSignatureString?.length || formDebug.exactSignatureStringMasked?.length || 0,
+    // Единый информативный debug объект (такой же формат как в create-trial)
+    const unifiedDebug = {
+      // Подпись (самое важное для Error 29)
+      signature: {
+        value: formDebug.signatureValue || 'N/A',
+        length: formDebug.signatureValue?.length || 0,
+        isValid: formDebug.signatureValue ? /^[0-9a-f]{32}$/.test(formDebug.signatureValue) : false,
+        stringMasked: formDebug.exactSignatureStringMasked || 'N/A',
+        stringLength: formDebug.exactSignatureString?.length || formDebug.exactSignatureStringMasked?.length || 0,
+        parts: formDebug.signatureParts?.map((p: any) => String(p)) || [],
+      },
       
-      // 2. Все части подписи по порядку (массив строк)
-      signatureParts: formDebug.signatureParts?.map((p: any) => String(p)) || [],
+      // Параметры платежа
+      payment: {
+        merchantLogin: config.merchantLogin,
+        merchantLoginCorrect: config.merchantLogin === 'steopone',
+        outSum: outSum,
+        outSumFormat: outSum === '199.00',
+        invId: invId,
+        invIdValid: (() => {
+          const invIdNum = parseInt(invId, 10);
+          return invIdNum > 0 && invIdNum <= 2000000000;
+        })(),
+        description: description,
+        mode: mode,
+        isTest: config.isTest,
+        hasIsTestInForm: 'IsTest' in finalFormFields,
+      },
       
-      // 3. Значение подписи
-      signatureValue: formDebug.signatureValue || 'N/A',
-      signatureLength: formDebug.signatureValue?.length || 0,
-      signatureIsValid: formDebug.signatureValue ? /^[0-9a-f]{32}$/.test(formDebug.signatureValue) : false,
+      // Shp_* параметры
+      shpParams: {
+        list: shpParams,
+        sorted: JSON.stringify(shpParams) === JSON.stringify([...shpParams].sort()),
+        count: shpParams.length,
+      },
       
-      // 4. Все поля формы (что реально отправляется)
+      // Receipt (если есть)
+      receipt: {
+        present: !!receipt,
+        encodedLength: formDebug.receiptEncodedLength || 0,
+        inSignature: formDebug.includeReceiptInSignature || false,
+        json: receipt ? JSON.stringify(receipt) : null,
+        encoded: finalFormFields.Receipt || null,
+      },
+      
+      // Поля формы (что реально отправляется)
       formFields: finalFormFields,
       
-      // 5. Ключевые параметры
-      merchantLogin: config.merchantLogin || 'N/A',
-      merchantLoginIsSteopone: config.merchantLogin === 'steopone',
-      outSum: outSum || 'N/A',
-      outSumFormat: outSum === '199.00',
-      invId: invId || '0',
-      invIdString: invId || '0',
-      
-      // 6. Shp_* параметры
-      shpParams: shpParams,
-      shpParamsSorted: JSON.stringify(shpParams) === JSON.stringify([...shpParams].sort()),
-      
-      // 7. Receipt (если есть)
-      hasReceipt: !!receipt,
-      receiptEncodedLength: formDebug.receiptEncodedLength || 0,
-      receiptInSignature: formDebug.includeReceiptInSignature || false,
-      
-      // 8. Test mode
-      isTest: config.isTest || false,
-      hasIsTestInForm: 'IsTest' in finalFormFields,
-      
-      // 9. Проверки валидности
+      // Проверки валидности
       validation: {
         merchantLoginCorrect: config.merchantLogin === 'steopone',
         outSumFormat: outSum === '199.00',
         invIdValid: (() => {
-          const invIdNum = parseInt(invId || '0', 10);
+          const invIdNum = parseInt(invId, 10);
           return invIdNum > 0 && invIdNum <= 2000000000;
         })(),
         signatureFormat: formDebug.signatureValue ? /^[0-9a-f]{32}$/.test(formDebug.signatureValue) : false,
         shpParamsSorted: JSON.stringify(shpParams) === JSON.stringify([...shpParams].sort()),
         receiptConsistent: true, // For minimal mode, no receipt
+      },
+      
+      // Метаданные
+      meta: {
+        timestamp: new Date().toISOString(),
+        stage: 'success',
+        dbStored: !debug.dbInsertError && !debug.dbError,
       },
     };
 
@@ -289,7 +306,7 @@ export async function POST(req: Request) {
       html, // HTML form for auto-submit
       paymentUrl: 'https://auth.robokassa.ru/Merchant/Index.aspx',
       fields: finalFormFields, // Form fields for manual form creation
-      debug: criticalDebug,
+      debug: unifiedDebug,
     });
 
   } catch (error: any) {

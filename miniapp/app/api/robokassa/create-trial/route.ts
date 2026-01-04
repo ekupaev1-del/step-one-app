@@ -482,10 +482,7 @@ export async function POST(req: Request) {
       console.log('[robokassa/create-trial] ✅ Payment stored in DB');
     }
 
-    // Merge debug info
-    debug.stage = 'success';
-    debug.formGeneration = formDebug;
-    debug.debugModeEnabled = debugMode;
+    // Debug info merged into unifiedDebug below
 
     // Extract final form fields (with SignatureValue) from formDebug
     const finalFormFields = formDebug.finalFormFields || {};
@@ -525,86 +522,83 @@ export async function POST(req: Request) {
     }
     console.log('[robokassa/create-trial] =========================================');
 
-    // Критичная информация для диагностики Error 29
+    // Единый информативный debug объект
     const receiptEncodedForDebug = formDebug.receiptEncoded || (finalFormFields.Receipt || null);
-    const criticalDebug = {
-      // 1. Точная строка подписи (самое важное!)
-      exactSignatureStringMasked: formDebug.exactSignatureStringMasked || 'N/A',
-      exactSignatureStringLength: formDebug.exactSignatureString?.length || formDebug.exactSignatureStringMasked?.length || 0,
+    
+    const unifiedDebug = {
+      // Подпись (самое важное для Error 29)
+      signature: {
+        value: formDebug.signatureValue || 'N/A',
+        length: formDebug.signatureValue?.length || 0,
+        isValid: formDebug.signatureValue ? /^[0-9a-f]{32}$/.test(formDebug.signatureValue) : false,
+        stringMasked: formDebug.exactSignatureStringMasked || 'N/A',
+        stringLength: formDebug.exactSignatureString?.length || formDebug.exactSignatureStringMasked?.length || 0,
+        parts: formDebug.signatureParts?.map((p: any) => String(p)) || [],
+      },
       
-      // 2. Все части подписи по порядку (массив строк)
-      signatureParts: formDebug.signatureParts?.map((p: any) => String(p)) || [],
+      // Параметры платежа
+      payment: {
+        merchantLogin: config.merchantLogin,
+        merchantLoginCorrect: config.merchantLogin === 'steopone',
+        outSum: outSum,
+        outSumFormat: outSum === '1.00',
+        invId: invId,
+        invIdValid: (() => {
+          const invIdNum = parseInt(invId, 10);
+          return invIdNum > 0 && invIdNum <= 2000000000;
+        })(),
+        description: description,
+        mode: actualMode,
+        isTest: config.isTest,
+        hasIsTestInForm: 'IsTest' in finalFormFields,
+      },
       
-      // 3. Значение подписи
-      signatureValue: formDebug.signatureValue || 'N/A',
-      signatureLength: formDebug.signatureValue?.length || 0,
-      signatureIsValid: formDebug.signatureValue ? /^[0-9a-f]{32}$/.test(formDebug.signatureValue) : false,
+      // Shp_* параметры
+      shpParams: {
+        list: shpParamsDebug,
+        sorted: JSON.stringify(shpParamsDebug) === JSON.stringify([...shpParamsDebug].sort()),
+        count: shpParamsDebug.length,
+      },
       
-      // 4. Все поля формы (что реально отправляется)
+      // Receipt (если есть)
+      receipt: {
+        present: !!receiptEncodedForDebug,
+        encodedLength: formDebug.receiptEncodedLength || (receiptEncodedForDebug?.length || 0),
+        inSignature: formDebug.includeReceiptInSignature || false,
+        json: receiptJson || null,
+        encoded: receiptEncodedForDebug || null,
+      },
+      
+      // Поля формы (что реально отправляется)
       formFields: finalFormFields,
       
-      // 5. Ключевые параметры
-      merchantLogin: debug.merchantLogin || 'N/A',
-      merchantLoginIsSteopone: formDebug.merchantLoginIsSteopone || false,
-      outSum: debug.outSum || 'N/A',
-      outSumFormat: debug.outSum === '1.00',
-      invId: debug.invId || '0',
-      invIdString: debug.invId || '0',
-      
-      // 6. Shp_* параметры
-      shpParams: shpParamsDebug,
-      shpParamsSorted: JSON.stringify(shpParamsDebug) === JSON.stringify([...shpParamsDebug].sort()),
-      
-      // 7. Receipt (если есть)
-      hasReceipt: !!receiptEncodedForDebug,
-      receiptEncodedLength: formDebug.receiptEncodedLength || (receiptEncodedForDebug?.length || 0),
-      receiptInSignature: formDebug.includeReceiptInSignature || false,
-      
-      // 8. Test mode
-      isTest: debug.isTest || false,
-      hasIsTestInForm: 'IsTest' in finalFormFields,
-      
-      // 9. Проверки валидности
+      // Проверки валидности
       validation: {
-        merchantLoginCorrect: debug.merchantLogin === 'steopone',
-        outSumFormat: debug.outSum === '1.00',
+        merchantLoginCorrect: config.merchantLogin === 'steopone',
+        outSumFormat: outSum === '1.00',
         invIdValid: (() => {
-          const invIdNum = parseInt(debug.invId || '0', 10);
+          const invIdNum = parseInt(invId, 10);
           return invIdNum > 0 && invIdNum <= 2000000000;
         })(),
         signatureFormat: formDebug.signatureValue ? /^[0-9a-f]{32}$/.test(formDebug.signatureValue) : false,
         shpParamsSorted: JSON.stringify(shpParamsDebug) === JSON.stringify([...shpParamsDebug].sort()),
         receiptConsistent: receiptEncodedForDebug ? finalFormFields.Receipt === receiptEncodedForDebug : true,
       },
+      
+      // Метаданные
+      meta: {
+        timestamp: new Date().toISOString(),
+        stage: 'success',
+        dbStored: dbStoreResult.ok,
+      },
     };
-
-    // If debug=1, return more detailed debug info
-    const response: any = {
+    
+    return NextResponse.json({
       ok: true,
       paymentUrl,
       fields: finalFormFields,
-      debug: criticalDebug,
-    };
-    
-    if (debugMode) {
-      // Add additional debug info when debug=1
-      response.debugDetailed = {
-        exactSignatureString: formDebug.exactSignatureString || formDebug.exactSignatureStringMasked,
-        signatureParts: formDebug.signatureParts || [],
-        formFieldsRaw: finalFormFields,
-        receiptJson: receiptJson || null,
-        receiptEncoded: receiptEncodedForDebug || null,
-        config: {
-          merchantLogin: config.merchantLogin,
-          isTest: config.isTest,
-          pass1Length: config.pass1?.length || 0,
-          pass2Length: config.pass2?.length || 0,
-        },
-        validation: criticalDebug.validation,
-      };
-    }
-    
-    return NextResponse.json(response);
+      debug: unifiedDebug,
+    });
   } catch (error: any) {
     console.error('[robokassa/create-trial] ❌ CRITICAL ERROR:', error);
     console.error('[robokassa/create-trial] Error stack:', error.stack);
