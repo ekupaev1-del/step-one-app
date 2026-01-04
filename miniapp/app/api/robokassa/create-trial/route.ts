@@ -391,10 +391,8 @@ export async function POST(req: Request) {
       debug.receiptEncodedLength = receiptEncoded.length;
     }
 
-    // Use auto-submit for production, debug mode for development
-    const debugMode = process.env.NODE_ENV === 'development';
-
     // Generate payment form - IMPORTANT: use 'recurring' mode for parent payment
+    // Use auto-submit for production, debug mode if debug=1 query param is set
     // #region agent log
     fetch('http://127.0.0.1:7242/ingest/43e8883f-375d-4d43-af6f-fef79b5ebbe3',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'create-trial/route.ts:POST',message:'Before generatePaymentForm',data:{configMerchantLogin:config.merchantLogin,configIsTest:config.isTest,outSum:outSum,outSumType:typeof outSum,invId:invId,invIdType:typeof invId,description:description,actualMode:actualMode,hasReceipt:!!receipt,telegramUserId:telegramUserId,telegramUserIdType:typeof telegramUserId},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'J'})}).catch(()=>{});
     // #endregion
