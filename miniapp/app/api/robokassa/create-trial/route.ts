@@ -291,12 +291,19 @@ export async function POST(req: Request) {
       debug.isTest = config.isTest;
       debug.robokassaTestMode = process.env.ROBOKASSA_TEST_MODE;
       
+      // #region agent log
+      fetch('http://127.0.0.1:7242/ingest/43e8883f-375d-4d43-af6f-fef79b5ebbe3',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'create-trial/route.ts:getRobokassaConfig',message:'Config loaded',data:{merchantLogin:config.merchantLogin,merchantLoginIsSteopone:config.merchantLogin==='steopone',merchantLoginLength:config.merchantLogin?.length||0,password1Set:!!config.password1,password1Length:config.password1?.length||0,password2Set:!!config.password2,password2Length:config.password2?.length||0,isTest:config.isTest,testModeEnv:process.env.ROBOKASSA_TEST_MODE},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'A'})}).catch(()=>{});
+      // #endregion
+      
       // TEMP DEBUG: Log merchantLogin value (not masked) for error 26 diagnosis
       // IMPORTANT: Must be exactly "steopone" (case-sensitive)
       console.log('[robokassa/create-trial] TEMP DEBUG: merchantLogin:', config.merchantLogin);
       if (config.merchantLogin !== 'steopone') {
         console.error('[robokassa/create-trial] ❌ CRITICAL: merchantLogin is not "steopone"! Current value:', config.merchantLogin);
         console.error('[robokassa/create-trial] ❌ This will cause Robokassa Error 26!');
+        // #region agent log
+        fetch('http://127.0.0.1:7242/ingest/43e8883f-375d-4d43-af6f-fef79b5ebbe3',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'create-trial/route.ts:getRobokassaConfig',message:'ERROR: merchantLogin mismatch',data:{merchantLogin:config.merchantLogin,expected:'steopone',matches:config.merchantLogin==='steopone'},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'A'})}).catch(()=>{});
+        // #endregion
       }
       console.log('[robokassa/create-trial] Robokassa config loaded, merchant:', config.merchantLogin);
       console.log('[robokassa/create-trial] Test mode:', config.isTest);
@@ -319,6 +326,10 @@ export async function POST(req: Request) {
       debug.invId = invId;
       debug.invIdGenerated = true;
       
+      // #region agent log
+      fetch('http://127.0.0.1:7242/ingest/43e8883f-375d-4d43-af6f-fef79b5ebbe3',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'create-trial/route.ts:generateInvId',message:'InvId generated',data:{invId:invId,invIdType:typeof invId,invIdIsInteger:Number.isInteger(invId),invIdWithinRange:invId>0&&invId<=2000000000,invIdString:String(invId)},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'D'})}).catch(()=>{});
+      // #endregion
+      
       // TEMP DEBUG: Log invId for error 26 diagnosis
       console.log('[robokassa/create-trial] TEMP DEBUG: Generated InvId:', invId);
     } catch (invIdError: any) {
@@ -337,6 +348,10 @@ export async function POST(req: Request) {
 
     debug.outSum = outSum;
     debug.description = description;
+
+    // #region agent log
+    fetch('http://127.0.0.1:7242/ingest/43e8883f-375d-4d43-af6f-fef79b5ebbe3',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'create-trial/route.ts:outSum',message:'OutSum validation',data:{outSum:outSum,outSumType:typeof outSum,outSumIs100:outSum==='1.00',outSumHasTwoDecimals:/^\d+\.\d{2}$/.test(outSum),outSumLength:outSum.length},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'C'})}).catch(()=>{});
+    // #endregion
 
     // TEMP DEBUG: Log outSum for error 26 diagnosis
     console.log('[robokassa/create-trial] TEMP DEBUG: outSum:', outSum);
@@ -375,8 +390,17 @@ export async function POST(req: Request) {
       telegramUserId, // Pass telegramUserId so Shp_userId is included in form AND signature
       debugMode
     );
-    // #region agent log
-    fetch('http://127.0.0.1:7242/ingest/43e8883f-375d-4d43-af6f-fef79b5ebbe3',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'create-trial/route.ts:POST',message:'After generatePaymentForm',data:{formDebugSignatureValue:formDebug.signatureValue,formDebugSignatureLength:formDebug.signatureLength,formDebugMerchantLoginIsSteopone:formDebug.merchantLoginIsSteopone,formDebugOutSum:formDebug.outSum,formDebugCustomParams:formDebug.customParams,formDebugFormFieldsKeys:Object.keys(formDebug.finalFormFields||{})},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'G'})}).catch(()=>{});
+    
+    // #region agent log - Comprehensive Error 29 diagnostics
+    const finalFormFields = formDebug.finalFormFields || {};
+    const shpParams = formDebug.customParams || [];
+    const shpSorted = JSON.stringify(shpParams) === JSON.stringify([...shpParams].sort());
+    const password1Index = formDebug.signatureParts?.findIndex((p: any) => p === config.password1) ?? -1;
+    const shpAfterPassword1 = password1Index >= 0 && shpParams.length > 0 ? 
+      formDebug.signatureParts?.slice(password1Index + 1).some((p: any) => typeof p === 'string' && p.startsWith('Shp_')) : 
+      shpParams.length === 0;
+    
+    fetch('http://127.0.0.1:7242/ingest/43e8883f-375d-4d43-af6f-fef79b5ebbe3',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'create-trial/route.ts:POST',message:'After generatePaymentForm - Error 29 diagnostics',data:{signatureValue:formDebug.signatureValue,signatureLength:formDebug.signatureLength,signatureIsLowercase:formDebug.signatureValue===formDebug.signatureValue.toLowerCase(),signatureIsHex:/^[0-9a-f]{32}$/.test(formDebug.signatureValue),merchantLogin:formDebug.merchantLogin,merchantLoginIsSteopone:formDebug.merchantLoginIsSteopone,outSum:formDebug.outSum,outSumIs100:formDebug.outSum==='1.00',invId:formDebug.invId,invIdString:String(formDebug.invId),hasReceipt:!!formDebug.receiptEncoded,receiptEncodedLength:formDebug.receiptEncodedLength||0,shpParamsCount:shpParams.length,shpParams:shpParams,shpParamsSorted:shpSorted,shpAfterPassword1:shpAfterPassword1,password1Index:password1Index,isTest:formDebug.isTest,formHasIsTest:'IsTest' in finalFormFields,formIsTestValue:finalFormFields.IsTest||'NOT_PRESENT',formFieldsKeys:Object.keys(finalFormFields),formFieldsCount:Object.keys(finalFormFields).length},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'ALL'})}).catch(()=>{});
     // #endregion
 
     // ========== DETAILED DEBUG FOR ERROR 29 ==========

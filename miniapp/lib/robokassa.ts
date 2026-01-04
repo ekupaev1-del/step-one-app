@@ -1345,6 +1345,20 @@ export function getRobokassaConfig(): RobokassaConfig {
     console.error('[robokassa] ❌ This will cause Robokassa Error 26!');
   }
 
+  // CRITICAL: Validate IsTest and Password1 match
+  // According to Robokassa docs: If IsTest=1, MUST use TEST passwords
+  // If production (no IsTest), MUST use PRODUCTION passwords
+  if (typeof window === 'undefined') {
+    console.log('[robokassa] ========== PASSWORD/TEST MODE VALIDATION ==========');
+    console.log('[robokassa] ⚠️ CRITICAL: Ensure Password1 matches test mode!');
+    console.log('[robokassa] IsTest mode:', isTest);
+    console.log('[robokassa] If isTest=true: MUST use TEST Password1 from Robokassa cabinet');
+    console.log('[robokassa] If isTest=false: MUST use PRODUCTION Password1 from Robokassa cabinet');
+    console.log('[robokassa] Password1 length:', password1?.length || 0);
+    console.log('[robokassa] ⚠️ Mismatch will cause Error 29: Invalid SignatureValue');
+    console.log('[robokassa] ====================================================');
+  }
+
   return {
     merchantLogin, // Use exactly as from env (must be "steopone")
     password1,
