@@ -1691,22 +1691,23 @@ export function generateSafeInvId(): string {
 }
 
 /**
- * Create parent payment form for Robokassa Index.aspx
+ * Create parent recurring payment form for Robokassa Index.aspx
  * 
- * Per Robokassa official docs:
+ * Per Robokassa official docs for FIRST (mother) recurring payment:
  * - POST to https://auth.robokassa.ru/Merchant/Index.aspx
- * - Fields: MerchantLogin, InvId, Description, SignatureValue, OutSum, Shp_userId
- * - CRITICAL: NO Recurring field! Recurring is ONLY for server-to-server Merchant/Recurring endpoint.
- * - NO Receipt for now
- * - Signature: MD5(MerchantLogin:OutSum:InvId:Password1:Shp_userId=...)
- * - CRITICAL: For Index.aspx, use InvId (NOT InvoiceID). InvoiceID is only for Merchant/Recurring endpoint.
+ * - Fields MUST include: MerchantLogin, OutSum, InvoiceID, Description, SignatureValue, Recurring=true
+ * - Custom params Shp_* may be included (we use Shp_userId)
+ * - Receipt is OPTIONAL (controlled by ROBOKASSA_USE_RECEIPT env flag, default false)
+ * 
+ * Signature WITHOUT Receipt: MD5(MerchantLogin:OutSum:InvoiceID:Password1:Shp_userId=...)
+ * Signature WITH Receipt: MD5(MerchantLogin:OutSum:InvoiceID:ReceiptEncoded:Password1:Shp_userId=...)
  * 
  * @param config - Robokassa configuration
- * @param invoiceId - InvId value as string (digits only, positive, non-zero). Will be used as InvId field in form.
+ * @param invoiceId - InvoiceID value as string (digits only, positive, non-zero). Will be used as InvoiceID field in form.
  * @param outSum - Payment amount as string with 2 decimals (e.g., "1.00")
  * @param description - Payment description (ASCII, max 128 chars)
  * @param telegramUserId - Telegram user ID (for Shp_userId)
- * @returns HTML form and debug info
+ * @returns HTML form and structured debug info
  */
 export function createParentRecurringPaymentForm(
   config: RobokassaConfig,
@@ -1717,21 +1718,47 @@ export function createParentRecurringPaymentForm(
 ): {
   html: string;
   debug: {
-    merchantLogin: string;
-    outSum: string;
-    invoiceId: string;
-    signatureBaseMasked: string;
-    signatureValue: string;
-    formFields: string[]; // Field names only
-    envCheck: {
-      pass1Len: number;
-      pass2Len: number;
-      pass1Prefix2: string;
-      pass1Suffix2: string;
-      pass2Prefix2: string;
-      pass2Suffix2: string;
+    version: string;
+    timestamp: string;
+    mode: string;
+    robokassa: {
+      targetUrl: string;
+      merchantLogin: string;
+      outSum: string;
+      invoiceId: string;
+      description: string;
+      hasRecurring: boolean;
+      recurringValue: string;
+      shp: {
+        raw: Record<string, string>;
+        sortedList: string[];
+      };
+      receipt: {
+        enabled: boolean;
+        rawJson: string | null;
+        encoded: string | null;
+        encodedLength: number;
+      };
+      signature: {
+        algo: string;
+        signatureStringMasked: string;
+        signatureStringFull_DO_NOT_LOG: string | null;
+        signatureValue: string;
+        isLowercase: boolean;
+        isHex32: boolean;
+      };
+      form: {
+        fieldsSent: Record<string, string>;
+        fieldOrder: string[];
+      };
+    };
+    env: {
       vercelEnv: string;
       nodeEnv: string;
+      receiptEnabled: boolean;
+      pass1Len: number;
+      pass1Prefix2: string;
+      pass1Suffix2: string;
     };
   };
 } {
@@ -1764,74 +1791,55 @@ export function createParentRecurringPaymentForm(
     throw new Error(`Invalid telegramUserId: ${telegramUserId}`);
   }
   
-  // ========== GENERATE RECEIPT ==========
-  // CRITICAL: For this project, sno="npd" is ALWAYS used (hardcoded in generateReceipt)
-  // Receipt is MANDATORY for ALL payments when sno=npd
-  // CRITICAL: Receipt MUST be generated ALWAYS (no conditional check)
+  // ========== CHECK RECEIPT ENABLED ==========
+  // Receipt is OPTIONAL, controlled by ROBOKASSA_USE_RECEIPT env flag (default false)
+  const receiptEnabled = process.env.ROBOKASSA_USE_RECEIPT === 'true';
   
-  // Generate Receipt with sno="npd" (hardcoded in generateReceipt)
-  const receipt = generateReceipt(parseFloat(outSum), description);
+  // ========== GENERATE RECEIPT (if enabled) ==========
+  let receiptJson: string | null = null;
+  let receiptEncoded: string | null = null;
   
-  // CRITICAL: Verify sno is set to "npd"
-  if (receipt.sno !== 'npd') {
-    throw new Error(`CRITICAL: Receipt sno must be "npd" but got "${receipt.sno}". Check generateReceipt function.`);
-  }
-  
-  // Serialize Receipt JSON deterministically (sorted keys for consistent output)
-  const receiptJson = JSON.stringify(receipt, (key, value) => {
-    if (value && typeof value === 'object' && !Array.isArray(value)) {
-      // Sort object keys for deterministic output
-      return Object.keys(value).sort().reduce((acc, k) => {
-        acc[k] = value[k];
-        return acc;
-      }, {} as any);
+  if (receiptEnabled) {
+    const receipt = generateReceipt(parseFloat(outSum), description);
+    
+    // Serialize Receipt JSON deterministically (sorted keys for consistent output)
+    receiptJson = JSON.stringify(receipt, (key, value) => {
+      if (value && typeof value === 'object' && !Array.isArray(value)) {
+        return Object.keys(value).sort().reduce((acc, k) => {
+          acc[k] = value[k];
+          return acc;
+        }, {} as any);
+      }
+      return value;
+    });
+    
+    // URL-encode ONCE - this exact value will be used in BOTH form field AND signature
+    receiptEncoded = encodeURIComponent(receiptJson);
+    
+    if (typeof window === 'undefined') {
+      console.log('[robokassa] Receipt enabled, encoded length:', receiptEncoded.length);
     }
-    return value;
-  });
-  
-  // URL-encode ONCE - this exact value will be used in BOTH form field AND signature
-  const receiptEncoded = encodeURIComponent(receiptJson);
-  
-  // CRITICAL: Receipt must be non-empty
-  if (!receiptEncoded || receiptEncoded.length === 0) {
-    throw new Error('CRITICAL: Receipt encoded is empty! This will cause Error 29.');
-  }
-  
-  if (typeof window === 'undefined') {
-    console.log('[robokassa] ========== RECEIPT GENERATION ==========');
-    console.log('[robokassa] SNO: npd (hardcoded for this project)');
-    console.log('[robokassa] Receipt JSON:', receiptJson);
-    console.log('[robokassa] Receipt encoded length:', receiptEncoded.length);
-    console.log('[robokassa] Receipt encoded preview:', receiptEncoded.substring(0, 100));
-    console.log('[robokassa] =========================================');
+  } else {
+    if (typeof window === 'undefined') {
+      console.log('[robokassa] Receipt disabled (ROBOKASSA_USE_RECEIPT=false)');
+    }
   }
   
   // ========== BUILD FORM FIELDS ==========
   
-  // CRITICAL: For Index.aspx, Robokassa requires InvId (NOT InvoiceID)
-  // InvoiceID is only used for Merchant/Recurring endpoint
-  // CRITICAL: DO NOT include Recurring field! Recurring is ONLY for server-to-server Merchant/Recurring endpoint.
-  // The first payment is a normal payment. Trial logic is handled in our DB, not by Robokassa.
+  // CRITICAL: For mother recurring payment, use InvoiceID (NOT InvId) and Recurring=true
   const fields: Record<string, string> = {
     MerchantLogin: config.merchantLogin.trim(),
-    InvId: invoiceId, // CRITICAL: Use InvId (not InvoiceID) for Index.aspx
+    InvoiceID: invoiceId, // CRITICAL: Use InvoiceID (not InvId) for recurring mother payment
     OutSum: outSum,
     Description: description.substring(0, 128),
-    // NO Recurring field - this causes Error 29!
+    Recurring: 'true', // CRITICAL: Must be present for recurring mother payment
     Shp_userId: String(telegramUserId),
   };
   
-  // CRITICAL: Receipt MUST be added to fields (always generated with sno=npd)
-  // Receipt is MANDATORY for this project (sno=npd)
-  fields.Receipt = receiptEncoded;
-  
-  if (typeof window === 'undefined') {
-    console.log('[robokassa] Receipt added to fields, length:', receiptEncoded.length);
-  }
-  
-  // CRITICAL: Runtime validation - ensure Receipt is in fields
-  if (!fields.Receipt || fields.Receipt.length === 0) {
-    throw new Error(`CRITICAL: Receipt is MANDATORY (sno=npd) but is missing or empty in fields! Fields keys: ${Object.keys(fields).join(', ')}`);
+  // Add Receipt if enabled
+  if (receiptEncoded) {
+    fields.Receipt = receiptEncoded;
   }
   
   // Add IsTest if test mode (NOT in signature)
@@ -1841,9 +1849,9 @@ export function createParentRecurringPaymentForm(
   
   // ========== BUILD SIGNATURE ==========
   
-  // Signature format WITH Receipt: MerchantLogin:OutSum:InvId:Receipt:Password1:Shp_userId=...
-  // Signature format WITHOUT Receipt: MerchantLogin:OutSum:InvId:Password1:Shp_userId=...
-  // CRITICAL: Use InvId (same as form field) in signature, NOT InvoiceID
+  // Signature WITHOUT Receipt: MerchantLogin:OutSum:InvoiceID:Password1:Shp_userId=...
+  // Signature WITH Receipt: MerchantLogin:OutSum:InvoiceID:ReceiptEncoded:Password1:Shp_userId=...
+  // CRITICAL: Use InvoiceID (same as form field) in signature
   // CRITICAL: Receipt must be included BEFORE Password1 if present
   // Shp_* params must be sorted alphabetically and appended AFTER Password1
   const merchantLogin = config.merchantLogin.trim();
@@ -1851,8 +1859,10 @@ export function createParentRecurringPaymentForm(
   
   // Build Shp_* params (sorted alphabetically)
   const shpParams: string[] = [];
+  const shpRaw: Record<string, string> = {};
   for (const [key, value] of Object.entries(fields)) {
     if (key.startsWith('Shp_')) {
+      shpRaw[key] = String(value).trim();
       shpParams.push(`${key}=${String(value).trim()}`);
     }
   }
@@ -1862,7 +1872,7 @@ export function createParentRecurringPaymentForm(
   const signatureParts: string[] = [
     merchantLogin,
     outSum,
-    invoiceId, // Use InvId value (same as form field InvId)
+    invoiceId, // Use InvoiceID value (same as form field InvoiceID)
   ];
   
   // CRITICAL: Add Receipt BEFORE Password1 if present
@@ -1870,7 +1880,7 @@ export function createParentRecurringPaymentForm(
     signatureParts.push(receiptEncoded); // SAME encoded value as in form field
   }
   
-  // Add Password1 AFTER Receipt (if present) or after InvId
+  // Add Password1 AFTER Receipt (if present) or after InvoiceID
   signatureParts.push(password1);
   
   // Add Shp_* params AFTER Password1 (sorted)
@@ -1892,41 +1902,48 @@ export function createParentRecurringPaymentForm(
   }
   
   // ========== RUNTIME VALIDATION ==========
-  // CRITICAL: Ensure InvId is present and InvoiceID is NOT present for Index.aspx
-  if (!fields.InvId || fields.InvId.length === 0) {
-    throw new Error('CRITICAL: InvId is missing in form fields for Index.aspx');
+  // CRITICAL: Ensure InvoiceID is present (NOT InvId)
+  if (!fields.InvoiceID || fields.InvoiceID.length === 0) {
+    throw new Error('CRITICAL: InvoiceID is missing in form fields');
   }
-  if (!/^\d+$/.test(fields.InvId)) {
-    throw new Error(`CRITICAL: InvId must be digits only, got: ${fields.InvId}`);
+  if (!/^\d+$/.test(fields.InvoiceID)) {
+    throw new Error(`CRITICAL: InvoiceID must be digits only, got: ${fields.InvoiceID}`);
   }
-  if ('InvoiceID' in fields) {
-    throw new Error('CRITICAL: InvoiceID must NOT be present in form fields for Index.aspx (use InvId instead)');
+  if ('InvId' in fields) {
+    throw new Error('CRITICAL: InvId must NOT be present in form fields (use InvoiceID instead)');
   }
-  // CRITICAL: Recurring field must NOT be present in Index.aspx form (causes Error 29)
-  if ('Recurring' in fields) {
-    const formKeys = Object.keys(fields).join(', ');
-    throw new Error(`CRITICAL: Recurring field must NOT be present in Index.aspx form! Form fields: ${formKeys}`);
+  // CRITICAL: Recurring field MUST be present and equal to "true"
+  if (!fields.Recurring || fields.Recurring !== 'true') {
+    throw new Error(`CRITICAL: Recurring field must be "true", got: "${fields.Recurring}"`);
   }
-  // CRITICAL: Receipt MUST be present in form (always generated with sno=npd)
-  if (!fields.Receipt || fields.Receipt.length === 0) {
-    throw new Error('CRITICAL: Receipt is MANDATORY (sno=npd) but is missing or empty in form fields!');
+  // CRITICAL: If Receipt is enabled, it MUST be in form and signature
+  if (receiptEnabled) {
+    if (!fields.Receipt || fields.Receipt.length === 0) {
+      throw new Error('CRITICAL: Receipt is enabled but missing or empty in form fields!');
+    }
+    if (!receiptEncoded || !signatureParts.includes(receiptEncoded)) {
+      throw new Error('CRITICAL: Receipt is enabled but not included in signature!');
+    }
+    if (fields.Receipt !== receiptEncoded) {
+      throw new Error('CRITICAL: Receipt in form does not match receiptEncoded!');
+    }
   }
-  // CRITICAL: If Receipt is in form, it MUST be in signature
-  if (fields.Receipt && !receiptEncoded) {
-    throw new Error('CRITICAL: Receipt is present in form but not included in signature!');
-  }
-  // CRITICAL: If Receipt is in signature, it must match form Receipt exactly
-  if (receiptEncoded && fields.Receipt !== receiptEncoded) {
-    throw new Error(`CRITICAL: Receipt mismatch: form has "${fields.Receipt.substring(0, 50)}...", signature has "${receiptEncoded.substring(0, 50)}..."`);
-  }
-  // Validate signature uses InvId (same value as form field)
-  const invIdIndex = 2; // MerchantLogin:OutSum:InvId[:Receipt]:Password1
-  if (signatureParts[invIdIndex] !== fields.InvId) {
-    throw new Error(`CRITICAL: Signature InvId mismatch: signature uses "${signatureParts[invIdIndex]}", form uses "${fields.InvId}"`);
+  // Validate signature uses InvoiceID (same value as form field)
+  const invoiceIdIndex = 2; // MerchantLogin:OutSum:InvoiceID[:Receipt]:Password1
+  if (signatureParts[invoiceIdIndex] !== fields.InvoiceID) {
+    throw new Error(`CRITICAL: Signature InvoiceID mismatch: signature uses "${signatureParts[invoiceIdIndex]}", form uses "${fields.InvoiceID}"`);
   }
   // Validate OutSum format
   if (!/^\d+(\.\d{2})$/.test(fields.OutSum)) {
     throw new Error(`CRITICAL: OutSum format invalid: "${fields.OutSum}" (must be "X.00" format)`);
+  }
+  // Validate Shp_userId appears in BOTH form and signature
+  if (fields.Shp_userId) {
+    const shpInForm = 'Shp_userId' in fields;
+    const shpInSignature = shpParams.some(p => p.startsWith('Shp_userId='));
+    if (!shpInForm || !shpInSignature) {
+      throw new Error('CRITICAL: Shp_userId must appear in BOTH form and signature!');
+    }
   }
   
   // Add SignatureValue to form fields
@@ -1936,16 +1953,22 @@ export function createParentRecurringPaymentForm(
   
   const actionUrl = 'https://auth.robokassa.ru/Merchant/Index.aspx';
   
-  // CRITICAL: Verify Receipt is still in fields before building HTML
-  if (!fields.Receipt || fields.Receipt.length === 0) {
-    throw new Error(`CRITICAL: Receipt is MANDATORY (sno=npd) but is missing or empty before HTML generation! Fields: ${Object.keys(fields).join(', ')}`);
-  }
+  // Determine field order (for debug)
+  const fieldOrder = [
+    'MerchantLogin',
+    'OutSum',
+    'InvoiceID',
+    'Description',
+    'Recurring',
+    ...(receiptEncoded ? ['Receipt'] : []),
+    ...Object.keys(fields).filter(k => k.startsWith('Shp_')),
+    'SignatureValue',
+    ...(config.isTest ? ['IsTest'] : []),
+  ];
   
   const formInputs = Object.entries(fields)
     .map(([name, value]) => {
-      // CRITICAL: Never filter out Receipt - it's mandatory for sno=npd
       if (!value && name !== 'Receipt') {
-        // Skip empty values except Receipt (which should never be empty if present)
         return null;
       }
       const escapedValue = String(value)
@@ -1956,21 +1979,8 @@ export function createParentRecurringPaymentForm(
         .replace(/'/g, '&#39;');
       return `    <input type="hidden" name="${name}" value="${escapedValue}">`;
     })
-    .filter(input => input !== null) // Remove nulls but keep all non-empty fields including Receipt
+    .filter(input => input !== null)
     .join('\n');
-  
-  // CRITICAL: Verify Receipt is in HTML form
-  if (!formInputs.includes('name="Receipt"')) {
-    throw new Error('CRITICAL: Receipt is MANDATORY (sno=npd) but is missing in HTML form!');
-  }
-  
-  if (typeof window === 'undefined') {
-    console.log('[robokassa] Form inputs count:', formInputs.split('\n').length);
-    console.log('[robokassa] Receipt in HTML form:', formInputs.includes('name="Receipt"'));
-    if (fields.Receipt) {
-      console.log('[robokassa] Receipt value length in HTML:', fields.Receipt.length);
-    }
-  }
   
   const html = `<!DOCTYPE html>
 <html>
@@ -1989,110 +1999,79 @@ ${formInputs}
 </body>
 </html>`;
   
-  // ========== BUILD SAFE DEBUG INFO ==========
+  // ========== BUILD STRUCTURED DEBUG INFO ==========
   
   const pass1Len = password1.length;
-  const pass2Len = config.pass2.trim().length;
   const pass1Prefix2 = password1.substring(0, 2);
   const pass1Suffix2 = password1.substring(pass1Len - 2);
-  const pass2Prefix2 = config.pass2.trim().substring(0, 2);
-  const pass2Suffix2 = config.pass2.trim().substring(pass2Len - 2);
-  
-  // CRITICAL: Check Receipt in final fields (after all modifications)
-  const finalFieldsKeys = Object.keys(fields);
-  const receiptInFields = 'Receipt' in fields;
-  const receiptValue = fields.Receipt;
-  
-  // CRITICAL: Runtime validation - Receipt MUST be in fields (sno=npd is always used)
-  if (!receiptInFields) {
-    throw new Error(`CRITICAL: Receipt is MANDATORY (sno=npd) but is missing in final fields! Fields: ${finalFieldsKeys.join(', ')}`);
-  }
-  
-  // CRITICAL: If Receipt is in fields, it must be non-empty string
-  if (!receiptValue || receiptValue.length === 0) {
-    throw new Error('CRITICAL: Receipt field exists but is empty! This will cause Error 29.');
-  }
-  
-  // CRITICAL: Verify Receipt in signature matches Receipt in fields
-  const receiptInSignature = receiptEncoded && signatureParts.includes(receiptEncoded);
-  if (!receiptInSignature) {
-    throw new Error('CRITICAL: Receipt is in fields but NOT in signature! This will cause Error 29.');
-  }
-  
-  // CRITICAL: Verify Receipt value in fields matches receiptEncoded
-  if (fields.Receipt !== receiptEncoded) {
-    throw new Error('CRITICAL: Receipt in fields does not match receiptEncoded! This will cause Error 29.');
-  }
-  
-  // CRITICAL: Extract SNO from receipt JSON (not from env variable)
-  // Parse receipt JSON to get actual sno value
-  let actualSno = 'not-set';
-  try {
-    const receiptParsed = JSON.parse(receiptJson);
-    actualSno = receiptParsed.sno || 'not-set';
-  } catch (e) {
-    console.error('[robokassa] Failed to parse receipt JSON for SNO extraction:', e);
-  }
   
   const debug = {
-    merchantLogin,
-    outSum,
-    invoiceId,
-    signatureBaseMasked,
-    signatureValue,
-    formFields: finalFieldsKeys, // Field names only - CRITICAL: must include Receipt
-    targetUrl: actionUrl, // Index.aspx
-    hasRecurring: 'Recurring' in fields, // CRITICAL: Must be false for Index.aspx
-    receiptPresent: receiptInFields, // CRITICAL: Check actual fields, not receiptEncoded variable
-    receiptIncludedInSignature: receiptInSignature, // CRITICAL: Check actual signature parts
-    receiptEncodedLength: receiptValue ? receiptValue.length : 0, // Length of encoded Receipt
-    sno: actualSno, // SNO value from receipt JSON (should be "npd")
-    envCheck: {
-      pass1Len,
-      pass2Len,
-      pass1Prefix2,
-      pass1Suffix2,
-      pass2Prefix2,
-      pass2Suffix2,
+    version: 'robokassa-v3',
+    timestamp: new Date().toISOString(),
+    mode: 'recurring-mother',
+    robokassa: {
+      targetUrl: actionUrl,
+      merchantLogin,
+      outSum,
+      invoiceId,
+      description: description.substring(0, 128),
+      hasRecurring: true,
+      recurringValue: 'true',
+      shp: {
+        raw: shpRaw,
+        sortedList: shpParams,
+      },
+      receipt: {
+        enabled: receiptEnabled,
+        rawJson: receiptJson,
+        encoded: receiptEncoded,
+        encodedLength: receiptEncoded ? receiptEncoded.length : 0,
+      },
+      signature: {
+        algo: 'MD5',
+        signatureStringMasked: signatureBaseMasked,
+        signatureStringFull_DO_NOT_LOG: null, // Never expose full password
+        signatureValue,
+        isLowercase: true,
+        isHex32: /^[0-9a-f]{32}$/.test(signatureValue),
+      },
+      form: {
+        fieldsSent: { ...fields },
+        fieldOrder,
+      },
+    },
+    env: {
       vercelEnv: process.env.VERCEL_ENV || 'not-set',
       nodeEnv: process.env.NODE_ENV || 'not-set',
+      receiptEnabled,
+      pass1Len,
+      pass1Prefix2,
+      pass1Suffix2,
     },
   };
   
-  // ========== SERVER LOGS ==========
+  // ========== VERIFICATION CHECKLIST ==========
   
   if (typeof window === 'undefined') {
-    console.log('[robokassa] ========== PARENT PAYMENT FORM (Index.aspx) ==========');
-    console.log('[robokassa] Target URL: https://auth.robokassa.ru/Merchant/Index.aspx');
-    console.log('[robokassa] Signature base (masked):', signatureBaseMasked);
+    console.log('[robokassa] ========== PARENT RECURRING PAYMENT FORM ==========');
+    console.log('[robokassa] Target URL:', actionUrl);
+    console.log('[robokassa] Mode: recurring-mother');
+    console.log('[robokassa] Receipt enabled:', receiptEnabled);
+    console.log('[robokassa] ========== VERIFICATION CHECKLIST ==========');
+    console.log('[robokassa] ✅ Form includes InvoiceID (NOT InvId):', 'InvoiceID' in fields && !('InvId' in fields));
+    console.log('[robokassa] ✅ Form includes Recurring=true:', fields.Recurring === 'true');
+    console.log('[robokassa] ✅ Signature string uses InvoiceID:', signatureParts[2] === fields.InvoiceID);
+    console.log('[robokassa] ✅ Shp_userId in form:', 'Shp_userId' in fields);
+    console.log('[robokassa] ✅ Shp_userId in signature:', shpParams.some(p => p.startsWith('Shp_userId=')));
+    console.log('[robokassa] ✅ SignatureValue is lowercase hex 32 chars:', debug.robokassa.signature.isHex32);
+    if (receiptEnabled) {
+      console.log('[robokassa] ✅ Receipt in form:', 'Receipt' in fields);
+      console.log('[robokassa] ✅ Receipt in signature:', receiptEncoded ? signatureParts.includes(receiptEncoded) : false);
+    }
+    console.log('[robokassa] ===================================================');
+    console.log('[robokassa] Signature (masked):', signatureBaseMasked);
     console.log('[robokassa] Signature value:', signatureValue);
-    console.log('[robokassa] Form fields:', Object.keys(fields), '(MUST include InvId, NOT InvoiceID, NOT Recurring for Index.aspx)');
-    console.log('[robokassa] MerchantLogin:', merchantLogin);
-    console.log('[robokassa] OutSum:', outSum);
-    console.log('[robokassa] InvId:', invoiceId, '(CRITICAL: Using InvId for Index.aspx, NOT InvoiceID)');
-    console.log('[robokassa] Shp_userId:', telegramUserId);
-    console.log('[robokassa] HasRecurring:', 'Recurring' in fields, '(MUST be false for Index.aspx)');
-    console.log('[robokassa] Receipt in fields:', receiptInFields, '(MANDATORY, sno=npd)');
-    console.log('[robokassa] Receipt in signature:', receiptInSignature, '(MUST match receipt in fields)');
-    console.log('[robokassa] Receipt encoded length:', receiptValue ? receiptValue.length : 0);
-    console.log('[robokassa] SNO:', actualSno, '(should be "npd", hardcoded)');
-    console.log('[robokassa] Final fields keys:', finalFieldsKeys.join(', '), '(MUST include Receipt)');
-    // Validate: Ensure InvId is present and InvoiceID/Recurring are NOT present
-    if (!fields.InvId) {
-      console.error('[robokassa] ❌ CRITICAL ERROR: InvId is missing in form fields!');
-    }
-    if (fields.InvoiceID) {
-      console.error('[robokassa] ❌ CRITICAL ERROR: InvoiceID is present in form fields (should be InvId for Index.aspx)!');
-    }
-    if (fields.Recurring) {
-      console.error('[robokassa] ❌ CRITICAL ERROR: Recurring is present in form fields (causes Error 29! Must be removed for Index.aspx)!');
-    }
-    if (!fields.Receipt || fields.Receipt.length === 0) {
-      console.error('[robokassa] ❌ CRITICAL ERROR: Receipt is MANDATORY (sno=npd) but is missing or empty!');
-    }
-    if (fields.Receipt && !receiptEncoded) {
-      console.error('[robokassa] ❌ CRITICAL ERROR: Receipt is in form but not included in signature!');
-    }
+    console.log('[robokassa] Form fields:', Object.keys(fields));
     console.log('[robokassa] ===================================================');
   }
   

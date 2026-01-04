@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from 'react';
 import { useSearchParams } from 'next/navigation';
+import PaymentDebugModal from './PaymentDebugModal';
 
 interface PaymentResponse {
   ok: boolean;
@@ -11,16 +12,7 @@ interface PaymentResponse {
   paymentUrl?: string; // Backward compatibility
   stage?: string;
   message?: string;
-  debug?: {
-    exactSignatureStringMasked?: string;
-    signatureValue?: string;
-    merchantLogin?: string;
-    outSum?: string;
-    invId?: string;
-    receiptIncluded?: boolean;
-    shpParams?: string[];
-    actionUrl?: string;
-  };
+  debug?: any; // Structured debug object
 }
 
 export default function SubscriptionClient() {
@@ -31,7 +23,7 @@ export default function SubscriptionClient() {
   const [error, setError] = useState<string | null>(null);
   const [consentAccepted, setConsentAccepted] = useState(false);
   const [debugInfo, setDebugInfo] = useState<any>(null);
-  const [showDebugBeforeSubmit, setShowDebugBeforeSubmit] = useState(false);
+  const [showDebugModal, setShowDebugModal] = useState(false);
   const [paymentHtml, setPaymentHtml] = useState<string | null>(null);
 
   const handlePayMonthly = async () => {
@@ -79,57 +71,43 @@ export default function SubscriptionClient() {
       
       const data: PaymentResponse = await response.json();
 
+      // Store debug info (always show modal if debug exists, even on error)
+      if (data.debug) {
+        setDebugInfo(data.debug);
+        console.log('[Payment Debug]', data.debug);
+        setShowDebugModal(true);
+      }
+
       // If ok=false → show error with debug modal
       if (!response.ok || !data.ok) {
         const errorMsg = data.message || 'Ошибка создания платежа';
         setError(errorMsg);
         console.error('[Payment] Error:', data);
-        // Show debug modal with full error info
-        setDebugInfo({
-          error: errorMsg,
-          stage: data.stage,
-          fullResponse: data,
-        });
+        // Debug modal will show with error message
         return;
-      }
-
-      // Store debug info and payment HTML
-      if (data.debug) {
-        setDebugInfo(data.debug);
-        console.log('[Payment Debug]', data.debug);
       }
 
       if (data.html) {
         // Store HTML for later submission
         setPaymentHtml(data.html);
         
-        // Always show debug if it exists, then user can continue
-        if (data.debug) {
-          setDebugInfo(data.debug);
-          setShowDebugBeforeSubmit(true);
-          
-          // Auto-submit after 5 seconds if user doesn't interact
-          setTimeout(() => {
-            if (data.html) {
-              document.open();
-              document.write(data.html);
-              document.close();
-            }
-          }, 5000);
-          return;
+        // If debug exists, show modal first (user can submit after reviewing)
+        // Otherwise submit immediately
+        if (!data.debug) {
+          document.open();
+          document.write(data.html);
+          document.close();
         }
-        
-        // No debug info - submit immediately
-        document.open();
-        document.write(data.html);
-        document.close();
       } else {
         const errorMsg = 'Payment creation failed: No HTML form returned';
         setError(errorMsg);
-        setDebugInfo({
-          error: errorMsg,
-          response: data,
-        });
+        if (!data.debug) {
+          setDebugInfo({
+            error: errorMsg,
+            response: data,
+          });
+          setShowDebugModal(true);
+        }
       }
     } catch (error: any) {
       console.error('[Payment] Error:', error);
@@ -180,15 +158,16 @@ export default function SubscriptionClient() {
           </label>
         </div>
 
-        {!showDebugBeforeSubmit ? (
-          <button
-            onClick={() => handlePayMonthly()}
-            disabled={loading || !consentAccepted}
-            className="w-full bg-blue-600 hover:bg-blue-700 text-white font-semibold py-3 px-6 rounded-lg disabled:opacity-50 disabled:cursor-not-allowed mb-4"
-          >
-            {loading ? 'Обработка...' : 'Начать пробный период (1 ₽)'}
-          </button>
-        ) : (
+        <button
+          onClick={() => handlePayMonthly()}
+          disabled={loading || !consentAccepted}
+          className="w-full bg-blue-600 hover:bg-blue-700 text-white font-semibold py-3 px-6 rounded-lg disabled:opacity-50 disabled:cursor-not-allowed mb-4"
+        >
+          {loading ? 'Обработка...' : 'Начать пробный период (1 ₽)'}
+        </button>
+
+        {/* Continue payment button (shown when payment HTML is ready) */}
+        {paymentHtml && (
           <div className="space-y-2 mb-4">
             <button
               onClick={() => {
@@ -204,9 +183,8 @@ export default function SubscriptionClient() {
             </button>
             <button
               onClick={() => {
-                setShowDebugBeforeSubmit(false);
-                setDebugInfo(null);
                 setPaymentHtml(null);
+                setShowDebugModal(false);
               }}
               className="w-full bg-gray-500 hover:bg-gray-600 text-white font-semibold py-2 px-6 rounded-lg"
             >
@@ -215,167 +193,16 @@ export default function SubscriptionClient() {
           </div>
         )}
 
-        {/* Debug info block (shown before payment or on errors) */}
-        {debugInfo && (
-          <div className="mt-4 p-4 bg-gray-900 text-white rounded-lg font-mono text-xs">
-            <div className="flex justify-between items-center mb-3">
-              <h3 className="text-sm font-bold text-green-400">
-                {debugInfo.error ? '❌ Ошибка' : '🔍 Debug (Error 29) - Скопируйте перед оплатой'}
-              </h3>
-              <button
-                onClick={() => {
-                  const debugText = JSON.stringify(debugInfo, null, 2);
-                  navigator.clipboard.writeText(debugText).then(() => {
-                    alert('✅ Скопировано в буфер обмена!');
-                  }).catch(() => {
-                    // Fallback for older browsers
-                    const textarea = document.createElement('textarea');
-                    textarea.value = debugText;
-                    textarea.style.position = 'fixed';
-                    textarea.style.opacity = '0';
-                    document.body.appendChild(textarea);
-                    textarea.select();
-                    try {
-                      document.execCommand('copy');
-                      alert('✅ Скопировано!');
-                    } catch (e) {
-                      alert('❌ Ошибка копирования');
-                    }
-                    document.body.removeChild(textarea);
-                  });
-                }}
-                className="px-3 py-1 bg-green-600 hover:bg-green-700 text-white text-xs rounded font-semibold"
-              >
-                📋 Копировать всё
-              </button>
-            </div>
-            <div className="space-y-2 overflow-auto max-h-96">
-              {debugInfo.error && (
-                <div>
-                  <span className="text-red-400">Ошибка:</span>
-                  <div className="text-red-300 mt-1">{debugInfo.error}</div>
-                </div>
-              )}
-              {debugInfo.stage && (
-                <div>
-                  <span className="text-yellow-400">Stage:</span>
-                  <div className="text-gray-300 mt-1">{debugInfo.stage}</div>
-                </div>
-              )}
-              {debugInfo.signatureBaseMasked && (
-                <div>
-                  <span className="text-green-400">Signature (masked):</span>
-                  <div className="text-gray-300 break-all mt-1">{debugInfo.signatureBaseMasked}</div>
-                </div>
-              )}
-              {debugInfo.signatureValue && (
-                <div>
-                  <span className="text-green-400">Signature Value:</span>
-                  <div className="text-gray-300 break-all mt-1">{debugInfo.signatureValue}</div>
-                </div>
-              )}
-              {debugInfo.merchantLogin && (
-                <div>
-                  <span className="text-green-400">MerchantLogin:</span>
-                  <div className="text-gray-300 mt-1">{debugInfo.merchantLogin}</div>
-                </div>
-              )}
-              {debugInfo.outSum && (
-                <div>
-                  <span className="text-green-400">OutSum:</span>
-                  <div className="text-gray-300 mt-1">{debugInfo.outSum}</div>
-                </div>
-              )}
-              {debugInfo.invoiceId && (
-                <div>
-                  <span className="text-green-400">InvId:</span>
-                  <div className="text-gray-300 mt-1">{debugInfo.invoiceId}</div>
-                </div>
-              )}
-              {debugInfo.targetUrl && (
-                <div>
-                  <span className="text-green-400">Target URL:</span>
-                  <div className="text-gray-300 mt-1 break-all">{debugInfo.targetUrl}</div>
-                </div>
-              )}
-              {debugInfo.hasRecurring !== undefined && (
-                <div>
-                  <span className={debugInfo.hasRecurring ? "text-red-400" : "text-green-400"}>
-                    Has Recurring:
-                  </span>
-                  <div className={debugInfo.hasRecurring ? "text-red-300 mt-1" : "text-green-300 mt-1"}>
-                    {debugInfo.hasRecurring ? '❌ YES (ERROR! Must be false for Index.aspx)' : '✅ NO (correct)'}
-                  </div>
-                </div>
-              )}
-              {debugInfo.receiptPresent !== undefined && (
-                <div>
-                  <span className={debugInfo.receiptPresent ? "text-green-400" : "text-yellow-400"}>
-                    Receipt Present:
-                  </span>
-                  <div className={debugInfo.receiptPresent ? "text-green-300 mt-1" : "text-yellow-300 mt-1"}>
-                    {debugInfo.receiptPresent ? '✅ YES' : '⚠️ NO' + (debugInfo.sno === 'npd' ? ' (ERROR! Mandatory for sno=npd)' : '')}
-                  </div>
-                </div>
-              )}
-              {debugInfo.receiptIncludedInSignature !== undefined && (
-                <div>
-                  <span className={debugInfo.receiptIncludedInSignature ? "text-green-400" : "text-red-400"}>
-                    Receipt in Signature:
-                  </span>
-                  <div className={debugInfo.receiptIncludedInSignature ? "text-green-300 mt-1" : "text-red-300 mt-1"}>
-                    {debugInfo.receiptIncludedInSignature ? '✅ YES' : '❌ NO (ERROR! Must match receipt present)'}
-                  </div>
-                </div>
-              )}
-              {debugInfo.receiptEncodedLength !== undefined && (
-                <div>
-                  <span className="text-green-400">Receipt Length (encoded):</span>
-                  <div className="text-gray-300 mt-1">{debugInfo.receiptEncodedLength} chars {debugInfo.receiptEncodedLength > 0 ? '✅' : '❌'}</div>
-                </div>
-              )}
-              {debugInfo.sno && (
-                <div>
-                  <span className="text-green-400">SNO:</span>
-                  <div className="text-gray-300 mt-1">{debugInfo.sno} {debugInfo.sno === 'npd' && '(self-employed - Receipt mandatory)'}</div>
-                </div>
-              )}
-              {debugInfo.formFields && (
-                <div>
-                  <span className="text-green-400">Form Fields:</span>
-                  <div className="text-gray-300 mt-1">{debugInfo.formFields.join(', ')}</div>
-                  {debugInfo.formFields.includes('Recurring') && (
-                    <div className="text-red-300 mt-1 text-xs">
-                      ⚠️ WARNING: Recurring field found! This will cause Error 29.
-                    </div>
-                  )}
-                  {debugInfo.sno === 'npd' && !debugInfo.formFields.includes('Receipt') && (
-                    <div className="text-red-300 mt-1 text-xs">
-                      ⚠️ ERROR: Receipt is mandatory for sno=npd but is missing!
-                    </div>
-                  )}
-                </div>
-              )}
-              {debugInfo.envCheck && (
-                <div>
-                  <span className="text-green-400">Env Check:</span>
-                  <div className="text-gray-300 mt-1">
-                    Pass1: {debugInfo.envCheck.pass1Prefix2}...{debugInfo.envCheck.pass1Suffix2} (len: {debugInfo.envCheck.pass1Len})<br/>
-                    Pass2: {debugInfo.envCheck.pass2Prefix2}...{debugInfo.envCheck.pass2Suffix2} (len: {debugInfo.envCheck.pass2Len})<br/>
-                    Env: {debugInfo.envCheck.vercelEnv} / {debugInfo.envCheck.nodeEnv}
-                  </div>
-                </div>
-              )}
-              {debugInfo.fullResponse && (
-                <div>
-                  <span className="text-yellow-400">Full Response:</span>
-                  <pre className="text-gray-300 mt-1 text-xs overflow-auto">
-                    {JSON.stringify(debugInfo.fullResponse, null, 2)}
-                  </pre>
-                </div>
-              )}
-            </div>
-          </div>
+        {/* Debug Modal */}
+        {showDebugModal && (
+          <PaymentDebugModal
+            debugInfo={debugInfo}
+            onClose={() => {
+              setShowDebugModal(false);
+              // If payment HTML is ready, don't clear it - user can still submit
+            }}
+            errorMessage={error || undefined}
+          />
         )}
       </div>
     </div>

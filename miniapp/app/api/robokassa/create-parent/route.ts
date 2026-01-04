@@ -37,7 +37,7 @@ async function generateUniqueInvoiceId(
  * POST /api/robokassa/create-parent?telegramUserId=...
  * 
  * Creates parent recurring payment (1 RUB) for card binding
- * Per Robokassa docs: POST to Index.aspx (NO Recurring field! Recurring is only for Merchant/Recurring endpoint)
+ * Per Robokassa docs: POST to Index.aspx with InvoiceID and Recurring=true
  * 
  * Returns: { ok: true, html, debug } or { ok: false, stage, message, debug }
  */
@@ -122,7 +122,7 @@ export async function POST(req: Request) {
     try {
       invoiceId = await generateUniqueInvoiceId(supabase);
       debug.invoiceId = invoiceId;
-      console.log('[robokassa/create-parent] Generated InvId:', invoiceId, '(will be used as InvId field for Index.aspx)');
+      console.log('[robokassa/create-parent] Generated InvoiceID:', invoiceId, '(will be used as InvoiceID field for recurring mother payment)');
     } catch (invoiceIdError: any) {
       console.error('[robokassa/create-parent] ❌ InvId generation error:', invoiceIdError.message);
       return NextResponse.json({
