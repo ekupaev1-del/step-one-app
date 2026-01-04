@@ -14,10 +14,12 @@ interface PaymentResponse {
   debug?: {
     exactSignatureStringMasked?: string;
     signatureValue?: string;
-    fieldsKeys?: string[];
-    actionUrl?: string;
+    merchantLogin?: string;
+    outSum?: string;
+    invId?: string;
     receiptIncluded?: boolean;
-    note?: string;
+    shpParams?: string[];
+    actionUrl?: string;
   };
 }
 
@@ -180,35 +182,52 @@ export default function SubscriptionClient() {
 
         {/* Debug info block (only shown when ?debug=1) */}
         {debugMode && debugInfo && (
-          <div className="mt-4 p-4 bg-gray-900 text-white rounded-lg font-mono text-xs overflow-auto max-h-96">
-            <h3 className="text-sm font-bold mb-2 text-green-400">🔍 Debug информация</h3>
-            <div className="space-y-2">
+          <div className="mt-4 p-4 bg-gray-900 text-white rounded-lg font-mono text-xs">
+            <div className="flex justify-between items-center mb-3">
+              <h3 className="text-sm font-bold text-green-400">🔍 Debug (Error 29)</h3>
+              <button
+                onClick={() => {
+                  const debugText = JSON.stringify(debugInfo, null, 2);
+                  navigator.clipboard.writeText(debugText).then(() => {
+                    alert('✅ Скопировано в буфер обмена!');
+                  }).catch(() => {
+                    alert('❌ Ошибка копирования');
+                  });
+                }}
+                className="px-3 py-1 bg-green-600 hover:bg-green-700 text-white text-xs rounded font-semibold"
+              >
+                📋 Копировать всё
+              </button>
+            </div>
+            <div className="space-y-2 overflow-auto max-h-96">
               <div>
                 <span className="text-green-400">Signature (masked):</span>
-                <div className="text-gray-300 break-all">{debugInfo.exactSignatureStringMasked || 'N/A'}</div>
+                <div className="text-gray-300 break-all mt-1">{debugInfo.exactSignatureStringMasked || 'N/A'}</div>
               </div>
               <div>
                 <span className="text-green-400">Signature Value:</span>
-                <div className="text-gray-300 break-all">{debugInfo.signatureValue || 'N/A'}</div>
+                <div className="text-gray-300 break-all mt-1">{debugInfo.signatureValue || 'N/A'}</div>
               </div>
               <div>
-                <span className="text-green-400">Fields:</span>
-                <div className="text-gray-300">
-                  {debugInfo.fieldsKeys ? debugInfo.fieldsKeys.join(', ') : 'N/A'}
-                </div>
+                <span className="text-green-400">MerchantLogin:</span>
+                <div className="text-gray-300 mt-1">{debugInfo.merchantLogin || 'N/A'}</div>
               </div>
               <div>
-                <span className="text-green-400">Action URL:</span>
-                <div className="text-gray-300 break-all">{debugInfo.actionUrl || 'N/A'}</div>
+                <span className="text-green-400">OutSum:</span>
+                <div className="text-gray-300 mt-1">{debugInfo.outSum || 'N/A'}</div>
+              </div>
+              <div>
+                <span className="text-green-400">InvId:</span>
+                <div className="text-gray-300 mt-1">{debugInfo.invId || 'N/A'}</div>
               </div>
               <div>
                 <span className="text-green-400">Receipt included:</span>
-                <div className="text-gray-300">{debugInfo.receiptIncluded ? 'Yes' : 'No'}</div>
+                <div className="text-gray-300 mt-1">{debugInfo.receiptIncluded ? 'Yes' : 'No'}</div>
               </div>
-              {debugInfo.note && (
+              {debugInfo.shpParams && debugInfo.shpParams.length > 0 && (
                 <div>
-                  <span className="text-green-400">Note:</span>
-                  <div className="text-gray-300">{debugInfo.note}</div>
+                  <span className="text-green-400">Shp params:</span>
+                  <div className="text-gray-300 mt-1">{debugInfo.shpParams.join(', ')}</div>
                 </div>
               )}
             </div>

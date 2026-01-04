@@ -318,16 +318,20 @@ export async function POST(req: Request) {
     // Action URL for Recurring endpoint
     const actionUrl = 'https://auth.robokassa.ru/Merchant/Recurring';
 
-    // Build debug output
-    const debugOutput = {
+    // Build simplified debug output (only critical fields for Error 29)
+    const debugOutput = debugMode ? {
+      // CRITICAL: Only fields needed to fix Error 29
       exactSignatureStringMasked: formResult.signature.baseString,
       signatureValue: formResult.signature.value,
-      fieldsKeys: Object.keys(fields),
+      merchantLogin: config.merchantLogin,
+      outSum: outSum,
+      invId: invoiceId,
+      receiptIncluded: false,
+      shpParams: shpParams,
       actionUrl: actionUrl,
-      receiptIncluded: false, // Child payment never includes Receipt
+      previousInvoiceId: previousInvoiceIdParam,
       previousInvoiceIdInSignature: false, // CRITICAL: PreviousInvoiceID NOT in signature
-      note: 'Child recurring payment: PreviousInvoiceID is in form but NOT in signature',
-    };
+    } : undefined;
 
     return NextResponse.json({
       ok: true,

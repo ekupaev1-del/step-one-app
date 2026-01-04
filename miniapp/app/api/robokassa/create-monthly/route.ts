@@ -303,17 +303,20 @@ ${formInputs}
       },
     };
 
-    // Build debug output (only if debug=1)
+    // Build simplified debug output (only critical fields for Error 29)
     const requestUrl = new URL(req.url);
     const debugMode = requestUrl.searchParams.get('debug') === '1';
     
     const debugOutput = debugMode ? {
+      // CRITICAL: Only fields needed to fix Error 29
       exactSignatureStringMasked: formResult.signature.baseString,
       signatureValue: formResult.signature.value,
-      fieldsKeys: Object.keys(finalFormFields),
+      merchantLogin: config.merchantLogin,
+      outSum: outSum,
+      invId: invId,
+      receiptIncluded: false,
+      shpParams: shpParams,
       actionUrl: baseUrl,
-      receiptIncluded: false, // One-time payment, no receipt
-      note: 'One-time payment: No Receipt, no Recurring',
     } : undefined;
 
     return NextResponse.json({
