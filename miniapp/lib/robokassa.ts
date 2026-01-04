@@ -1906,6 +1906,8 @@ ${formInputs}
     signatureBaseMasked,
     signatureValue,
     formFields: Object.keys(fields), // Field names only
+    targetUrl: actionUrl, // Index.aspx
+    hasRecurring: 'Recurring' in fields, // CRITICAL: Must be false for Index.aspx
     envCheck: {
       pass1Len,
       pass2Len,
