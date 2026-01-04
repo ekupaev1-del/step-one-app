@@ -498,7 +498,7 @@ export async function POST(req: Request) {
     }
 
     // Критичная информация для диагностики Error 29
-    const receiptEncoded = formDebug.receiptEncoded || (finalFormFields.Receipt || null);
+    const receiptEncodedForDebug = formDebug.receiptEncoded || (finalFormFields.Receipt || null);
     const criticalDebug = {
       // 1. Точная строка подписи (самое важное!)
       exactSignatureStringMasked: formDebug.exactSignatureStringMasked || 'N/A',
@@ -537,8 +537,8 @@ export async function POST(req: Request) {
       shpParamsSorted: JSON.stringify(shpParamsDebug) === JSON.stringify([...shpParamsDebug].sort()),
       
       // 7. Receipt (если есть)
-      hasReceipt: !!receiptEncoded,
-      receiptEncodedLength: formDebug.receiptEncodedLength || (receiptEncoded?.length || 0),
+      hasReceipt: !!receiptEncodedForDebug,
+      receiptEncodedLength: formDebug.receiptEncodedLength || (receiptEncodedForDebug?.length || 0),
       receiptInSignature: formDebug.includeReceiptInSignature || false,
       
       // 8. Test mode
@@ -552,7 +552,7 @@ export async function POST(req: Request) {
         invIdValid: (debug.invId || 0) > 0 && (debug.invId || 0) <= 2000000000,
         signatureFormat: formDebug.signatureValue ? /^[0-9a-f]{32}$/.test(formDebug.signatureValue) : false,
         shpParamsSorted: JSON.stringify(shpParamsDebug) === JSON.stringify([...shpParamsDebug].sort()),
-        receiptConsistent: receiptEncoded ? finalFormFields.Receipt === receiptEncoded : true,
+        receiptConsistent: receiptEncodedForDebug ? finalFormFields.Receipt === receiptEncodedForDebug : true,
       },
     };
 
