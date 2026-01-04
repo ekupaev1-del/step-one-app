@@ -4,10 +4,26 @@ import { createClient } from "@supabase/supabase-js";
 export const dynamic = 'force-dynamic';
 
 export async function GET(req: Request) {
-  const supabase = createClient(
-    process.env.NEXT_PUBLIC_SUPABASE_URL!,
-    process.env.SUPABASE_SERVICE_ROLE_KEY!
-  );
+  const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
+  const supabaseKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
+
+  if (!supabaseUrl) {
+    console.error("[/api/user] NEXT_PUBLIC_SUPABASE_URL не установлен");
+    return NextResponse.json(
+      { ok: false, error: "supabaseUrl is required. Please configure NEXT_PUBLIC_SUPABASE_URL in Vercel environment variables." },
+      { status: 500 }
+    );
+  }
+
+  if (!supabaseKey) {
+    console.error("[/api/user] SUPABASE_SERVICE_ROLE_KEY не установлен");
+    return NextResponse.json(
+      { ok: false, error: "Supabase service key is required. Please configure SUPABASE_SERVICE_ROLE_KEY in Vercel environment variables." },
+      { status: 500 }
+    );
+  }
+
+  const supabase = createClient(supabaseUrl, supabaseKey);
 
   const url = new URL(req.url);
   // Поддерживаем оба параметра: userId и id (для совместимости)

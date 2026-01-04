@@ -5,10 +5,18 @@
 import { createClient } from "@supabase/supabase-js";
 
 function getSupabaseClient() {
-  return createClient(
-    process.env.NEXT_PUBLIC_SUPABASE_URL!,
-    process.env.SUPABASE_SERVICE_ROLE_KEY!
-  );
+  const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
+  const supabaseKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
+
+  if (!supabaseUrl) {
+    throw new Error("NEXT_PUBLIC_SUPABASE_URL is required. Please configure it in Vercel environment variables.");
+  }
+
+  if (!supabaseKey) {
+    throw new Error("SUPABASE_SERVICE_ROLE_KEY is required. Please configure it in Vercel environment variables.");
+  }
+
+  return createClient(supabaseUrl, supabaseKey);
 }
 
 /**
