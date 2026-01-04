@@ -328,6 +328,12 @@ export default function SubscriptionClient() {
                   </div>
                 </div>
               )}
+              {debugInfo.receiptEncodedLength !== undefined && (
+                <div>
+                  <span className="text-green-400">Receipt Length (encoded):</span>
+                  <div className="text-gray-300 mt-1">{debugInfo.receiptEncodedLength} chars {debugInfo.receiptEncodedLength > 0 ? '✅' : '❌'}</div>
+                </div>
+              )}
               {debugInfo.sno && (
                 <div>
                   <span className="text-green-400">SNO:</span>

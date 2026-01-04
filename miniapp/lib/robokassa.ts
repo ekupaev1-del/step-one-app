@@ -1771,10 +1771,18 @@ export function createParentRecurringPaymentForm(
   const snoEnv = process.env.ROBOKASSA_SNO?.trim();
   const isNPD = snoEnv === 'npd';
   
-  // Generate Receipt if sno is set (especially for npd)
+  // CRITICAL: Generate Receipt ALWAYS if sno is set (especially for npd)
+  // For sno=npd, Receipt is MANDATORY, so we MUST generate it
   let receiptEncoded: string | undefined = undefined;
   if (snoEnv) {
+    // Generate Receipt with correct sno value
     const receipt = generateReceipt(parseFloat(outSum), description);
+    
+    // CRITICAL: Ensure sno is set correctly in receipt
+    if (isNPD && !receipt.sno) {
+      receipt.sno = 'npd'; // Force set sno=npd if it's missing
+    }
+    
     // Serialize Receipt JSON deterministically (sorted keys for consistent output)
     const receiptJson = JSON.stringify(receipt, (key, value) => {
       if (value && typeof value === 'object' && !Array.isArray(value)) {
@@ -1786,19 +1794,29 @@ export function createParentRecurringPaymentForm(
       }
       return value;
     });
+    
     // URL-encode ONCE - this exact value will be used in BOTH form field AND signature
     receiptEncoded = encodeURIComponent(receiptJson);
     
     if (typeof window === 'undefined') {
-      console.log('[robokassa] Receipt generated for sno:', snoEnv);
+      console.log('[robokassa] ========== RECEIPT GENERATION ==========');
+      console.log('[robokassa] SNO from env:', snoEnv);
+      console.log('[robokassa] Is NPD:', isNPD);
       console.log('[robokassa] Receipt JSON:', receiptJson);
       console.log('[robokassa] Receipt encoded length:', receiptEncoded.length);
+      console.log('[robokassa] Receipt encoded preview:', receiptEncoded.substring(0, 100));
+      console.log('[robokassa] =========================================');
     }
   }
   
-  // CRITICAL: If sno=npd, Receipt is MANDATORY
+  // CRITICAL: If sno=npd, Receipt is MANDATORY - throw error if not generated
   if (isNPD && !receiptEncoded) {
-    throw new Error('CRITICAL: Receipt is MANDATORY for sno=npd (self-employed). ROBOKASSA_SNO is set to "npd" but Receipt was not generated.');
+    throw new Error('CRITICAL: Receipt is MANDATORY for sno=npd (self-employed). ROBOKASSA_SNO is set to "npd" but Receipt was not generated. Check generateReceipt function.');
+  }
+  
+  // CRITICAL: If sno=npd but ROBOKASSA_SNO is not set, log warning
+  if (typeof window === 'undefined' && !snoEnv) {
+    console.warn('[robokassa] ⚠️ WARNING: ROBOKASSA_SNO is not set. If merchant is self-employed (npd), Receipt will be missing and payment will fail with Error 29.');
   }
   
   // ========== BUILD FORM FIELDS ==========
@@ -1817,8 +1835,19 @@ export function createParentRecurringPaymentForm(
   };
   
   // Add Receipt if generated (MANDATORY for sno=npd)
+  // CRITICAL: Receipt MUST be added to fields BEFORE building signature
   if (receiptEncoded) {
     fields.Receipt = receiptEncoded;
+    if (typeof window === 'undefined') {
+      console.log('[robokassa] Receipt added to fields, length:', receiptEncoded.length);
+    }
+  } else if (isNPD) {
+    throw new Error('CRITICAL: Receipt is MANDATORY for sno=npd but receiptEncoded is undefined!');
+  }
+  
+  // CRITICAL: Runtime validation - ensure Receipt is in fields for sno=npd
+  if (isNPD && !fields.Receipt) {
+    throw new Error(`CRITICAL: Receipt is MANDATORY for sno=npd but is missing in fields! Fields keys: ${Object.keys(fields).join(', ')}`);
   }
   
   // Add IsTest if test mode (NOT in signature)
@@ -1923,9 +1952,19 @@ export function createParentRecurringPaymentForm(
   
   const actionUrl = 'https://auth.robokassa.ru/Merchant/Index.aspx';
   
+  // CRITICAL: Verify Receipt is still in fields before building HTML
+  if (isNPD && !fields.Receipt) {
+    throw new Error(`CRITICAL: Receipt is MANDATORY for sno=npd but is missing before HTML generation! Fields: ${Object.keys(fields).join(', ')}`);
+  }
+  
   const formInputs = Object.entries(fields)
     .map(([name, value]) => {
-      const escapedValue = value
+      // CRITICAL: Never filter out Receipt - it's mandatory for sno=npd
+      if (!value && name !== 'Receipt') {
+        // Skip empty values except Receipt (which should never be empty if present)
+        return null;
+      }
+      const escapedValue = String(value)
         .replace(/&/g, '&amp;')
         .replace(/</g, '&lt;')
         .replace(/>/g, '&gt;')
@@ -1933,7 +1972,21 @@ export function createParentRecurringPaymentForm(
         .replace(/'/g, '&#39;');
       return `    <input type="hidden" name="${name}" value="${escapedValue}">`;
     })
+    .filter(input => input !== null) // Remove nulls but keep all non-empty fields including Receipt
     .join('\n');
+  
+  // CRITICAL: Verify Receipt is in HTML form
+  if (isNPD && !formInputs.includes('name="Receipt"')) {
+    throw new Error('CRITICAL: Receipt is MANDATORY for sno=npd but is missing in HTML form!');
+  }
+  
+  if (typeof window === 'undefined') {
+    console.log('[robokassa] Form inputs count:', formInputs.split('\n').length);
+    console.log('[robokassa] Receipt in HTML form:', formInputs.includes('name="Receipt"'));
+    if (fields.Receipt) {
+      console.log('[robokassa] Receipt value length in HTML:', fields.Receipt.length);
+    }
+  }
   
   const html = `<!DOCTYPE html>
 <html>
@@ -1961,17 +2014,42 @@ ${formInputs}
   const pass2Prefix2 = config.pass2.trim().substring(0, 2);
   const pass2Suffix2 = config.pass2.trim().substring(pass2Len - 2);
   
+  // CRITICAL: Check Receipt in final fields (after all modifications)
+  const finalFieldsKeys = Object.keys(fields);
+  const receiptInFields = 'Receipt' in fields;
+  const receiptValue = fields.Receipt;
+  
+  // CRITICAL: Runtime validation - Receipt must be in fields for sno=npd
+  if (isNPD && !receiptInFields) {
+    throw new Error(`CRITICAL: Receipt is MANDATORY for sno=npd but is missing in final fields! Fields: ${finalFieldsKeys.join(', ')}`);
+  }
+  
+  // CRITICAL: If Receipt is in fields, it must be non-empty string
+  if (receiptInFields && (!receiptValue || receiptValue.length === 0)) {
+    throw new Error('CRITICAL: Receipt field exists but is empty!');
+  }
+  
+  // CRITICAL: Verify Receipt in signature matches Receipt in fields
+  const receiptInSignature = receiptEncoded && signatureParts.includes(receiptEncoded);
+  if (receiptInFields && !receiptInSignature) {
+    throw new Error('CRITICAL: Receipt is in fields but NOT in signature! This will cause Error 29.');
+  }
+  if (isNPD && !receiptInSignature) {
+    throw new Error('CRITICAL: Receipt is MANDATORY for sno=npd but is NOT in signature!');
+  }
+  
   const debug = {
     merchantLogin,
     outSum,
     invoiceId,
     signatureBaseMasked,
     signatureValue,
-    formFields: Object.keys(fields), // Field names only
+    formFields: finalFieldsKeys, // Field names only - CRITICAL: must include Receipt for sno=npd
     targetUrl: actionUrl, // Index.aspx
     hasRecurring: 'Recurring' in fields, // CRITICAL: Must be false for Index.aspx
-    receiptPresent: !!receiptEncoded, // CRITICAL: Must be true for sno=npd
-    receiptIncludedInSignature: !!receiptEncoded, // CRITICAL: Must match receiptPresent
+    receiptPresent: receiptInFields, // CRITICAL: Check actual fields, not receiptEncoded variable
+    receiptIncludedInSignature: receiptInSignature, // CRITICAL: Check actual signature parts
+    receiptEncodedLength: receiptValue ? receiptValue.length : 0, // Length of encoded Receipt
     sno: snoEnv || 'not-set', // SNO value from env
     envCheck: {
       pass1Len,
@@ -1998,9 +2076,11 @@ ${formInputs}
     console.log('[robokassa] InvId:', invoiceId, '(CRITICAL: Using InvId for Index.aspx, NOT InvoiceID)');
     console.log('[robokassa] Shp_userId:', telegramUserId);
     console.log('[robokassa] HasRecurring:', 'Recurring' in fields, '(MUST be false for Index.aspx)');
-    console.log('[robokassa] Receipt present:', !!receiptEncoded, '(MANDATORY for sno=npd)');
-    console.log('[robokassa] Receipt in signature:', !!receiptEncoded, '(MUST match receipt present)');
+    console.log('[robokassa] Receipt in fields:', receiptInFields, '(MANDATORY for sno=npd)');
+    console.log('[robokassa] Receipt in signature:', receiptInSignature, '(MUST match receipt in fields)');
+    console.log('[robokassa] Receipt encoded length:', receiptValue ? receiptValue.length : 0);
     console.log('[robokassa] SNO:', snoEnv || 'not-set', '(if "npd", Receipt is mandatory)');
+    console.log('[robokassa] Final fields keys:', finalFieldsKeys.join(', '));
     // Validate: Ensure InvId is present and InvoiceID/Recurring are NOT present
     if (!fields.InvId) {
       console.error('[robokassa] ❌ CRITICAL ERROR: InvId is missing in form fields!');
