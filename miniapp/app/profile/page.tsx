@@ -647,7 +647,7 @@ function ProfilePageContent() {
 
 
         {/* Нормы (сворачиваемая секция) */}
-        <div className="bg-green-400 rounded-2xl shadow-soft p-6 mb-4">
+        <div className="bg-pink-200 rounded-2xl shadow-soft p-6 mb-4">
           <button
             onClick={() => setNormsExpanded(!normsExpanded)}
             className="w-full flex justify-between items-center"
@@ -661,28 +661,28 @@ function ProfilePageContent() {
           {normsExpanded && (
             <div className="mt-4 space-y-3 animate-fadeIn">
               {profile.caloriesGoal && (
-                <div className="flex justify-between items-center py-2 border-b border-green-300/50">
+                <div className="flex justify-between items-center py-2 border-b border-pink-300/50">
                   <span className="text-gray-800">Калории</span>
                   <span className="font-medium text-gray-900">{profile.caloriesGoal} ккал</span>
                 </div>
               )}
               
               {profile.proteinGoal && (
-                <div className="flex justify-between items-center py-2 border-b border-green-300/50">
+                <div className="flex justify-between items-center py-2 border-b border-pink-300/50">
                   <span className="text-gray-800">Белки</span>
                   <span className="font-medium text-gray-900">{profile.proteinGoal} г</span>
                 </div>
               )}
               
               {profile.fatGoal && (
-                <div className="flex justify-between items-center py-2 border-b border-green-300/50">
+                <div className="flex justify-between items-center py-2 border-b border-pink-300/50">
                   <span className="text-gray-800">Жиры</span>
                   <span className="font-medium text-gray-900">{profile.fatGoal} г</span>
                 </div>
               )}
               
               {profile.carbsGoal && (
-                <div className="flex justify-between items-center py-2 border-b border-green-300/50">
+                <div className="flex justify-between items-center py-2 border-b border-pink-300/50">
                   <span className="text-gray-800">Углеводы</span>
                   <span className="font-medium text-gray-900">{profile.carbsGoal} г</span>
                 </div>
