@@ -647,13 +647,13 @@ function ProfilePageContent() {
 
 
         {/* Нормы (сворачиваемая секция) */}
-        <div className="bg-pink-200 rounded-2xl shadow-soft p-6 mb-4">
+        <div className="bg-white rounded-2xl shadow-soft p-6 mb-4">
           <button
             onClick={() => setNormsExpanded(!normsExpanded)}
             className="w-full flex justify-between items-center"
           >
-            <h2 className="text-lg font-semibold text-gray-900">Ваши нормы</h2>
-            <span className={`transform transition-transform duration-200 text-gray-900 ${normsExpanded ? 'rotate-180' : ''}`}>
+            <h2 className="text-lg font-semibold text-textPrimary">Ваши нормы</h2>
+            <span className={`transform transition-transform duration-200 text-textPrimary ${normsExpanded ? 'rotate-180' : ''}`}>
               ▼
             </span>
           </button>
@@ -661,37 +661,37 @@ function ProfilePageContent() {
           {normsExpanded && (
             <div className="mt-4 space-y-3 animate-fadeIn">
               {profile.caloriesGoal && (
-                <div className="flex justify-between items-center py-2 border-b border-pink-300/50">
-                  <span className="text-gray-800">Калории</span>
-                  <span className="font-medium text-gray-900">{profile.caloriesGoal} ккал</span>
+                <div className="flex justify-between items-center py-2 border-b border-gray-100">
+                  <span className="text-textSecondary">Калории</span>
+                  <span className="font-medium text-textPrimary">{profile.caloriesGoal} ккал</span>
                 </div>
               )}
               
               {profile.proteinGoal && (
-                <div className="flex justify-between items-center py-2 border-b border-pink-300/50">
-                  <span className="text-gray-800">Белки</span>
-                  <span className="font-medium text-gray-900">{profile.proteinGoal} г</span>
+                <div className="flex justify-between items-center py-2 border-b border-gray-100">
+                  <span className="text-textSecondary">Белки</span>
+                  <span className="font-medium text-textPrimary">{profile.proteinGoal} г</span>
                 </div>
               )}
               
               {profile.fatGoal && (
-                <div className="flex justify-between items-center py-2 border-b border-pink-300/50">
-                  <span className="text-gray-800">Жиры</span>
-                  <span className="font-medium text-gray-900">{profile.fatGoal} г</span>
+                <div className="flex justify-between items-center py-2 border-b border-gray-100">
+                  <span className="text-textSecondary">Жиры</span>
+                  <span className="font-medium text-textPrimary">{profile.fatGoal} г</span>
                 </div>
               )}
               
               {profile.carbsGoal && (
-                <div className="flex justify-between items-center py-2 border-b border-pink-300/50">
-                  <span className="text-gray-800">Углеводы</span>
-                  <span className="font-medium text-gray-900">{profile.carbsGoal} г</span>
+                <div className="flex justify-between items-center py-2 border-b border-gray-100">
+                  <span className="text-textSecondary">Углеводы</span>
+                  <span className="font-medium text-textPrimary">{profile.carbsGoal} г</span>
                 </div>
               )}
               
               {profile.waterGoalMl && (
                 <div className="flex justify-between items-center py-2">
-                  <span className="text-gray-800">Вода</span>
-                  <span className="font-medium text-gray-900">{profile.waterGoalMl} мл</span>
+                  <span className="text-textSecondary">Вода</span>
+                  <span className="font-medium text-textPrimary">{profile.waterGoalMl} мл</span>
                 </div>
               )}
             </div>
