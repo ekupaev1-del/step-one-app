@@ -855,7 +855,7 @@ function ProfilePageContent() {
     </div>
 
     {/* Robokassa Debug Modal */}
-    {showDebugModal && debugData && (
+    {showDebugModal && debugData && typeof window !== "undefined" && (
       <RobokassaDebugModal
         debugData={debugData}
         error29={error29}

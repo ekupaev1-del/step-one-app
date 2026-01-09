@@ -45,6 +45,11 @@ export default function RobokassaDebugModal({
   const [activeTab, setActiveTab] = useState<"summary" | "raw">("summary");
   const [copied, setCopied] = useState<string | null>(null);
 
+  // Safety check
+  if (!debugData || typeof window === "undefined") {
+    return null;
+  }
+
   const copyToClipboard = (text: string, type: string) => {
     try {
       if (typeof navigator !== "undefined" && navigator.clipboard) {
@@ -69,7 +74,7 @@ export default function RobokassaDebugModal({
     }
   };
 
-  const rawJson = JSON.stringify(debugData, null, 2);
+  const rawJson = debugData ? JSON.stringify(debugData, null, 2) : "{}";
 
   return (
     <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
@@ -153,7 +158,7 @@ export default function RobokassaDebugModal({
                   <div className="flex justify-between">
                     <span className="text-gray-600">Shp_userId:</span>
                     <span className="text-gray-900 font-mono">
-                      {debugData.customParams.raw.Shp_userId || "N/A"}
+                      {debugData?.customParams?.raw?.Shp_userId || "N/A"}
                     </span>
                   </div>
                   <div className="flex justify-between">
