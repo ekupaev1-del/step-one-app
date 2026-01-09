@@ -7,9 +7,22 @@ import Link from "next/link";
 import "../globals.css";
 import AppLayout from "../components/AppLayout";
 
-// Dynamic import to prevent SSR issues
+// Dynamic import to prevent SSR issues - only load if debug mode
 const RobokassaDebugModal = dynamic(
-  () => import("../components/RobokassaDebugModal"),
+  () => {
+    // Check debug mode before importing
+    if (typeof window !== "undefined") {
+      const urlParams = new URLSearchParams(window.location.search);
+      const urlDebug = urlParams.get("debug") === "1";
+      const envDebug = process.env.NEXT_PUBLIC_DEBUG === "1";
+      
+      if (urlDebug || envDebug) {
+        return import("../components/RobokassaDebugModal");
+      }
+    }
+    // Return a no-op component if debug is off
+    return Promise.resolve({ default: () => null });
+  },
   { ssr: false }
 );
 

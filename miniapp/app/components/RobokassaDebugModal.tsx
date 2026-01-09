@@ -1,6 +1,7 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
+import { safeStringify } from "../lib/safeStringify";
 
 interface RobokassaDebugData {
   merchantLogin: string;
@@ -44,9 +45,29 @@ export default function RobokassaDebugModal({
 }: RobokassaDebugModalProps) {
   const [activeTab, setActiveTab] = useState<"summary" | "raw">("summary");
   const [copied, setCopied] = useState<string | null>(null);
+  const [isDebugMode, setIsDebugMode] = useState(false);
 
-  // Safety check - ensure we're on client
-  if (typeof window === "undefined" || !debugData) {
+  // Check if debug mode is enabled
+  useEffect(() => {
+    try {
+      if (typeof window === "undefined") return;
+      
+      // Check environment variable (client-side only)
+      const envDebug = process.env.NEXT_PUBLIC_DEBUG === "1";
+      
+      // Check URL parameter
+      const urlParams = new URLSearchParams(window.location.search);
+      const urlDebug = urlParams.get("debug") === "1";
+      
+      setIsDebugMode(envDebug || urlDebug);
+    } catch (e) {
+      // If check fails, disable debug
+      setIsDebugMode(false);
+    }
+  }, []);
+
+  // Safety checks
+  if (typeof window === "undefined" || !debugData || !isDebugMode) {
     return null;
   }
 
@@ -82,7 +103,7 @@ export default function RobokassaDebugModal({
     }
   };
 
-  const rawJson = debugData ? JSON.stringify(debugData, null, 2) : "{}";
+  const rawJson = debugData ? safeStringify(debugData, 2) : "{}";
 
   return (
     <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">

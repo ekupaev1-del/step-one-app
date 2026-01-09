@@ -4,6 +4,7 @@ import { Nunito } from "next/font/google";
 import type { ReactNode } from "react";
 import "./globals.css";
 import BuildStamp from "./components/BuildStamp";
+import { ErrorBoundary } from "./components/ErrorBoundary";
 
 const nunito = Nunito({
   subsets: ["latin", "cyrillic"],
@@ -39,7 +40,9 @@ export default function RootLayout({
         <meta name="format-detection" content="telephone=no" />
       </head>
       <body className={`${nunito.className} ${nunito.variable} bg-background text-textPrimary antialiased`}>
-        {children}
+        <ErrorBoundary>
+          {children}
+        </ErrorBoundary>
         {/* Build stamp for deployment verification - visible in devtools */}
         <BuildStamp />
         {/* Telegram WebApp Script */}
