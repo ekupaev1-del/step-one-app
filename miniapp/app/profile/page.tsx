@@ -615,14 +615,22 @@ function ProfilePageContent() {
 
       // Watchdog: if navigation didn't happen after 3s, reset loading
       if (navigated && typeof window !== "undefined") {
+        const watchdogStartTime = Date.now();
         navigationWatchdog = setTimeout(() => {
-          // Check if we're still on the same page
-          if (window.location.href === currentUrl && document.visibilityState === "visible") {
-            pushDebug("ВНИМАНИЕ: Страница оплаты не открылась через 3 секунды");
+          // Check if we're still on the same page and document is visible
+          const stillOnSamePage = window.location.href === currentUrl;
+          const isVisible = document.visibilityState === "visible";
+          
+          if (stillOnSamePage && isVisible) {
+            const elapsed = Date.now() - watchdogStartTime;
+            pushDebug(`ВНИМАНИЕ: Страница оплаты не открылась через ${elapsed}ms`);
             setPayError("Страница оплаты не открылась. Попробуйте еще раз или откройте ссылку вручную.");
             setSubscribing(false);
           }
         }, 3000);
+      } else {
+        // If navigation was not attempted, reset immediately
+        setSubscribing(false);
       }
 
     } catch (err: any) {
@@ -630,20 +638,23 @@ function ProfilePageContent() {
       pushDebug(`ОШИБКА после ${elapsed}ms: ${err.message}`);
       
       if (err.name === "AbortError") {
-        setPayError("Превышено время ожидания. Проверьте подключение к интернету и попробуйте еще раз.");
+        setPayError("Превышено время ожидания (8 секунд). Проверьте подключение к интернету и попробуйте еще раз.");
       } else {
-        setPayError(err.message || "Ошибка оформления подписки");
+        const errorMsg = err.message || "Ошибка оформления подписки";
+        setPayError(errorMsg);
       }
       
       // Always reset loading state on error
       setSubscribing(false);
-    } finally {
-      // Only reset if we didn't navigate (navigation will happen asynchronously)
-      // The watchdog will handle the case where navigation fails
-      if (!navigated) {
-        setSubscribing(false);
+      
+      // Clean up watchdog if it was set
+      if (navigationWatchdog) {
+        clearTimeout(navigationWatchdog);
+        navigationWatchdog = null;
       }
-      // Clean up watchdog if handler completes before navigation
+    } finally {
+      // Ensure we always clean up the timeout if navigation didn't happen
+      // The watchdog will handle resetting loading state if navigation fails
       if (navigationWatchdog && !navigated) {
         clearTimeout(navigationWatchdog);
       }
@@ -714,11 +725,44 @@ function ProfilePageContent() {
         <div className="bg-white rounded-2xl shadow-soft p-6 mb-4">
           <button
             onClick={handleSubscribe}
-            disabled={subscribing}
-            className="w-full px-6 py-4 bg-accent text-white font-semibold rounded-xl hover:bg-accent/90 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+            disabled={subscribing || !userId}
+            className="w-full px-6 py-4 bg-accent text-white font-semibold rounded-xl hover:bg-accent/90 transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
           >
-            {subscribing ? "Обработка..." : "Оформить подписку — 1 ₽ за 3 дня, затем 199 ₽"}
+            {subscribing ? (
+              <>
+                <span className="inline-block w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin"></span>
+                <span>Обработка...</span>
+              </>
+            ) : (
+              "Оформить подписку — 1 ₽ за 3 дня, затем 199 ₽"
+            )}
           </button>
+          
+          {/* Error message */}
+          {payError && (
+            <div className="mt-3 p-3 bg-red-50 border border-red-200 rounded-lg">
+              <p className="text-red-700 text-sm mb-2">{payError}</p>
+              <button
+                onClick={handleSubscribe}
+                disabled={subscribing}
+                className="px-4 py-2 bg-red-600 text-white text-sm rounded-lg hover:bg-red-700 transition-colors disabled:opacity-50"
+              >
+                Попробовать снова
+              </button>
+            </div>
+          )}
+          
+          {/* Debug panel (only in dev or with ?debug=1) */}
+          {payDebug.length > 0 && (process.env.NODE_ENV === "development" || (typeof window !== "undefined" && new URLSearchParams(window.location.search).get("debug") === "1")) && (
+            <details className="mt-3 p-3 bg-gray-50 border border-gray-200 rounded-lg text-xs">
+              <summary className="cursor-pointer text-gray-600 font-medium">Отладочная информация</summary>
+              <div className="mt-2 space-y-1 font-mono text-gray-700 max-h-40 overflow-y-auto">
+                {payDebug.map((msg, idx) => (
+                  <div key={idx} className="break-words">{msg}</div>
+                ))}
+              </div>
+            </details>
+          )}
         </div>
 
         {/* Основная информация (сворачиваемая секция) */}
