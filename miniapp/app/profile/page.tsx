@@ -7,22 +7,9 @@ import Link from "next/link";
 import "../globals.css";
 import AppLayout from "../components/AppLayout";
 
-// Dynamic import to prevent SSR issues - only load if debug mode
+// Dynamic import - always return same component structure to avoid hooks order issues
 const RobokassaDebugModal = dynamic(
-  () => {
-    // Check debug mode before importing
-    if (typeof window !== "undefined") {
-      const urlParams = new URLSearchParams(window.location.search);
-      const urlDebug = urlParams.get("debug") === "1";
-      const envDebug = process.env.NEXT_PUBLIC_DEBUG === "1";
-      
-      if (urlDebug || envDebug) {
-        return import("../components/RobokassaDebugModal");
-      }
-    }
-    // Return a no-op component if debug is off
-    return Promise.resolve({ default: () => null });
-  },
+  () => import("../components/RobokassaDebugModal"),
   { ssr: false }
 );
 
@@ -43,8 +30,20 @@ interface ProfileData {
 }
 
 function ProfilePageContent() {
+  // #region agent log
+  if (typeof window !== "undefined") {
+    fetch('http://127.0.0.1:7242/ingest/d069101c-6e3e-4591-845c-7911b62d2d17',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'profile/page.tsx:45',message:'ProfilePageContent render start',data:{timestamp:Date.now()},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'A'})}).catch(()=>{});
+  }
+  // #endregion
+  
   const searchParams = useSearchParams();
   const userIdParam = searchParams.get("id");
+  
+  // #region agent log
+  if (typeof window !== "undefined") {
+    fetch('http://127.0.0.1:7242/ingest/d069101c-6e3e-4591-845c-7911b62d2d17',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'profile/page.tsx:49',message:'Before useState hooks',data:{userIdParam},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'A'})}).catch(()=>{});
+  }
+  // #endregion
   
   const [userId, setUserId] = useState<number | null>(null);
   const [profile, setProfile] = useState<ProfileData | null>(null);
@@ -74,8 +73,19 @@ function ProfilePageContent() {
   const [error29, setError29] = useState(false);
   const [checkingPrivacy, setCheckingPrivacy] = useState(false);
 
+  // #region agent log
+  if (typeof window !== "undefined") {
+    fetch('http://127.0.0.1:7242/ingest/d069101c-6e3e-4591-845c-7911b62d2d17',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'profile/page.tsx:76',message:'All useState hooks declared',data:{hookCount:16},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'A'})}).catch(()=>{});
+  }
+  // #endregion
+
   // Инициализация userId
   useEffect(() => {
+  // #region agent log
+  if (typeof window !== "undefined") {
+    fetch('http://127.0.0.1:7242/ingest/d069101c-6e3e-4591-845c-7911b62d2d17',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'profile/page.tsx:78',message:'useEffect 1 called',data:{userIdParam},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'A'})}).catch(()=>{});
+  }
+  // #endregion
     if (userIdParam) {
       const n = Number(userIdParam);
       if (Number.isFinite(n) && n > 0) {
@@ -93,6 +103,11 @@ function ProfilePageContent() {
 
   // Проверка согласия с политикой конфиденциальности
   useEffect(() => {
+  // #region agent log
+  if (typeof window !== "undefined") {
+    fetch('http://127.0.0.1:7242/ingest/d069101c-6e3e-4591-845c-7911b62d2d17',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'profile/page.tsx:95',message:'useEffect 2 called',data:{userId},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'A'})}).catch(()=>{});
+  }
+  // #endregion
     if (!userId) return;
 
     const checkPrivacy = async () => {
@@ -124,6 +139,11 @@ function ProfilePageContent() {
 
   // Загрузка данных профиля
   useEffect(() => {
+  // #region agent log
+  if (typeof window !== "undefined") {
+    fetch('http://127.0.0.1:7242/ingest/d069101c-6e3e-4591-845c-7911b62d2d17',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'profile/page.tsx:126',message:'useEffect 3 called',data:{userId},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'A'})}).catch(()=>{});
+  }
+  // #endregion
     if (!userId) return;
 
     const loadProfile = async () => {
@@ -177,6 +197,11 @@ function ProfilePageContent() {
 
   // Если профиль пустой — отправляем на онбординг
   useEffect(() => {
+  // #region agent log
+  if (typeof window !== "undefined") {
+    fetch('http://127.0.0.1:7242/ingest/d069101c-6e3e-4591-845c-7911b62d2d17',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'profile/page.tsx:179',message:'useEffect 4 called',data:{hasProfile:!!profile,userId},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'A'})}).catch(()=>{});
+  }
+  // #endregion
     if (!profile || !userId) return;
     const requiredFilled =
       profile.weightKg &&
@@ -458,6 +483,11 @@ function ProfilePageContent() {
 
   // Check for Error 29 in URL after Robokassa redirect
   useEffect(() => {
+  // #region agent log
+  if (typeof window !== "undefined") {
+    fetch('http://127.0.0.1:7242/ingest/d069101c-6e3e-4591-845c-7911b62d2d17',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'profile/page.tsx:462',message:'useEffect 5 called',data:{userId,hasWindow:typeof window !== "undefined"},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'A'})}).catch(()=>{});
+  }
+  // #endregion
     if (!userId || typeof window === "undefined") return;
     
     try {
