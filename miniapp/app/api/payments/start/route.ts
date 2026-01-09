@@ -166,19 +166,29 @@ export async function POST(req: Request) {
       const errorDetails = insertError?.message || "No payment record returned";
       const isSchemaCacheError = errorDetails.includes("schema cache") || 
                                  errorDetails.includes("Could not find") ||
-                                 errorDetails.includes("column") && errorDetails.includes("does not exist");
+                                 (errorDetails.includes("column") && errorDetails.includes("does not exist"));
+      
+      // Extract missing column name from error if possible
+      const missingColumnMatch = errorDetails.match(/Could not find the '(\w+)' column/);
+      const missingColumn = missingColumnMatch ? missingColumnMatch[1] : null;
+      
+      // Insert payload keys (for debugging, not values)
+      const insertPayloadKeys = Object.keys({
+        user_id: numericUserId,
+        plan_code: planCode,
+        amount: parseFloat(amount),
+        currency: "RUB",
+        status: "created",
+      });
       
       console.error(`[payments/start:${requestId}] CREATE_PAYMENT_ERROR`, {
         errorMessage: "Failed to create payment record",
         error: errorDetails,
         isSchemaCacheError,
-        insertPayload: {
-          user_id: numericUserId,
-          plan_code: planCode,
-          amount: parseFloat(amount),
-          currency: "RUB",
-          status: "created",
-        }
+        missingColumn,
+        insertPayloadKeys,
+        requestId,
+        timestamp: new Date().toISOString()
       });
       
       return NextResponse.json(
@@ -194,17 +204,24 @@ export async function POST(req: Request) {
               vercelEnv: process.env.VERCEL_ENV || "unknown",
             },
             isSchemaCacheError,
+            missingColumn,
+            insertPayloadKeys,
+            dbError: insertError ? {
+              message: insertError.message,
+              code: insertError.code,
+              details: insertError.details,
+              hint: insertError.hint
+            } : null,
             suggestion: isSchemaCacheError 
-              ? "PostgREST schema cache may be stale. Run: SELECT pg_notify('pgrst', 'reload schema'); in Supabase SQL Editor, then wait 1-2 minutes."
-              : "Check database migration and ensure all columns exist.",
-            insertPayload: {
-              user_id: numericUserId,
-              plan_code: planCode,
-              amount: parseFloat(amount),
-              currency: "RUB",
-              status: "created",
-            }
-          } : { requestId, timestamp: new Date().toISOString() }
+              ? `PostgREST schema cache is stale. Missing column: ${missingColumn || 'unknown'}. Run in Supabase SQL Editor: SELECT pg_notify('pgrst', 'reload schema'); Then wait 1-2 minutes.`
+              : missingColumn
+              ? `Column '${missingColumn}' is missing. Run migration create_payments_table.sql in Supabase SQL Editor.`
+              : "Check database migration and ensure all columns exist. See insertPayloadKeys for required columns."
+          } : { 
+            requestId, 
+            timestamp: new Date().toISOString(),
+            insertPayloadKeys: insertPayloadKeys
+          }
         },
         { status: 500 }
       );

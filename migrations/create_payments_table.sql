@@ -17,6 +17,16 @@ CREATE TABLE IF NOT EXISTS public.payments (
 -- Add columns if they don't exist (for existing tables)
 DO $$ 
 BEGIN
+    -- Add plan_code if missing (CRITICAL: required by insert)
+    IF NOT EXISTS (
+        SELECT 1 FROM information_schema.columns 
+        WHERE table_schema = 'public' 
+        AND table_name = 'payments' 
+        AND column_name = 'plan_code'
+    ) THEN
+        ALTER TABLE public.payments ADD COLUMN plan_code TEXT NOT NULL DEFAULT 'trial_3d_199';
+    END IF;
+
     -- Add currency if missing (CRITICAL: required by insert)
     IF NOT EXISTS (
         SELECT 1 FROM information_schema.columns 
@@ -83,9 +93,18 @@ COMMENT ON TABLE public.payments IS 'Stores Robokassa payment records. id column
 -- This ensures Supabase API immediately recognizes new columns
 SELECT pg_notify('pgrst', 'reload schema');
 
--- Verify currency column exists
+-- Verify critical columns exist (required by insert)
 DO $$
 BEGIN
+    IF NOT EXISTS (
+        SELECT 1 FROM information_schema.columns 
+        WHERE table_schema = 'public' 
+        AND table_name = 'payments' 
+        AND column_name = 'plan_code'
+    ) THEN
+        RAISE EXCEPTION 'Migration failed: plan_code column not created';
+    END IF;
+    
     IF NOT EXISTS (
         SELECT 1 FROM information_schema.columns 
         WHERE table_schema = 'public' 
