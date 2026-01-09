@@ -74,6 +74,7 @@ function ProfilePageContent() {
   const [showDebugModal, setShowDebugModal] = useState(false);
   const [error29, setError29] = useState(false);
   const [checkingPrivacy, setCheckingPrivacy] = useState(false);
+  const [schemaCheck, setSchemaCheck] = useState<any>(null);
 
   // Safe Telegram bootstrap - must be unconditional hook
   useEffect(() => {
@@ -674,6 +675,8 @@ function ProfilePageContent() {
           signatureStringMasked: data.debug.robokassa.signatureStringMasked,
           signatureValue: data.debug.robokassa.signatureValue?.substring(0, 8) + "...",
           signatureChecks: data.debug.robokassa.signatureChecks,
+          openMethod: null as string | null,
+          openSuccess: false,
         };
         setPaymentDebugInfo(debugInfo);
         
@@ -689,25 +692,65 @@ function ProfilePageContent() {
         }
       }
 
-      // Open payment URL
+      // Open payment URL with robust fallbacks
       pushDebug("Открытие страницы оплаты...");
       const currentUrl = typeof window !== "undefined" ? window.location.href : "";
+      let openMethod = "unknown";
+      let openSuccess = false;
 
-      if (typeof window !== "undefined" && (window as any).Telegram?.WebApp?.openLink) {
-        try {
-          pushDebug("Используется Telegram.WebApp.openLink");
-          (window as any).Telegram.WebApp.openLink(data.paymentUrl, { try_instant_view: false });
-          navigated = true;
-          pushDebug("openLink вызван успешно");
-        } catch (e: any) {
-          pushDebug(`ОШИБКА openLink: ${e.message}, используем fallback`);
-          window.location.assign(data.paymentUrl);
-          navigated = true;
+      if (typeof window !== "undefined") {
+        // Try Telegram WebApp.openLink first (preferred for Telegram)
+        if ((window as any).Telegram?.WebApp?.openLink) {
+          try {
+            pushDebug("Попытка открыть через Telegram.WebApp.openLink");
+            (window as any).Telegram.WebApp.openLink(data.paymentUrl, { try_instant_view: false });
+            openMethod = "Telegram.WebApp.openLink";
+            openSuccess = true;
+            navigated = true;
+            pushDebug("✓ openLink вызван успешно");
+          } catch (e: any) {
+            pushDebug(`✗ ОШИБКА openLink: ${e.message}, используем fallback`);
+            openMethod = "Telegram.WebApp.openLink (failed, using fallback)";
+            // Fall through to fallback
+          }
         }
-      } else {
-        pushDebug("Используется window.location.assign (fallback)");
-        window.location.assign(data.paymentUrl);
-        navigated = true;
+        
+        // Fallback: window.location.href (most reliable)
+        if (!navigated) {
+          try {
+            pushDebug("Используется window.location.href (fallback)");
+            window.location.href = data.paymentUrl;
+            openMethod = "window.location.href";
+            openSuccess = true;
+            navigated = true;
+            pushDebug("✓ window.location.href установлен");
+          } catch (e: any) {
+            pushDebug(`✗ ОШИБКА window.location.href: ${e.message}`);
+            openMethod = "window.location.href (failed)";
+            // Last resort: window.open
+            try {
+              pushDebug("Попытка window.open (последний fallback)");
+              window.open(data.paymentUrl, '_blank', 'noopener,noreferrer');
+              openMethod = "window.open";
+              openSuccess = true;
+              navigated = true;
+              pushDebug("✓ window.open вызван");
+            } catch (e2: any) {
+              pushDebug(`✗ ОШИБКА window.open: ${e2.message}`);
+              openMethod = "all methods failed";
+              throw new Error(`Не удалось открыть страницу оплаты. Все методы открытия не сработали. URL: ${data.paymentUrl.substring(0, 100)}...`);
+            }
+          }
+        }
+      }
+      
+      // Store open method in debug info for overlay
+      if (paymentDebugInfo) {
+        setPaymentDebugInfo({
+          ...paymentDebugInfo,
+          openMethod,
+          openSuccess,
+        });
       }
 
       // Watchdog: if navigation didn't happen after 3s, reset loading

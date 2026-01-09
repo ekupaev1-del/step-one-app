@@ -163,16 +163,48 @@ export async function POST(req: Request) {
       .single();
 
     if (insertError || !paymentRecord) {
+      const errorDetails = insertError?.message || "No payment record returned";
+      const isSchemaCacheError = errorDetails.includes("schema cache") || 
+                                 errorDetails.includes("Could not find") ||
+                                 errorDetails.includes("column") && errorDetails.includes("does not exist");
+      
       console.error(`[payments/start:${requestId}] CREATE_PAYMENT_ERROR`, {
         errorMessage: "Failed to create payment record",
-        error: insertError?.message || "No payment record returned"
+        error: errorDetails,
+        isSchemaCacheError,
+        insertPayload: {
+          user_id: numericUserId,
+          plan_code: planCode,
+          amount: parseFloat(amount),
+          currency: "RUB",
+          status: "created",
+        }
       });
+      
       return NextResponse.json(
         { 
           ok: false, 
           error: "Failed to create payment record", 
-          details: insertError?.message || "Database insert failed",
-          debug: { requestId, timestamp: new Date().toISOString() }
+          details: errorDetails,
+          debug: debugMode ? {
+            requestId,
+            timestamp: new Date().toISOString(),
+            environment: {
+              nodeEnv: process.env.NODE_ENV || "unknown",
+              vercelEnv: process.env.VERCEL_ENV || "unknown",
+            },
+            isSchemaCacheError,
+            suggestion: isSchemaCacheError 
+              ? "PostgREST schema cache may be stale. Run: SELECT pg_notify('pgrst', 'reload schema'); in Supabase SQL Editor, then wait 1-2 minutes."
+              : "Check database migration and ensure all columns exist.",
+            insertPayload: {
+              user_id: numericUserId,
+              plan_code: planCode,
+              amount: parseFloat(amount),
+              currency: "RUB",
+              status: "created",
+            }
+          } : { requestId, timestamp: new Date().toISOString() }
         },
         { status: 500 }
       );
