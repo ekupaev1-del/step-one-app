@@ -411,9 +411,15 @@ function ProfilePageContent() {
       if (data.debug?.robokassa) {
         setDebugData(data.debug.robokassa);
         // Store in sessionStorage for Error 29 detection after redirect
-        sessionStorage.setItem("robokassa_debug", JSON.stringify(data.debug.robokassa));
-        if (data.paymentUrl) {
-          sessionStorage.setItem("robokassa_payment_url", data.paymentUrl);
+        try {
+          if (typeof window !== "undefined" && window.sessionStorage) {
+            sessionStorage.setItem("robokassa_debug", JSON.stringify(data.debug.robokassa));
+            if (data.paymentUrl) {
+              sessionStorage.setItem("robokassa_payment_url", data.paymentUrl);
+            }
+          }
+        } catch (e) {
+          console.error("[profile] Failed to store debug data in sessionStorage:", e);
         }
         // Show debug modal before redirect (for internal testing)
         setShowDebugModal(true);
@@ -435,31 +441,35 @@ function ProfilePageContent() {
 
   // Check for Error 29 in URL after Robokassa redirect
   useEffect(() => {
-    if (!userId) return;
+    if (!userId || typeof window === "undefined") return;
     
-    const urlParams = new URLSearchParams(window.location.search);
-    const errorCode = urlParams.get("ErrorCode");
-    const errorDesc = urlParams.get("ErrorDescription");
-    
-    if (errorCode === "29" || urlParams.get("error")?.includes("29") || errorDesc?.includes("29")) {
-      setError29(true);
-      setError("Robokassa Error 29: SignatureValue mismatch");
+    try {
+      const urlParams = new URLSearchParams(window.location.search);
+      const errorCode = urlParams.get("ErrorCode");
+      const errorDesc = urlParams.get("ErrorDescription");
       
-      // Try to get debug data from sessionStorage if available
-      const storedDebug = sessionStorage.getItem("robokassa_debug");
-      if (storedDebug) {
+      if (errorCode === "29" || urlParams.get("error")?.includes("29") || errorDesc?.includes("29")) {
+        setError29(true);
+        setError("Robokassa Error 29: SignatureValue mismatch");
+        
+        // Try to get debug data from sessionStorage if available
         try {
-          const parsedDebug = JSON.parse(storedDebug);
-          setDebugData(parsedDebug);
-          setShowDebugModal(true);
+          const storedDebug = sessionStorage.getItem("robokassa_debug");
+          if (storedDebug) {
+            const parsedDebug = JSON.parse(storedDebug);
+            setDebugData(parsedDebug);
+            setShowDebugModal(true);
+          } else {
+            // If no stored debug, try to fetch it from backend
+            // This is a fallback - normally debug should be stored before redirect
+            console.warn("[profile] Error 29 detected but no debug data in storage");
+          }
         } catch (e) {
           console.error("Failed to parse stored debug data", e);
         }
-      } else {
-        // If no stored debug, try to fetch it from backend
-        // This is a fallback - normally debug should be stored before redirect
-        console.warn("[profile] Error 29 detected but no debug data in storage");
       }
+    } catch (e) {
+      console.error("[profile] Error checking URL params:", e);
     }
   }, [userId]);
 
@@ -853,10 +863,16 @@ function ProfilePageContent() {
           setShowDebugModal(false);
           // If no error, proceed with redirect
           if (!error29 && debugData) {
-            // Try to get payment URL from stored data or redirect
-            const storedUrl = sessionStorage.getItem("robokassa_payment_url");
-            if (storedUrl) {
-              window.location.href = storedUrl;
+            try {
+              // Try to get payment URL from stored data or redirect
+              if (typeof window !== "undefined" && window.sessionStorage) {
+                const storedUrl = sessionStorage.getItem("robokassa_payment_url");
+                if (storedUrl) {
+                  window.location.href = storedUrl;
+                }
+              }
+            } catch (e) {
+              console.error("[profile] Failed to get payment URL from sessionStorage:", e);
             }
           }
         }}
