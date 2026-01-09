@@ -30,8 +30,14 @@ interface ProfileData {
 }
 
 function ProfilePageContent() {
+  // ALL HOOKS MUST BE CALLED UNCONDITIONALLY AT TOP LEVEL
+  // No early returns, no conditional hooks, no hooks in loops/conditions
+  
   const searchParams = useSearchParams();
   const userIdParam = searchParams.get("id");
+  
+  // Safe Telegram initialization - hooks must run regardless of Telegram availability
+  const [tg, setTg] = useState<any>(null);
   
   const [userId, setUserId] = useState<number | null>(null);
   const [profile, setProfile] = useState<ProfileData | null>(null);
@@ -60,6 +66,16 @@ function ProfilePageContent() {
   const [showDebugModal, setShowDebugModal] = useState(false);
   const [error29, setError29] = useState(false);
   const [checkingPrivacy, setCheckingPrivacy] = useState(false);
+
+  // Safe Telegram bootstrap - must be unconditional hook
+  useEffect(() => {
+    if (typeof window !== "undefined") {
+      setTg(window.Telegram?.WebApp ?? null);
+    }
+  }, []);
+
+  // Derive isInTelegram AFTER all hooks are declared
+  const isInTelegram = !!tg;
 
   // Инициализация userId
   useEffect(() => {
@@ -892,10 +908,17 @@ function LoadingFallback() {
   );
 }
 
-export default function ProfilePage() {
+// Wrapper component to handle Suspense boundary properly
+function ProfilePageWrapper() {
+  // This component ensures hooks are called before Suspense boundary
   return (
     <Suspense fallback={<LoadingFallback />}>
       <ProfilePageContent />
     </Suspense>
   );
+}
+
+export default function ProfilePage() {
+  // Export wrapper to maintain stable component structure
+  return <ProfilePageWrapper />;
 }
