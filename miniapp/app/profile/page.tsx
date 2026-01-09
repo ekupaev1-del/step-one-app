@@ -75,6 +75,8 @@ function ProfilePageContent() {
   const [error29, setError29] = useState(false);
   const [checkingPrivacy, setCheckingPrivacy] = useState(false);
   const [schemaCheck, setSchemaCheck] = useState<any>(null);
+  const [lastRequestPayload, setLastRequestPayload] = useState<any>(null);
+  const [lastResponse, setLastResponse] = useState<any>(null);
 
   // Safe Telegram bootstrap - must be unconditional hook
   useEffect(() => {
@@ -492,19 +494,36 @@ function ProfilePageContent() {
     }
 
     // Get telegram_user_id from Telegram.WebApp.initDataUnsafe
+    // Try multiple ways to access Telegram WebApp
+    const tgWebApp = typeof window !== "undefined" 
+      ? (window as any).Telegram?.WebApp 
+      : null;
+    
+    const initDataUnsafe = tgWebApp?.initDataUnsafe;
+    const initDataLength = initDataUnsafe ? JSON.stringify(initDataUnsafe).length : 0;
+    
+    pushDebug(`Telegram WebApp доступен: ${!!tgWebApp}`);
+    pushDebug(`initDataUnsafe длина: ${initDataLength} символов`);
+    
     let telegramUserId: number | null = null;
-    if (typeof window !== "undefined" && tg?.initDataUnsafe?.user?.id) {
-      telegramUserId = tg.initDataUnsafe.user.id;
-      pushDebug(`Найден telegram_user_id из initDataUnsafe: ${telegramUserId}`);
+    
+    if (tgWebApp?.initDataUnsafe?.user?.id) {
+      telegramUserId = tgWebApp.initDataUnsafe.user.id;
+      pushDebug(`Найден telegram_user_id из tg.initDataUnsafe: ${telegramUserId}`);
     } else if (typeof window !== "undefined" && (window as any).Telegram?.WebApp?.initDataUnsafe?.user?.id) {
       telegramUserId = (window as any).Telegram.WebApp.initDataUnsafe.user.id;
       pushDebug(`Найден telegram_user_id из window.Telegram: ${telegramUserId}`);
     } else {
-      const errorMsg = "telegram_user_id не найден. Убедитесь, что приложение открыто в Telegram.";
+      const errorMsg = "telegram_user_id не найден. Убедитесь, что приложение открыто в Telegram боте.";
       pushDebug(`ОШИБКА: ${errorMsg}`);
+      pushDebug(`tgWebApp: ${!!tgWebApp}, initDataUnsafe: ${!!initDataUnsafe}, user: ${!!initDataUnsafe?.user}`);
       setPayError(errorMsg);
+      // DO NOT call API if telegramUserId is missing
       return;
     }
+    
+    // Log telegramUserId for debugging
+    pushDebug(`telegramUserId для отправки: ${telegramUserId} (тип: ${typeof telegramUserId})`);
 
     // Reset states
     setPayError(null);
@@ -527,16 +546,24 @@ function ProfilePageContent() {
         pushDebug("Таймаут запроса (8 секунд)");
       }, 8000);
 
+      // Prepare request payload
+      const requestPayload = {
+        userId,
+        telegramUserId, // EXACT field name as expected by backend
+        planCode: "trial_3d_199"
+      };
+      
+      // Store request payload for debug overlay
+      setLastRequestPayload(requestPayload);
+      
+      pushDebug(`Отправка запроса с payload: ${JSON.stringify(requestPayload)}`);
+      
       const response = await fetch("/api/payments/start", {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
         },
-        body: JSON.stringify({ 
-          userId,
-          telegramUserId,
-          planCode: "trial_3d_199"
-        }),
+        body: JSON.stringify(requestPayload),
         signal: controller.signal,
       });
 

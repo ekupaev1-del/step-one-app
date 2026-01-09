@@ -105,40 +105,128 @@ export async function POST(req: Request) {
       );
     }
     
-    // Extract and validate telegram_user_id (REQUIRED)
-    const telegramUserId = body.telegramUserId;
+    // Log received request for debugging
+    const receivedKeys = Object.keys(body);
+    const safePreview = (obj: any) => {
+      try {
+        const preview: any = {};
+        for (const key in obj) {
+          if (typeof obj[key] === 'string' || typeof obj[key] === 'number') {
+            preview[key] = String(obj[key]).substring(0, 20);
+          } else {
+            preview[key] = typeof obj[key];
+          }
+        }
+        return preview;
+      } catch {
+        return { error: "Could not preview" };
+      }
+    };
+    
+    console.log(`[payments/start:${debugId}] REQUEST_RECEIVED`, {
+      requestId: debugId,
+      receivedKeys,
+      receivedBodyPreview: safePreview(body),
+      timestamp: new Date().toISOString()
+    });
+    
+    // Extract telegram_user_id from ALL possible keys (REQUIRED)
+    const telegramUserId = body.telegramUserId || 
+                          body.telegram_user_id || 
+                          body.tgUserId || 
+                          body.tg_user_id ||
+                          null;
+    
+    // Log what we found
+    console.log(`[payments/start:${debugId}] TELEGRAM_USER_ID_EXTRACTION`, {
+      requestId: debugId,
+      telegramUserIdType: typeof telegramUserId,
+      telegramUserIdValue: telegramUserId ? String(telegramUserId).slice(0, 6) + "..." : null,
+      foundInKeys: receivedKeys.filter(k => k.toLowerCase().includes('telegram') || k.toLowerCase().includes('tg')),
+      allKeys: receivedKeys
+    });
+    
+    // Validate telegram_user_id BEFORE any DB operations
     if (!telegramUserId) {
-      console.error(`[payments/start:${debugId}] VALIDATION_ERROR`, {
+      console.error(`[payments/start:${debugId}] VALIDATION_ERROR_MISSING_TELEGRAM_USER_ID`, {
         error: "telegramUserId is required",
-        received: body
+        receivedKeys,
+        receivedBodyPreview: safePreview(body),
+        requestId: debugId
       });
       return NextResponse.json(
         {
           ok: false,
-          error: "telegramUserId is required",
-          details: "telegramUserId must be provided in request body. Get it from Telegram.WebApp.initDataUnsafe.user.id",
+          error: "telegram_user_id_missing",
+          details: "telegramUserId is required. Open inside Telegram or pass Telegram.WebApp.initDataUnsafe.user.id",
+          debug: {
+            requestId: debugId,
+            receivedKeys,
+            receivedBodyPreview: safePreview(body),
+            suggestion: "Ensure you're opening the app inside Telegram bot, or explicitly pass telegramUserId in request body"
+          },
           debugId
         },
         { status: 400 }
       );
     }
     
-    const numericTelegramUserId = Number(telegramUserId);
-    if (!Number.isFinite(numericTelegramUserId) || numericTelegramUserId <= 0) {
-      console.error(`[payments/start:${debugId}] VALIDATION_ERROR`, {
-        error: "Invalid telegramUserId",
-        received: telegramUserId
+    // Normalize to number (safe conversion)
+    let numericTelegramUserId: number;
+    if (typeof telegramUserId === 'string') {
+      numericTelegramUserId = parseInt(telegramUserId, 10);
+    } else if (typeof telegramUserId === 'number') {
+      numericTelegramUserId = telegramUserId;
+    } else {
+      console.error(`[payments/start:${debugId}] VALIDATION_ERROR_INVALID_TYPE`, {
+        error: "Invalid telegramUserId type",
+        received: telegramUserId,
+        type: typeof telegramUserId
       });
       return NextResponse.json(
         {
           ok: false,
-          error: "telegramUserId must be a positive number",
-          details: `Received: ${telegramUserId}`,
+          error: "telegram_user_id_invalid_type",
+          details: `telegramUserId must be a number or numeric string, got ${typeof telegramUserId}`,
+          debug: {
+            requestId: debugId,
+            receivedValue: String(telegramUserId),
+            receivedType: typeof telegramUserId
+          },
           debugId
         },
         { status: 400 }
       );
     }
+    
+    // Validate it's a valid positive integer
+    if (!Number.isFinite(numericTelegramUserId) || numericTelegramUserId <= 0 || !Number.isInteger(numericTelegramUserId)) {
+      console.error(`[payments/start:${debugId}] VALIDATION_ERROR_INVALID_VALUE`, {
+        error: "Invalid telegramUserId value",
+        received: telegramUserId,
+        parsed: numericTelegramUserId
+      });
+      return NextResponse.json(
+        {
+          ok: false,
+          error: "telegram_user_id_invalid_value",
+          details: `telegramUserId must be a positive integer, got: ${telegramUserId}`,
+          debug: {
+            requestId: debugId,
+            receivedValue: String(telegramUserId),
+            parsedValue: numericTelegramUserId
+          },
+          debugId
+        },
+        { status: 400 }
+      );
+    }
+    
+    console.log(`[payments/start:${debugId}] TELEGRAM_USER_ID_VALIDATED`, {
+      requestId: debugId,
+      telegramUserId: numericTelegramUserId,
+      timestamp: new Date().toISOString()
+    });
     
     // Extract optional fields
     const planCode = body.planCode || "trial_3d_199";
