@@ -43,6 +43,7 @@ export default function RobokassaDebugModal({
   error29 = false,
   onClose,
 }: RobokassaDebugModalProps) {
+  // ALL HOOKS MUST BE CALLED UNCONDITIONALLY AT TOP LEVEL
   const [activeTab, setActiveTab] = useState<"summary" | "raw">("summary");
   const [copied, setCopied] = useState<string | null>(null);
   const [isDebugMode, setIsDebugMode] = useState(false);
@@ -75,7 +76,8 @@ export default function RobokassaDebugModal({
     }
   }, [debugData]);
 
-  // Early return AFTER all hooks - this is safe
+  // Early return AFTER all hooks - this is safe and prevents hook order issues
+  // Component is always mounted, but conditionally renders content
   if (!shouldRender || typeof window === "undefined" || !debugData) {
     return null;
   }

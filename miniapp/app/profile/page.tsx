@@ -858,30 +858,28 @@ function ProfilePageContent() {
       </div>
     </div>
 
-    {/* Robokassa Debug Modal - only render on client */}
-    {typeof window !== "undefined" && showDebugModal && debugData && (
-      <RobokassaDebugModal
-        debugData={debugData}
-        error29={error29}
-        onClose={() => {
-          setShowDebugModal(false);
-          // If no error, proceed with redirect
-          if (!error29 && debugData) {
-            try {
-              // Try to get payment URL from stored data or redirect
-              if (typeof window !== "undefined" && window.sessionStorage) {
-                const storedUrl = sessionStorage.getItem("robokassa_payment_url");
-                if (storedUrl) {
-                  window.location.href = storedUrl;
-                }
+    {/* Robokassa Debug Modal - always mount to avoid hook order issues */}
+    <RobokassaDebugModal
+      debugData={debugData}
+      error29={error29}
+      onClose={() => {
+        setShowDebugModal(false);
+        // If no error, proceed with redirect
+        if (!error29 && debugData) {
+          try {
+            // Try to get payment URL from stored data or redirect
+            if (typeof window !== "undefined" && window.sessionStorage) {
+              const storedUrl = sessionStorage.getItem("robokassa_payment_url");
+              if (storedUrl) {
+                window.location.href = storedUrl;
               }
-            } catch (e) {
-              console.error("[profile] Failed to get payment URL from sessionStorage:", e);
             }
+          } catch (e) {
+            console.error("[profile] Failed to get payment URL from sessionStorage:", e);
           }
-        }}
-      />
-    )}
+        }
+      }}
+    />
     </AppLayout>
   );
 }
