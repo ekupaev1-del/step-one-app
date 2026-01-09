@@ -39,7 +39,7 @@ export async function POST(req: Request) {
 
     if (!outSum || !invId || !signature || !userId) {
       console.error("[robokassa/result] Missing required parameters");
-      return NextResponse.text("ERROR: Missing required parameters", { status: 400 });
+      return new Response("ERROR: Missing required parameters", { status: 400 });
     }
 
     // Verify signature using PASSWORD2
@@ -47,7 +47,7 @@ export async function POST(req: Request) {
 
     if (!isValid) {
       console.error("[robokassa/result] Invalid signature");
-      return NextResponse.text("ERROR: Invalid signature", { status: 400 });
+      return new Response("ERROR: Invalid signature", { status: 400 });
     }
 
     console.log("[robokassa/result] Signature verified successfully");
@@ -71,9 +71,9 @@ export async function POST(req: Request) {
     console.log("[robokassa/result] ========== CALLBACK SUCCESS ==========");
 
     // Robokassa expects "OK" + InvId response
-    return NextResponse.text(`OK${invId}`);
+    return new Response(`OK${invId}`);
   } catch (error: any) {
     console.error("[robokassa/result] Error:", error);
-    return NextResponse.text("ERROR: Internal server error", { status: 500 });
+    return new Response("ERROR: Internal server error", { status: 500 });
   }
 }
