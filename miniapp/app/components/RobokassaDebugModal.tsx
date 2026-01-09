@@ -165,29 +165,32 @@ export default function RobokassaDebugModal({
                   <div className="flex justify-between">
                     <span className="text-gray-600">Target URL:</span>
                     <span className="text-gray-900 font-mono text-xs break-all">
-                      {debugData.targetUrl}
+                      {debugData?.targetUrl || "N/A"}
                     </span>
                   </div>
                   <div className="flex justify-between">
                     <span className="text-gray-600">MerchantLogin:</span>
-                    <span className="text-gray-900 font-mono">{debugData.merchantLogin}</span>
+                    <span className="text-gray-900 font-mono">{debugData?.merchantLogin || "N/A"}</span>
                   </div>
                   <div className="flex justify-between">
                     <span className="text-gray-600">OutSum:</span>
-                    <span className="text-gray-900 font-mono">{debugData.outSum}</span>
+                    <span className="text-gray-900 font-mono">{debugData?.outSum || "N/A"}</span>
                   </div>
                   <div className="flex justify-between">
                     <span className="text-gray-600">InvoiceID:</span>
-                    <span className="text-gray-900 font-mono">{debugData.invoiceId}</span>
+                    <span className="text-gray-900 font-mono">{debugData?.invoiceId || "N/A"}</span>
                   </div>
                   <div className="flex justify-between">
                     <span className="text-gray-600">Recurring:</span>
-                    <span className="text-gray-900">{debugData.isTest ? "Test Mode" : "No"}</span>
+                    <span className="text-gray-900">{debugData?.isTest ? "Test Mode" : "No"}</span>
                   </div>
                   <div className="flex justify-between">
                     <span className="text-gray-600">Shp_userId:</span>
                     <span className="text-gray-900 font-mono">
-                      {debugData?.customParams?.raw?.Shp_userId || "N/A"}
+                      {debugData?.customParams?.raw?.Shp_userId || 
+                       (debugData?.customParams?.raw && typeof debugData.customParams.raw === 'object' 
+                         ? String(debugData.customParams.raw.Shp_userId || "N/A")
+                         : "N/A")}
                     </span>
                   </div>
                   <div className="flex justify-between">
@@ -208,23 +211,26 @@ export default function RobokassaDebugModal({
                   <div className="flex justify-between">
                     <span className="text-gray-600">SignatureValue:</span>
                     <span className="text-gray-900 font-mono text-xs break-all">
-                      {debugData.signatureValue}
+                      {debugData?.signatureValue || "N/A"}
                     </span>
                   </div>
                   <div className="pt-2 border-t border-gray-200">
                     <div className="text-gray-600 text-xs mb-1">Masked Signature String:</div>
                     <div className="text-gray-900 font-mono text-xs break-all bg-white p-2 rounded">
-                      {debugData.signatureStringMasked}
+                      {debugData?.signatureStringMasked || "N/A"}
                     </div>
                   </div>
                   <div className="pt-2 border-t border-gray-200">
                     <div className="text-gray-600 text-xs mb-1">Signature Parts (in order):</div>
                     <div className="space-y-1">
-                      {debugData.signatureStringParts.map((part, idx) => (
-                        <div key={idx} className="text-gray-900 font-mono text-xs">
-                          {idx + 1}. {part}
-                        </div>
-                      ))}
+                      {Array.isArray(debugData?.signatureStringParts) 
+                        ? debugData.signatureStringParts.map((part: string, idx: number) => (
+                            <div key={idx} className="text-gray-900 font-mono text-xs">
+                              {idx + 1}. {String(part || "")}
+                            </div>
+                          ))
+                        : <div className="text-gray-500 text-xs">No signature parts available</div>
+                      }
                     </div>
                   </div>
                 </div>
@@ -238,30 +244,30 @@ export default function RobokassaDebugModal({
                     <span className="text-gray-600">Length is 32:</span>
                     <span
                       className={`font-semibold ${
-                        debugData.signatureChecks.lengthIs32 ? "text-green-600" : "text-red-600"
+                        debugData?.signatureChecks?.lengthIs32 ? "text-green-600" : "text-red-600"
                       }`}
                     >
-                      {debugData.signatureChecks.lengthIs32 ? "✓" : "✗"}
+                      {debugData?.signatureChecks?.lengthIs32 ? "✓" : "✗"}
                     </span>
                   </div>
                   <div className="flex justify-between items-center">
                     <span className="text-gray-600">Lowercase:</span>
                     <span
                       className={`font-semibold ${
-                        debugData.signatureChecks.lowercase ? "text-green-600" : "text-red-600"
+                        debugData?.signatureChecks?.lowercase ? "text-green-600" : "text-red-600"
                       }`}
                     >
-                      {debugData.signatureChecks.lowercase ? "✓" : "✗"}
+                      {debugData?.signatureChecks?.lowercase ? "✓" : "✗"}
                     </span>
                   </div>
                   <div className="flex justify-between items-center">
                     <span className="text-gray-600">Hex Only:</span>
                     <span
                       className={`font-semibold ${
-                        debugData.signatureChecks.hexOnly ? "text-green-600" : "text-red-600"
+                        debugData?.signatureChecks?.hexOnly ? "text-green-600" : "text-red-600"
                       }`}
                     >
-                      {debugData.signatureChecks.hexOnly ? "✓" : "✗"}
+                      {debugData?.signatureChecks?.hexOnly ? "✓" : "✗"}
                     </span>
                   </div>
                 </div>
@@ -273,26 +279,26 @@ export default function RobokassaDebugModal({
                 <div className="bg-gray-50 rounded-lg p-3 space-y-2 text-sm">
                   <div className="flex justify-between">
                     <span className="text-gray-600">Node Env:</span>
-                    <span className="text-gray-900">{debugData.environment.nodeEnv}</span>
+                    <span className="text-gray-900">{debugData?.environment?.nodeEnv || "N/A"}</span>
                   </div>
                   <div className="flex justify-between">
                     <span className="text-gray-600">Vercel Env:</span>
-                    <span className="text-gray-900">{debugData.environment.vercelEnv}</span>
+                    <span className="text-gray-900">{debugData?.environment?.vercelEnv || "N/A"}</span>
                   </div>
                   <div className="flex justify-between">
                     <span className="text-gray-600">Password1 Length:</span>
-                    <span className="text-gray-900">{debugData.environment.password1Length}</span>
+                    <span className="text-gray-900">{debugData?.environment?.password1Length ?? "N/A"}</span>
                   </div>
                   <div className="flex justify-between">
                     <span className="text-gray-600">Password1 Prefix (2 chars):</span>
                     <span className="text-gray-900 font-mono">
-                      {debugData.environment.password1Prefix2}
+                      {debugData?.environment?.password1Prefix2 || "N/A"}
                     </span>
                   </div>
                   <div className="flex justify-between">
                     <span className="text-gray-600">Password1 Suffix (2 chars):</span>
                     <span className="text-gray-900 font-mono">
-                      {debugData.environment.password1Suffix2}
+                      {debugData?.environment?.password1Suffix2 || "N/A"}
                     </span>
                   </div>
                 </div>
