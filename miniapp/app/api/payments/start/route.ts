@@ -184,6 +184,7 @@ export async function POST(req: Request) {
         amount: parseFloat(amount),
         currency: "RUB",
         status: "created",
+        inv_id: tempInvId,
       });
       
       console.error(`[payments/start:${requestId}] CREATE_PAYMENT_ERROR`, {
