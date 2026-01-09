@@ -100,7 +100,7 @@ export async function GET(req: Request) {
     const now = new Date().toISOString();
     const { data: expiredTrials, error: queryError } = await supabase
       .from("users")
-      .select("id, telegram_id, robokassa_parent_invoice_id")
+      .select("id, robokassa_parent_invoice_id")
       .eq("subscription_status", "trial")
       .lt("trial_end_at", now);
 
@@ -129,8 +129,7 @@ export async function GET(req: Request) {
 
     // Process each expired trial
     for (const user of expiredTrials) {
-      const userId = user.id;
-      const telegramId = user.telegram_id || userId.toString();
+      const userId = user.id; // id is the telegram user id
 
       console.log(`[cron] Processing user ${userId}`);
 
@@ -138,7 +137,7 @@ export async function GET(req: Request) {
       const invoiceId = generateInvoiceId();
 
       // Attempt to charge 199 RUB
-      const chargeResult = await attemptCharge(Number(telegramId), invoiceId);
+      const chargeResult = await attemptCharge(Number(userId), invoiceId);
 
       if (chargeResult.success && chargeResult.paymentUrl) {
         // NOTE: Since Robokassa requires user interaction, we generate the URL
