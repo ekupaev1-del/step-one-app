@@ -7,10 +7,15 @@ import Link from "next/link";
 import "../globals.css";
 import AppLayout from "../components/AppLayout";
 
-// Dynamic import - always return same component structure to avoid hooks order issues
+// Dynamic import with stable component structure
+// Using dynamic import to prevent SSR issues, but component always mounts on client
 const RobokassaDebugModal = dynamic(
   () => import("../components/RobokassaDebugModal"),
-  { ssr: false }
+  { 
+    ssr: false,
+    // Ensure component structure is stable
+    loading: () => null
+  }
 );
 
 interface ProfileData {
