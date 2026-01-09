@@ -228,7 +228,7 @@ export async function POST(req: Request) {
         plan_code: planCode,
         amount: parseFloat(amount),
         currency: "RUB",
-        inv_id: invId.toString(),
+        inv_id: invId, // number, not string
         description: description,
         status: "created",
         payment_url: paymentUrl,
