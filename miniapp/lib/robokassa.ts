@@ -83,11 +83,12 @@ export function generateRobokassaUrl(
   const resultUrl = `${baseUrl}/api/robokassa/result`;
 
   // Build URL parameters
+  // Description should be URL-encoded for safety (URLSearchParams handles this automatically)
   const params = new URLSearchParams({
     MerchantLogin: ROBOKASSA_MERCHANT_LOGIN,
     OutSum: outSum,
-    InvId: invId,
-    Description: description,
+    InvId: invId.toString(), // Ensure InvId is string
+    Description: description, // URLSearchParams will encode this automatically
     SignatureValue: signatureValue,
     Shp_userId: userId,
     SuccessURL: successUrl,
