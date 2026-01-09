@@ -22,13 +22,30 @@ interface ErrorInfo {
 }
 
 export default function DebugOverlay() {
+  // #region agent log
+  if (typeof window !== "undefined") {
+    fetch('http://127.0.0.1:7242/ingest/d069101c-6e3e-4591-845c-7911b62d2d17',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'DebugOverlay.tsx:24',message:'DebugOverlay render start',data:{timestamp:Date.now()},timestamp:Date.now(),sessionId:'debug-session',runId:'run2',hypothesisId:'B'})}).catch(()=>{});
+  }
+  // #endregion
+  
   const [isEnabled, setIsEnabled] = useState(false);
   const [errors, setErrors] = useState<ErrorInfo[]>([]);
   const [activeTab, setActiveTab] = useState<"summary" | "raw">("summary");
   const [copied, setCopied] = useState<string | null>(null);
+  
+  // #region agent log
+  if (typeof window !== "undefined") {
+    fetch('http://127.0.0.1:7242/ingest/d069101c-6e3e-4591-845c-7911b62d2d17',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'DebugOverlay.tsx:30',message:'DebugOverlay all useState hooks declared',data:{hookCount:4},timestamp:Date.now(),sessionId:'debug-session',runId:'run2',hypothesisId:'B'})}).catch(()=>{});
+  }
+  // #endregion
 
   // Check if debug mode is enabled
   useEffect(() => {
+  // #region agent log
+  if (typeof window !== "undefined") {
+    fetch('http://127.0.0.1:7242/ingest/d069101c-6e3e-4591-845c-7911b62d2d17',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'DebugOverlay.tsx:31',message:'DebugOverlay useEffect 1 called',data:{hasWindow:typeof window !== "undefined"},timestamp:Date.now(),sessionId:'debug-session',runId:'run2',hypothesisId:'B'})}).catch(()=>{});
+  }
+  // #endregion
     try {
       if (typeof window === "undefined") return;
 
@@ -47,6 +64,11 @@ export default function DebugOverlay() {
 
   // Capture ErrorBoundary errors
   useEffect(() => {
+  // #region agent log
+  if (typeof window !== "undefined") {
+    fetch('http://127.0.0.1:7242/ingest/d069101c-6e3e-4591-845c-7911b62d2d17',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'DebugOverlay.tsx:49',message:'DebugOverlay useEffect 2 called',data:{isEnabled,hasWindow:typeof window !== "undefined"},timestamp:Date.now(),sessionId:'debug-session',runId:'run2',hypothesisId:'B'})}).catch(()=>{});
+  }
+  // #endregion
     if (!isEnabled || typeof window === "undefined") return;
 
     const handleErrorBoundary = (event: CustomEvent) => {
@@ -85,6 +107,11 @@ export default function DebugOverlay() {
 
   // Capture window errors
   useEffect(() => {
+  // #region agent log
+  if (typeof window !== "undefined") {
+    fetch('http://127.0.0.1:7242/ingest/d069101c-6e3e-4591-845c-7911b62d2d17',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'DebugOverlay.tsx:87',message:'DebugOverlay useEffect 3 called',data:{isEnabled,hasWindow:typeof window !== "undefined"},timestamp:Date.now(),sessionId:'debug-session',runId:'run2',hypothesisId:'B'})}).catch(()=>{});
+  }
+  // #endregion
     if (!isEnabled || typeof window === "undefined") return;
 
     const handleError = (event: ErrorEvent) => {
