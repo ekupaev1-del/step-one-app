@@ -498,26 +498,32 @@ function ProfilePageContent() {
       clearTimeout(timeoutId);
       pushDebug(`Получен ответ: status=${response.status}, ok=${response.ok}`);
 
+      // Read response text once (can only be read once)
+      let responseText = "";
+      try {
+        responseText = await response.text();
+        pushDebug(`Длина ответа: ${responseText.length} символов`);
+      } catch (readError: any) {
+        pushDebug(`ОШИБКА чтения ответа: ${readError.message}`);
+        throw new Error(`Не удалось прочитать ответ от сервера: ${readError.message}`);
+      }
+
       // Handle non-OK responses
       if (!response.ok) {
-        let errorText = "";
-        try {
-          errorText = await response.text();
-          pushDebug(`Ошибка ответа: ${errorText.substring(0, 200)}`);
-        } catch (e) {
-          errorText = `HTTP ${response.status}`;
-          pushDebug(`Не удалось прочитать текст ошибки: ${e}`);
-        }
+        pushDebug(`Ошибка ответа (status ${response.status}): ${responseText.substring(0, 200)}`);
         
         // Try to parse as JSON
         let errorData: any = null;
-        try {
-          errorData = JSON.parse(errorText);
-        } catch (e) {
-          // Not JSON, use text as error
+        if (responseText && responseText.trim().length > 0) {
+          try {
+            errorData = JSON.parse(responseText);
+          } catch (e) {
+            // Not JSON, use text as error
+            pushDebug("Ответ не является JSON, используем текст как ошибку");
+          }
         }
 
-        const errorMessage = errorData?.error || errorText || `Ошибка сервера: ${response.status}`;
+        const errorMessage = errorData?.error || errorData?.details || responseText || `Ошибка сервера: ${response.status}`;
         
         // Check if it's Error 29
         const isError29 = errorMessage.includes("29") || errorMessage.includes("SignatureValue");
@@ -534,16 +540,18 @@ function ProfilePageContent() {
         throw new Error(errorMessage);
       }
 
-      // Parse JSON safely
+      // Parse JSON safely (response is OK)
       let data: any;
       try {
-        const text = await response.text();
-        pushDebug(`Длина ответа: ${text.length} символов`);
-        data = JSON.parse(text);
+        if (!responseText || responseText.trim().length === 0) {
+          throw new Error("Пустой ответ от сервера");
+        }
+        
+        data = JSON.parse(responseText);
         pushDebug("JSON успешно распарсен");
       } catch (parseError: any) {
         pushDebug(`ОШИБКА парсинга JSON: ${parseError.message}`);
-        throw new Error(`Неверный формат ответа от сервера: ${parseError.message}`);
+        throw new Error(`Неверный формат ответа от сервера. Проверьте подключение и попробуйте еще раз.`);
       }
 
       if (!data.ok) {
