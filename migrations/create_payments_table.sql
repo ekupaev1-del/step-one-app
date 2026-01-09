@@ -76,6 +76,16 @@ BEGIN
     ) THEN
         ALTER TABLE public.payments ADD COLUMN inv_id BIGINT;
     END IF;
+
+    -- Add out_sum if missing (Robokassa OutSum, same as amount)
+    IF NOT EXISTS (
+        SELECT 1 FROM information_schema.columns 
+        WHERE table_schema = 'public' 
+        AND table_name = 'payments' 
+        AND column_name = 'out_sum'
+    ) THEN
+        ALTER TABLE public.payments ADD COLUMN out_sum NUMERIC(10,2) NOT NULL DEFAULT 0;
+    END IF;
 END $$;
 
 -- Add constraint if it doesn't exist

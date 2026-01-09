@@ -154,12 +154,15 @@ export async function POST(req: Request) {
     // Using timestamp + random to ensure uniqueness before we get the actual id
     const tempInvId = Date.now();
     
+    const amountValue = parseFloat(amount);
+    
     const { data: paymentRecord, error: insertError } = await supabase
       .from("payments")
       .insert({
         user_id: numericUserId,
         plan_code: planCode,
-        amount: parseFloat(amount),
+        amount: amountValue,
+        out_sum: amountValue, // Robokassa OutSum (same as amount)
         currency: "RUB",
         status: "created",
         inv_id: tempInvId, // Temporary value, will be updated to match id
@@ -181,7 +184,8 @@ export async function POST(req: Request) {
       const insertPayloadKeys = Object.keys({
         user_id: numericUserId,
         plan_code: planCode,
-        amount: parseFloat(amount),
+        amount: amountValue,
+        out_sum: amountValue,
         currency: "RUB",
         status: "created",
         inv_id: tempInvId,
