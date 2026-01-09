@@ -72,6 +72,7 @@ function ProfilePageContent() {
   const [debugData, setDebugData] = useState<any>(null);
   const [showDebugModal, setShowDebugModal] = useState(false);
   const [error29, setError29] = useState(false);
+  const [checkingPrivacy, setCheckingPrivacy] = useState(false);
 
   // Инициализация userId
   useEffect(() => {
@@ -89,9 +90,6 @@ function ProfilePageContent() {
       setLoading(false);
     }
   }, [userIdParam]);
-
-  // Проверка согласия с политикой конфиденциальности
-  const [checkingPrivacy, setCheckingPrivacy] = useState(false);
 
   // Проверка согласия с политикой конфиденциальности
   useEffect(() => {

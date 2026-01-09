@@ -34,6 +34,28 @@ export class ErrorBoundary extends Component<Props, State> {
     try {
       console.error("[ErrorBoundary] Caught error:", error);
       console.error("[ErrorBoundary] Error info:", errorInfo);
+
+      // Try to detect React #310
+      const isReact310 = error.message?.includes("310") || 
+                        error.message?.includes("Rendered more hooks") ||
+                        error.message?.includes("hooks order");
+
+      // Store error info for DebugOverlay if available
+      if (typeof window !== "undefined") {
+        try {
+          const errorData = {
+            message: error.message,
+            stack: error.stack,
+            componentStack: errorInfo.componentStack,
+            route: window.location.pathname + window.location.search,
+            timestamp: new Date().toISOString(),
+            suspectedCause: isReact310 ? "hooks-order-changed" : "unknown",
+          };
+          window.dispatchEvent(new CustomEvent("errorboundary-caught", { detail: errorData }));
+        } catch (e) {
+          // Ignore
+        }
+      }
     } catch (e) {
       // Even logging can fail, ignore
     }

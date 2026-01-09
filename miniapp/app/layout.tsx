@@ -5,6 +5,7 @@ import type { ReactNode } from "react";
 import "./globals.css";
 import BuildStamp from "./components/BuildStamp";
 import { ErrorBoundaryWrapper } from "./components/ErrorBoundaryWrapper";
+import DebugOverlay from "./components/DebugOverlay";
 
 const nunito = Nunito({
   subsets: ["latin", "cyrillic"],
@@ -45,6 +46,8 @@ export default function RootLayout({
         </ErrorBoundaryWrapper>
         {/* Build stamp for deployment verification - visible in devtools */}
         <BuildStamp />
+        {/* Debug Overlay - only shows when ?debug=1 */}
+        <DebugOverlay />
         {/* Telegram WebApp Script */}
         <Script
           src="https://telegram.org/js/telegram-web-app.js"
