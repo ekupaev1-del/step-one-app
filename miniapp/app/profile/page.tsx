@@ -434,13 +434,21 @@ function ProfilePageContent() {
   };
 
   const handleSubscribe = async () => {
-    if (!userId) return;
+    console.log("[profile] PAY_CLICK", { userId, timestamp: new Date().toISOString() });
+    
+    if (!userId) {
+      console.error("[profile] PAY_CLICK: userId is missing");
+      setError("ID пользователя не найден");
+      return;
+    }
 
     try {
       setSubscribing(true);
       setError(null);
       setDebugData(null);
       setError29(false);
+
+      console.log("[profile] PAY_CLICK: calling endpoint /api/payments/start", { userId });
 
       const response = await fetch("/api/payments/start", {
         method: "POST",
@@ -450,9 +458,19 @@ function ProfilePageContent() {
         body: JSON.stringify({ userId }),
       });
 
+      console.log("[profile] PAY_CLICK: received response", { 
+        status: response.status, 
+        ok: response.ok 
+      });
+
       const data = await response.json();
 
       if (!response.ok || !data.ok) {
+        console.error("[profile] PAY_CLICK: endpoint error", { 
+          error: data.error,
+          status: response.status 
+        });
+        
         // Check if it's Error 29
         const isError29 = data.error?.includes("29") || data.error?.includes("SignatureValue");
         if (isError29) {
@@ -468,6 +486,15 @@ function ProfilePageContent() {
         throw new Error(data.error || "Не удалось начать оплату");
       }
 
+      console.log("[profile] PAY_CLICK: received paymentUrl", { 
+        hasPaymentUrl: !!data.paymentUrl,
+        invoiceId: data.invoiceId 
+      });
+
+      if (!data.paymentUrl) {
+        throw new Error("Ссылка на оплату не получена от сервера");
+      }
+
       // Store debug data if available
       if (data.debug?.robokassa) {
         setDebugData(data.debug.robokassa);
@@ -475,9 +502,7 @@ function ProfilePageContent() {
         try {
           if (typeof window !== "undefined" && window.sessionStorage) {
             sessionStorage.setItem("robokassa_debug", JSON.stringify(data.debug.robokassa));
-            if (data.paymentUrl) {
-              sessionStorage.setItem("robokassa_payment_url", data.paymentUrl);
-            }
+            sessionStorage.setItem("robokassa_payment_url", data.paymentUrl);
           }
         } catch (e) {
           console.error("[profile] Failed to store debug data in sessionStorage:", e);
@@ -488,14 +513,27 @@ function ProfilePageContent() {
         return;
       }
 
-      // Redirect to Robokassa payment page
-      if (data.paymentUrl) {
+      // Open payment URL using Telegram WebApp API if available
+      console.log("[profile] PAY_CLICK: opening payment URL", { 
+        hasTelegram: typeof window !== "undefined" && !!(window as any).Telegram?.WebApp 
+      });
+
+      if (typeof window !== "undefined" && (window as any).Telegram?.WebApp?.openLink) {
+        try {
+          (window as any).Telegram.WebApp.openLink(data.paymentUrl, { try_instant_view: false });
+          console.log("[profile] PAY_CLICK: opened via Telegram WebApp.openLink");
+        } catch (e) {
+          console.error("[profile] PAY_CLICK: Telegram.openLink failed, using fallback", e);
+          window.location.href = data.paymentUrl;
+        }
+      } else {
+        // Fallback for browser or if Telegram API not available
+        console.log("[profile] PAY_CLICK: using window.location.href fallback");
         window.location.href = data.paymentUrl;
       }
     } catch (err: any) {
-      console.error("[profile] Ошибка оформления подписки:", err);
+      console.error("[profile] PAY_CLICK: error", err);
       setError(err.message || "Ошибка оформления подписки");
-    } finally {
       setSubscribing(false);
     }
   };
