@@ -5,6 +5,7 @@ import { useState, useEffect, Suspense, useRef } from "react";
 import Link from "next/link";
 import "../globals.css";
 import AppLayout from "../components/AppLayout";
+import RobokassaDebugModal from "../components/RobokassaDebugModal";
 
 interface ProfileData {
   name: string | null;
@@ -49,6 +50,9 @@ function ProfilePageContent() {
   const [deleting, setDeleting] = useState(false);
   const [needsOnboarding, setNeedsOnboarding] = useState(false);
   const [subscribing, setSubscribing] = useState(false);
+  const [debugData, setDebugData] = useState<any>(null);
+  const [showDebugModal, setShowDebugModal] = useState(false);
+  const [error29, setError29] = useState(false);
 
   // Инициализация userId
   useEffect(() => {
@@ -374,6 +378,8 @@ function ProfilePageContent() {
     try {
       setSubscribing(true);
       setError(null);
+      setDebugData(null);
+      setError29(false);
 
       const response = await fetch("/api/payments/start", {
         method: "POST",
@@ -386,7 +392,33 @@ function ProfilePageContent() {
       const data = await response.json();
 
       if (!response.ok || !data.ok) {
+        // Check if it's Error 29
+        const isError29 = data.error?.includes("29") || data.error?.includes("SignatureValue");
+        if (isError29) {
+          setError29(true);
+        }
+        
+        // If we have debug data, show modal even on error
+        if (data.debug?.robokassa) {
+          setDebugData(data.debug.robokassa);
+          setShowDebugModal(true);
+        }
+        
         throw new Error(data.error || "Не удалось начать оплату");
+      }
+
+      // Store debug data if available
+      if (data.debug?.robokassa) {
+        setDebugData(data.debug.robokassa);
+        // Store in sessionStorage for Error 29 detection after redirect
+        sessionStorage.setItem("robokassa_debug", JSON.stringify(data.debug.robokassa));
+        if (data.paymentUrl) {
+          sessionStorage.setItem("robokassa_payment_url", data.paymentUrl);
+        }
+        // Show debug modal before redirect (for internal testing)
+        setShowDebugModal(true);
+        // Don't redirect immediately, let user see debug first
+        return;
       }
 
       // Redirect to Robokassa payment page
@@ -400,6 +432,36 @@ function ProfilePageContent() {
       setSubscribing(false);
     }
   };
+
+  // Check for Error 29 in URL after Robokassa redirect
+  useEffect(() => {
+    if (!userId) return;
+    
+    const urlParams = new URLSearchParams(window.location.search);
+    const errorCode = urlParams.get("ErrorCode");
+    const errorDesc = urlParams.get("ErrorDescription");
+    
+    if (errorCode === "29" || urlParams.get("error")?.includes("29") || errorDesc?.includes("29")) {
+      setError29(true);
+      setError("Robokassa Error 29: SignatureValue mismatch");
+      
+      // Try to get debug data from sessionStorage if available
+      const storedDebug = sessionStorage.getItem("robokassa_debug");
+      if (storedDebug) {
+        try {
+          const parsedDebug = JSON.parse(storedDebug);
+          setDebugData(parsedDebug);
+          setShowDebugModal(true);
+        } catch (e) {
+          console.error("Failed to parse stored debug data", e);
+        }
+      } else {
+        // If no stored debug, try to fetch it from backend
+        // This is a fallback - normally debug should be stored before redirect
+        console.warn("[profile] Error 29 detected but no debug data in storage");
+      }
+    }
+  }, [userId]);
 
 
   const formatDate = (iso?: string | null) => {
@@ -781,6 +843,25 @@ function ProfilePageContent() {
         {/* Можно добавить здесь позже */}
       </div>
     </div>
+
+    {/* Robokassa Debug Modal */}
+    {showDebugModal && debugData && (
+      <RobokassaDebugModal
+        debugData={debugData}
+        error29={error29}
+        onClose={() => {
+          setShowDebugModal(false);
+          // If no error, proceed with redirect
+          if (!error29 && debugData) {
+            // Try to get payment URL from stored data or redirect
+            const storedUrl = sessionStorage.getItem("robokassa_payment_url");
+            if (storedUrl) {
+              window.location.href = storedUrl;
+            }
+          }
+        }}
+      />
+    )}
     </AppLayout>
   );
 }

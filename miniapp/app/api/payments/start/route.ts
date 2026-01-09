@@ -78,14 +78,18 @@ export async function POST(req: Request) {
 
     console.log("[payments/start] User subscription updated to trial");
 
-    // Generate Robokassa payment URL
-    const paymentUrl = generateRobokassaUrl(
+    // Generate Robokassa payment URL with debug info
+    const result = generateRobokassaUrl(
       amount,
       invId,
       description,
       userId.toString(),
-      false // isTest
+      false, // isTest
+      true // includeDebug
     );
+
+    const paymentUrl = typeof result === "string" ? result : result.paymentUrl;
+    const debug = typeof result === "string" ? undefined : result.debug;
 
     console.log("[payments/start] Payment URL generated successfully");
     console.log("[payments/start] ========== PAYMENT START SUCCESS ==========");
@@ -95,6 +99,7 @@ export async function POST(req: Request) {
       paymentUrl,
       invoiceId: invId,
       amount,
+      debug: debug ? { robokassa: debug } : undefined,
     });
   } catch (error: any) {
     console.error("[payments/start] Error:", error);

@@ -25,21 +25,23 @@ export function calculateSignature(...args: string[]): string {
 }
 
 /**
- * Generate Robokassa payment URL
+ * Generate Robokassa payment URL with optional debug information
  * @param amount - Payment amount (e.g., "1.00")
  * @param invId - Invoice ID (unique)
  * @param description - Payment description
  * @param userId - Telegram user ID (for Shp_userId parameter)
  * @param isTest - Use test mode
- * @returns Robokassa payment URL
+ * @param includeDebug - Include debug information in return value
+ * @returns Robokassa payment URL or object with URL and debug info
  */
 export function generateRobokassaUrl(
   amount: string,
   invId: string,
   description: string,
   userId: string,
-  isTest: boolean = false
-): string {
+  isTest: boolean = false,
+  includeDebug: boolean = false
+): string | { paymentUrl: string; debug: any } {
   // Format amount with 2 decimals
   const outSum = parseFloat(amount).toFixed(2);
 
@@ -78,7 +80,63 @@ export function generateRobokassaUrl(
     ...(isTest && { IsTest: "1" }),
   });
 
-  return `${ROBOKASSA_BASE_URL}?${params.toString()}`;
+  const paymentUrl = `${ROBOKASSA_BASE_URL}?${params.toString()}`;
+
+  if (!includeDebug) {
+    return paymentUrl;
+  }
+
+  // Generate debug information
+  const signatureStringMasked = [
+    ROBOKASSA_MERCHANT_LOGIN,
+    outSum,
+    invId,
+    "[PASSWORD1_HIDDEN]",
+    ...shpParams,
+  ].join(":");
+
+  const customParams: Record<string, string> = {
+    Shp_userId: userId,
+  };
+
+  const debug = {
+    merchantLogin: ROBOKASSA_MERCHANT_LOGIN,
+    outSum,
+    invoiceId: invId,
+    isTest,
+    targetUrl: ROBOKASSA_BASE_URL,
+    signatureAlgorithm: "MD5",
+    signatureStringMasked,
+    signatureStringParts: [
+      ROBOKASSA_MERCHANT_LOGIN,
+      outSum,
+      invId,
+      "[PASSWORD1_HIDDEN]",
+      ...shpParams,
+    ],
+    signatureValue,
+    signatureChecks: {
+      lengthIs32: signatureValue.length === 32,
+      lowercase: signatureValue === signatureValue.toLowerCase(),
+      hexOnly: /^[0-9a-f]{32}$/.test(signatureValue),
+    },
+    customParams: {
+      raw: customParams,
+      sorted: Object.entries(customParams)
+        .sort(([a], [b]) => a.localeCompare(b))
+        .map(([key, value]) => `${key}=${value}`),
+      count: Object.keys(customParams).length,
+    },
+    environment: {
+      nodeEnv: process.env.NODE_ENV || "unknown",
+      vercelEnv: process.env.VERCEL_ENV || "unknown",
+      password1Length: ROBOKASSA_PASSWORD1.length,
+      password1Prefix2: ROBOKASSA_PASSWORD1.substring(0, 2),
+      password1Suffix2: ROBOKASSA_PASSWORD1.substring(ROBOKASSA_PASSWORD1.length - 2),
+    },
+  };
+
+  return { paymentUrl, debug };
 }
 
 /**
