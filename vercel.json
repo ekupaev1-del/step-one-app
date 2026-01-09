@@ -3,7 +3,13 @@
   "outputDirectory": "miniapp/.next",
   "framework": "nextjs",
   "installCommand": "cd miniapp && npm install",
-  "devCommand": "cd miniapp && npm run dev"
+  "devCommand": "cd miniapp && npm run dev",
+  "crons": [
+    {
+      "path": "/api/cron/subscriptions",
+      "schedule": "*/10 * * * *"
+    }
+  ]
 }
 
 

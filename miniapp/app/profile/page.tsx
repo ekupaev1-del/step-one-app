@@ -48,6 +48,7 @@ function ProfilePageContent() {
   const [editAge, setEditAge] = useState<string>("");
   const [deleting, setDeleting] = useState(false);
   const [needsOnboarding, setNeedsOnboarding] = useState(false);
+  const [subscribing, setSubscribing] = useState(false);
 
   // Инициализация userId
   useEffect(() => {
@@ -367,6 +368,39 @@ function ProfilePageContent() {
     }
   };
 
+  const handleSubscribe = async () => {
+    if (!userId) return;
+
+    try {
+      setSubscribing(true);
+      setError(null);
+
+      const response = await fetch("/api/payments/start", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ userId }),
+      });
+
+      const data = await response.json();
+
+      if (!response.ok || !data.ok) {
+        throw new Error(data.error || "Не удалось начать оплату");
+      }
+
+      // Redirect to Robokassa payment page
+      if (data.paymentUrl) {
+        window.location.href = data.paymentUrl;
+      }
+    } catch (err: any) {
+      console.error("[profile] Ошибка оформления подписки:", err);
+      setError(err.message || "Ошибка оформления подписки");
+    } finally {
+      setSubscribing(false);
+    }
+  };
+
 
   const formatDate = (iso?: string | null) => {
     if (!iso) return "—";
@@ -425,6 +459,17 @@ function ProfilePageContent() {
             className="px-4 py-2 rounded-full border border-gray-200 text-textPrimary text-sm hover:bg-gray-50 disabled:opacity-50"
           >
             {uploadingAvatar ? "Загрузка..." : "Изменить фото"}
+          </button>
+        </div>
+
+        {/* Кнопка подписки */}
+        <div className="bg-white rounded-2xl shadow-soft p-6 mb-4">
+          <button
+            onClick={handleSubscribe}
+            disabled={subscribing}
+            className="w-full px-6 py-4 bg-accent text-white font-semibold rounded-xl hover:bg-accent/90 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+          >
+            {subscribing ? "Обработка..." : "Оформить подписку — 1 ₽ за 3 дня, затем 199 ₽"}
           </button>
         </div>
 
