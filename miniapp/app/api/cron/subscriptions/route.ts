@@ -49,14 +49,18 @@ async function attemptCharge(
     const amount = "199.00";
     const description = "Подписка на 30 дней";
 
-    // Generate payment URL
-    const paymentUrl = generateRobokassaUrl(
+    // Generate payment URL (without debug for cron)
+    const result = generateRobokassaUrl(
       amount,
       invoiceId,
       description,
       userId.toString(),
-      false
+      false, // isTest
+      false // includeDebug
     );
+
+    // result is always string when includeDebug is false
+    const paymentUrl = typeof result === "string" ? result : result.paymentUrl;
 
     if (!paymentUrl) {
       return { success: false, error: "Failed to generate payment URL" };
