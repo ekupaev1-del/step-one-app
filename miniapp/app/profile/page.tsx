@@ -200,6 +200,41 @@ function ProfilePageContent() {
     }
   }, [profile, userId]);
 
+  // Check for Error 29 in URL after Robokassa redirect
+  // MUST be before any early returns to maintain hook order
+  useEffect(() => {
+    if (!userId || typeof window === "undefined") return;
+    
+    try {
+      const urlParams = new URLSearchParams(window.location.search);
+      const errorCode = urlParams.get("ErrorCode");
+      const errorDesc = urlParams.get("ErrorDescription");
+      
+      if (errorCode === "29" || urlParams.get("error")?.includes("29") || errorDesc?.includes("29")) {
+        setError29(true);
+        setError("Robokassa Error 29: SignatureValue mismatch");
+        
+        // Try to get debug data from sessionStorage if available
+        try {
+          const storedDebug = sessionStorage.getItem("robokassa_debug");
+          if (storedDebug) {
+            const parsedDebug = JSON.parse(storedDebug);
+            setDebugData(parsedDebug);
+            setShowDebugModal(true);
+          } else {
+            // If no stored debug, try to fetch it from backend
+            // This is a fallback - normally debug should be stored before redirect
+            console.warn("[profile] Error 29 detected but no debug data in storage");
+          }
+        } catch (e) {
+          console.error("Failed to parse stored debug data", e);
+        }
+      }
+    } catch (e) {
+      console.error("[profile] Error checking URL params:", e);
+    }
+  }, [userId]);
+
   // Функция для форматирования цели
   const formatGoal = (goal: string | null): string => {
     if (!goal) return "Не указана";
@@ -464,41 +499,6 @@ function ProfilePageContent() {
       setSubscribing(false);
     }
   };
-
-  // Check for Error 29 in URL after Robokassa redirect
-  useEffect(() => {
-    if (!userId || typeof window === "undefined") return;
-    
-    try {
-      const urlParams = new URLSearchParams(window.location.search);
-      const errorCode = urlParams.get("ErrorCode");
-      const errorDesc = urlParams.get("ErrorDescription");
-      
-      if (errorCode === "29" || urlParams.get("error")?.includes("29") || errorDesc?.includes("29")) {
-        setError29(true);
-        setError("Robokassa Error 29: SignatureValue mismatch");
-        
-        // Try to get debug data from sessionStorage if available
-        try {
-          const storedDebug = sessionStorage.getItem("robokassa_debug");
-          if (storedDebug) {
-            const parsedDebug = JSON.parse(storedDebug);
-            setDebugData(parsedDebug);
-            setShowDebugModal(true);
-          } else {
-            // If no stored debug, try to fetch it from backend
-            // This is a fallback - normally debug should be stored before redirect
-            console.warn("[profile] Error 29 detected but no debug data in storage");
-          }
-        } catch (e) {
-          console.error("Failed to parse stored debug data", e);
-        }
-      }
-    } catch (e) {
-      console.error("[profile] Error checking URL params:", e);
-    }
-  }, [userId]);
-
 
   const formatDate = (iso?: string | null) => {
     if (!iso) return "—";
