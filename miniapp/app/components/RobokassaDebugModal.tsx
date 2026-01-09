@@ -46,11 +46,15 @@ export default function RobokassaDebugModal({
   const [activeTab, setActiveTab] = useState<"summary" | "raw">("summary");
   const [copied, setCopied] = useState<string | null>(null);
   const [isDebugMode, setIsDebugMode] = useState(false);
+  const [shouldRender, setShouldRender] = useState(false);
 
-  // Check if debug mode is enabled
+  // Check if debug mode is enabled - must be unconditional
   useEffect(() => {
     try {
-      if (typeof window === "undefined") return;
+      if (typeof window === "undefined") {
+        setShouldRender(false);
+        return;
+      }
       
       // Check environment variable (client-side only)
       const envDebug = process.env.NEXT_PUBLIC_DEBUG === "1";
@@ -59,15 +63,20 @@ export default function RobokassaDebugModal({
       const urlParams = new URLSearchParams(window.location.search);
       const urlDebug = urlParams.get("debug") === "1";
       
-      setIsDebugMode(envDebug || urlDebug);
+      const enabled = envDebug || urlDebug;
+      setIsDebugMode(enabled);
+      
+      // Only render if debug is enabled AND debugData exists
+      setShouldRender(enabled && !!debugData);
     } catch (e) {
       // If check fails, disable debug
       setIsDebugMode(false);
+      setShouldRender(false);
     }
-  }, []);
+  }, [debugData]);
 
-  // Safety checks
-  if (typeof window === "undefined" || !debugData || !isDebugMode) {
+  // Early return AFTER all hooks - this is safe
+  if (!shouldRender || typeof window === "undefined" || !debugData) {
     return null;
   }
 
