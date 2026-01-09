@@ -42,6 +42,7 @@ export function generateRobokassaUrl(
   isTest: boolean = false,
   includeDebug: boolean = false
 ): string | { paymentUrl: string; debug: any } {
+  // Overload: if includeDebug is false, return string; if true, return object
   // Format amount with 2 decimals
   const outSum = parseFloat(amount).toFixed(2);
 
@@ -69,6 +70,17 @@ export function generateRobokassaUrl(
     throw new Error(`Invalid signature format: ${signatureValue}`);
   }
 
+  // Get base URL for return URLs
+  const baseUrl = process.env.VERCEL_URL 
+    ? `https://${process.env.VERCEL_URL}`
+    : process.env.NEXT_PUBLIC_VERCEL_URL 
+    ? `https://${process.env.NEXT_PUBLIC_VERCEL_URL}`
+    : "https://step-one-app-emins-projects-4717eabc.vercel.app";
+  
+  const successUrl = `${baseUrl}/api/robokassa/success`;
+  const failUrl = `${baseUrl}/api/robokassa/fail`;
+  const resultUrl = `${baseUrl}/api/robokassa/result`;
+
   // Build URL parameters
   const params = new URLSearchParams({
     MerchantLogin: ROBOKASSA_MERCHANT_LOGIN,
@@ -77,10 +89,14 @@ export function generateRobokassaUrl(
     Description: description,
     SignatureValue: signatureValue,
     Shp_userId: userId,
+    SuccessURL: successUrl,
+    FailURL: failUrl,
     ...(isTest && { IsTest: "1" }),
   });
 
   const paymentUrl = `${ROBOKASSA_BASE_URL}?${params.toString()}`;
+  
+  // Note: ResultURL must be configured in Robokassa merchant settings, not in URL params
 
   if (!includeDebug) {
     return paymentUrl;

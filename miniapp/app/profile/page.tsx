@@ -209,6 +209,18 @@ function ProfilePageContent() {
       const urlParams = new URLSearchParams(window.location.search);
       const errorCode = urlParams.get("ErrorCode");
       const errorDesc = urlParams.get("ErrorDescription");
+      const paymentStatus = urlParams.get("payment");
+      
+      // Handle payment success/failure redirects
+      if (paymentStatus === "success") {
+        console.log("[profile] Payment success detected in URL");
+        setError(null);
+        // Optionally show success message
+        // You can add a success state here if needed
+      } else if (paymentStatus === "failed") {
+        console.log("[profile] Payment failed detected in URL");
+        setError("Оплата не была завершена. Попробуйте еще раз.");
+      }
       
       if (errorCode === "29" || urlParams.get("error")?.includes("29") || errorDesc?.includes("29")) {
         setError29(true);
