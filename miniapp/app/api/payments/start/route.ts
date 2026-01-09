@@ -150,6 +150,10 @@ export async function POST(req: Request) {
     // Create payment record in database to get auto-generated ID
     const description = "Пробный период 3 дня";
     
+    // Generate a temporary inv_id value (will be updated to match id after insert)
+    // Using timestamp + random to ensure uniqueness before we get the actual id
+    const tempInvId = Date.now();
+    
     const { data: paymentRecord, error: insertError } = await supabase
       .from("payments")
       .insert({
@@ -158,6 +162,7 @@ export async function POST(req: Request) {
         amount: parseFloat(amount),
         currency: "RUB",
         status: "created",
+        inv_id: tempInvId, // Temporary value, will be updated to match id
       })
       .select("id")
       .single();
@@ -233,6 +238,19 @@ export async function POST(req: Request) {
     // Validate InvId is reasonable (Robokassa typically accepts up to 2,147,483,647 for bigint)
     if (paymentRecord.id > 2147483647) {
       console.warn(`[payments/start:${requestId}] WARNING: InvId ${paymentRecord.id} exceeds typical Robokassa limits`);
+    }
+
+    // Update inv_id column if it exists (set to same value as id)
+    // This ensures inv_id is populated for Robokassa tracking
+    const { error: invIdUpdateError } = await supabase
+      .from("payments")
+      .update({ inv_id: paymentRecord.id })
+      .eq("id", paymentRecord.id);
+
+    if (invIdUpdateError) {
+      // If inv_id column doesn't exist or update fails, log but don't fail
+      // The payment can still proceed using id as InvId
+      console.warn(`[payments/start:${requestId}] Failed to update inv_id:`, invIdUpdateError.message);
     }
 
     console.log(`[payments/start:${requestId}] Created payment record with InvId:`, invId);

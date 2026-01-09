@@ -66,6 +66,16 @@ BEGIN
     ) THEN
         ALTER TABLE public.payments ADD COLUMN signature TEXT;
     END IF;
+
+    -- Add inv_id if missing (used for Robokassa InvId, same as id)
+    IF NOT EXISTS (
+        SELECT 1 FROM information_schema.columns 
+        WHERE table_schema = 'public' 
+        AND table_name = 'payments' 
+        AND column_name = 'inv_id'
+    ) THEN
+        ALTER TABLE public.payments ADD COLUMN inv_id BIGINT;
+    END IF;
 END $$;
 
 -- Add constraint if it doesn't exist
@@ -85,6 +95,7 @@ END $$;
 CREATE INDEX IF NOT EXISTS payments_user_id_created_at_idx ON public.payments(user_id, created_at DESC);
 CREATE INDEX IF NOT EXISTS payments_status_idx ON public.payments(status);
 CREATE INDEX IF NOT EXISTS payments_robokassa_invoice_id_idx ON public.payments(robokassa_invoice_id);
+CREATE INDEX IF NOT EXISTS payments_inv_id_idx ON public.payments(inv_id);
 
 -- Add comment
 COMMENT ON TABLE public.payments IS 'Stores Robokassa payment records. id column is used as InvId for Robokassa.';
