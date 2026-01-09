@@ -12,7 +12,7 @@
 
 import { NextResponse } from "next/server";
 import { createServerSupabaseClient } from "../../../../lib/supabaseAdmin";
-import { generateRobokassaUrl, generateInvoiceId } from "../../../../lib/robokassa";
+import { generateRobokassaUrl } from "../../../../lib/robokassa";
 
 export const dynamic = "force-dynamic";
 
@@ -41,9 +41,14 @@ export async function POST(req: Request) {
     }
     
     const userId = body.userId;
+    const planCode = body.plan || "trial_3d_199"; // Default plan
     const amount = "1.00"; // 1 RUB for trial
-    const isTest = false; // Production mode
+    const isTest = process.env.ROBOKASSA_TEST_MODE === "true" || process.env.ROBOKASSA_TEST_MODE === "1";
     const recurring = false; // Recurring is configured in merchant settings, not in URL
+    
+    // Check for debug mode
+    const url = new URL(req.url);
+    const debugMode = url.searchParams.get("debug") === "1" || req.headers.get("x-debug") === "1" || process.env.NODE_ENV !== "production";
     
     console.log(`[payments/start:${requestId}] CREATE_PAYMENT_START`, {
       userId,
@@ -142,17 +147,52 @@ export async function POST(req: Request) {
       );
     }
 
-    // Generate invoice ID
-    const invId = generateInvoiceId();
+    // Create payment record in database to get auto-generated ID
     const description = "Пробный период 3 дня";
+    
+    const { data: paymentRecord, error: insertError } = await supabase
+      .from("payments")
+      .insert({
+        user_id: numericUserId,
+        plan_code: planCode,
+        amount: parseFloat(amount),
+        currency: "RUB",
+        status: "created",
+      })
+      .select("id")
+      .single();
+
+    if (insertError || !paymentRecord) {
+      console.error(`[payments/start:${requestId}] CREATE_PAYMENT_ERROR`, {
+        errorMessage: "Failed to create payment record",
+        error: insertError?.message || "No payment record returned"
+      });
+      return NextResponse.json(
+        { 
+          ok: false, 
+          error: "Failed to create payment record", 
+          details: insertError?.message || "Database insert failed",
+          debug: { requestId, timestamp: new Date().toISOString() }
+        },
+        { status: 500 }
+      );
+    }
+
+    // Use database-generated ID as InvId (must be within Robokassa limits)
+    const invId = paymentRecord.id.toString();
+    
+    // Validate InvId is reasonable (Robokassa typically accepts up to 2,147,483,647 for bigint)
+    if (paymentRecord.id > 2147483647) {
+      console.warn(`[payments/start:${requestId}] WARNING: InvId ${paymentRecord.id} exceeds typical Robokassa limits`);
+    }
+
+    console.log(`[payments/start:${requestId}] Created payment record with InvId:`, invId);
 
     // Calculate trial end date (now + 3 days)
     const trialEndAt = new Date();
     trialEndAt.setDate(trialEndAt.getDate() + 3);
 
-    console.log(`[payments/start:${requestId}] Trial end date:`, trialEndAt.toISOString());
-
-    // Update user in database
+    // Update user subscription status
     const { error: updateError } = await supabase
       .from("users")
       .update({
@@ -167,15 +207,8 @@ export async function POST(req: Request) {
         errorMessage: "Database update error",
         error: updateError.message
       });
-      return NextResponse.json(
-        { 
-          ok: false, 
-          error: "Failed to update user subscription", 
-          details: updateError.message,
-          debug: { requestId, timestamp: new Date().toISOString() }
-        },
-        { status: 500 }
-      );
+      // Don't fail the payment creation, just log the error
+      console.warn(`[payments/start:${requestId}] User subscription update failed, but payment record created`);
     }
 
     // Generate Robokassa payment URL with debug info
@@ -185,7 +218,7 @@ export async function POST(req: Request) {
       description,
       userId.toString(),
       isTest,
-      true // includeDebug
+      debugMode // includeDebug based on debug mode
     );
 
     const paymentUrl = typeof result === "string" ? result : result.paymentUrl;
@@ -202,10 +235,25 @@ export async function POST(req: Request) {
           ok: false, 
           error: "Failed to generate payment URL", 
           details: "Generated URL is invalid",
-          debug: { requestId, timestamp: new Date().toISOString() }
+          debug: debugMode ? { requestId, timestamp: new Date().toISOString() } : undefined
         },
         { status: 500 }
       );
+    }
+
+    // Update payment record with Robokassa details
+    const { error: updatePaymentError } = await supabase
+      .from("payments")
+      .update({
+        robokassa_invoice_id: paymentRecord.id,
+        payment_url: paymentUrl,
+        signature: debug?.signatureValue || null,
+        updated_at: new Date().toISOString(),
+      })
+      .eq("id", paymentRecord.id);
+
+    if (updatePaymentError) {
+      console.warn(`[payments/start:${requestId}] Failed to update payment record with URL:`, updatePaymentError.message);
     }
 
     // Log signature information
@@ -218,25 +266,27 @@ export async function POST(req: Request) {
     }
 
     const elapsed = Date.now() - startTime;
-    console.log(`[payments/start:${requestId}] CREATE_PAYMENT_OK`, { 
-      invId, 
-      outSum: amount,
-      recurring,
-      isTest,
-      elapsed: `${elapsed}ms`
-    });
-    console.log(`[payments/start:${requestId}] CREATE_PAYMENT_URL`, {
-      url: paymentUrl.substring(0, 120) + "...",
-      urlLength: paymentUrl.length
-    });
+    console.log(`[payments/start:${requestId}] CREATE_PAYMENT_OK InvId=${invId} status=created elapsed=${elapsed}ms`);
 
-    return NextResponse.json({
+    // Build response
+    const response: any = {
       ok: true,
       paymentUrl,
       invoiceId: invId,
       amount,
-      debug: debug ? { robokassa: debug } : undefined,
-    });
+    };
+
+    // Include debug info only in debug mode
+    if (debugMode && debug) {
+      response.debug = {
+        robokassa: {
+          ...debug,
+          urlLength: paymentUrl.length,
+        },
+      };
+    }
+
+    return NextResponse.json(response);
   } catch (error: any) {
     const elapsed = Date.now() - startTime;
     console.error(`[payments/start:${requestId}] CREATE_PAYMENT_ERROR`, { 

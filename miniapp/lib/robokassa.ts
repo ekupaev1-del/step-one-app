@@ -47,10 +47,11 @@ export function generateRobokassaUrl(
   const outSum = parseFloat(amount).toFixed(2);
 
   // Build signature parts: MerchantLogin:OutSum:InvId:Password1:Shp_*
+  // Signature formula: MerchantLogin:OutSum:InvId:Password1:Shp_userId=userId
   const signatureParts: string[] = [
     ROBOKASSA_MERCHANT_LOGIN,
     outSum,
-    invId,
+    invId.toString(), // Ensure InvId is string
   ];
 
   // Add Password1
@@ -188,7 +189,11 @@ export function verifyCallbackSignature(
 
 /**
  * Generate unique invoice ID
+ * DEPRECATED: Use database-generated ID from payments table instead
+ * This function is kept for backward compatibility but should not be used
  */
 export function generateInvoiceId(): string {
+  // This creates very large numbers that Robokassa may reject
+  // Use database-generated ID from payments table instead
   return Date.now().toString();
 }
