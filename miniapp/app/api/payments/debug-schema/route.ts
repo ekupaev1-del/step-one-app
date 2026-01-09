@@ -27,23 +27,8 @@ export async function GET(req: Request) {
   try {
     const supabase = createServerSupabaseClient();
     
-    // Check if payments table exists and get its columns
-    const { data: columns, error: columnsError } = await supabase.rpc('exec_sql', {
-      query: `
-        SELECT 
-          column_name,
-          data_type,
-          is_nullable,
-          column_default
-        FROM information_schema.columns
-        WHERE table_schema = 'public' 
-        AND table_name = 'payments'
-        ORDER BY ordinal_position;
-      `
-    }).catch(() => {
-      // RPC might not exist, use direct query via service role
-      return { data: null, error: { message: "RPC not available, using alternative method" } };
-    });
+    // Note: We don't use RPC exec_sql as it may not exist
+    // Instead, we check columns by attempting to select them
 
     // Check required columns by attempting to select them
     // This will fail if column doesn't exist in PostgREST schema cache
