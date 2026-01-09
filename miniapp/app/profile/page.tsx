@@ -944,14 +944,93 @@ function ProfilePageContent() {
               new URLSearchParams(window.location.search).get("debug") === "1" ||
               payError !== null ||
               error29 ||
-              paymentDebugInfo !== null
+              paymentDebugInfo !== null ||
+              lastRequestPayload !== null ||
+              lastResponse !== null
             );
             
             if (!showDebug) return null;
             
+            // Helper to copy to clipboard
+            const copyToClipboard = async (text: string, label: string) => {
+              try {
+                if (typeof navigator !== "undefined" && navigator.clipboard) {
+                  await navigator.clipboard.writeText(text);
+                  pushDebug(`Скопировано в буфер обмена: ${label}`);
+                } else {
+                  // Fallback for older browsers
+                  const textArea = document.createElement("textarea");
+                  textArea.value = text;
+                  textArea.style.position = "fixed";
+                  textArea.style.opacity = "0";
+                  document.body.appendChild(textArea);
+                  textArea.select();
+                  document.execCommand("copy");
+                  document.body.removeChild(textArea);
+                  pushDebug(`Скопировано в буфер обмена (fallback): ${label}`);
+                }
+              } catch (err: any) {
+                pushDebug(`Ошибка копирования: ${err.message}`);
+              }
+            };
+            
             return (
               <div className="mt-3 p-4 bg-blue-50 border border-blue-200 rounded-lg">
                 <h3 className="text-sm font-semibold text-blue-900 mb-3">Отладочная информация о платеже</h3>
+                
+                {/* Telegram User ID Info */}
+                {(() => {
+                  const tgWebApp = typeof window !== "undefined" ? (window as any).Telegram?.WebApp : null;
+                  const telegramUserId = tgWebApp?.initDataUnsafe?.user?.id;
+                  const initDataLength = tgWebApp?.initDataUnsafe ? JSON.stringify(tgWebApp.initDataUnsafe).length : 0;
+                  
+                  return (
+                    <div className="mb-3 p-2 bg-white rounded border border-blue-200">
+                      <div className="text-xs font-semibold text-blue-900 mb-1">Telegram User ID (Client-side)</div>
+                      <div className="text-xs font-mono text-gray-700 space-y-1">
+                        <div>Telegram WebApp доступен: {tgWebApp ? "✅ Да" : "❌ Нет"}</div>
+                        <div>initDataUnsafe длина: {initDataLength} символов</div>
+                        <div>telegramUserId: {telegramUserId ? `${telegramUserId} (тип: ${typeof telegramUserId})` : "❌ Не найден"}</div>
+                      </div>
+                    </div>
+                  );
+                })()}
+                
+                {/* Request Payload */}
+                {lastRequestPayload && (
+                  <div className="mb-3 p-2 bg-white rounded border border-blue-200">
+                    <div className="flex justify-between items-center mb-1">
+                      <div className="text-xs font-semibold text-blue-900">Request Payload</div>
+                      <button
+                        onClick={() => copyToClipboard(JSON.stringify(lastRequestPayload, null, 2), "Request Payload")}
+                        className="px-2 py-1 bg-blue-600 text-white text-[10px] rounded hover:bg-blue-700"
+                      >
+                        Копировать
+                      </button>
+                    </div>
+                    <pre className="text-[10px] font-mono text-gray-700 whitespace-pre-wrap break-all max-h-32 overflow-y-auto">
+                      {JSON.stringify(lastRequestPayload, null, 2)}
+                    </pre>
+                  </div>
+                )}
+                
+                {/* Response */}
+                {lastResponse && (
+                  <div className="mb-3 p-2 bg-white rounded border border-blue-200">
+                    <div className="flex justify-between items-center mb-1">
+                      <div className="text-xs font-semibold text-blue-900">Response</div>
+                      <button
+                        onClick={() => copyToClipboard(JSON.stringify(lastResponse, null, 2), "Response")}
+                        className="px-2 py-1 bg-blue-600 text-white text-[10px] rounded hover:bg-blue-700"
+                      >
+                        Копировать
+                      </button>
+                    </div>
+                    <pre className="text-[10px] font-mono text-gray-700 whitespace-pre-wrap break-all max-h-32 overflow-y-auto">
+                      {JSON.stringify(lastResponse, null, 2)}
+                    </pre>
+                  </div>
+                )}
                 
                 {paymentDebugInfo ? (
                   <div className="space-y-2 text-xs font-mono">
