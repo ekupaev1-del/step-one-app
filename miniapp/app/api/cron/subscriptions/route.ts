@@ -12,7 +12,7 @@
  * Security: Requires Authorization header with CRON_SECRET
  * 
  * Vercel Cron Configuration: vercel.json (project root)
- * Schedule: */10 * * * * (every 10 minutes)
+ * Schedule: every 10 minutes (cron: */10 * * * *)
  * 
  * Manual Test:
  * curl -H "Authorization: Bearer <CRON_SECRET>" https://<domain>/api/cron/subscriptions
