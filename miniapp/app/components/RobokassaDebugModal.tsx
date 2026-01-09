@@ -43,30 +43,13 @@ export default function RobokassaDebugModal({
   error29 = false,
   onClose,
 }: RobokassaDebugModalProps) {
-  // #region agent log
-  if (typeof window !== "undefined") {
-    fetch('http://127.0.0.1:7242/ingest/d069101c-6e3e-4591-845c-7911b62d2d17',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'RobokassaDebugModal.tsx:41',message:'RobokassaDebugModal render start',data:{hasDebugData:!!debugData,error29},timestamp:Date.now(),sessionId:'debug-session',runId:'run2',hypothesisId:'C'})}).catch(()=>{});
-  }
-  // #endregion
-  
   const [activeTab, setActiveTab] = useState<"summary" | "raw">("summary");
   const [copied, setCopied] = useState<string | null>(null);
   const [isDebugMode, setIsDebugMode] = useState(false);
   const [shouldRender, setShouldRender] = useState(false);
-  
-  // #region agent log
-  if (typeof window !== "undefined") {
-    fetch('http://127.0.0.1:7242/ingest/d069101c-6e3e-4591-845c-7911b62d2d17',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'RobokassaDebugModal.tsx:50',message:'RobokassaDebugModal all useState hooks declared',data:{hookCount:4},timestamp:Date.now(),sessionId:'debug-session',runId:'run2',hypothesisId:'C'})}).catch(()=>{});
-  }
-  // #endregion
 
   // Check if debug mode is enabled - must be unconditional
   useEffect(() => {
-  // #region agent log
-  if (typeof window !== "undefined") {
-    fetch('http://127.0.0.1:7242/ingest/d069101c-6e3e-4591-845c-7911b62d2d17',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'RobokassaDebugModal.tsx:52',message:'RobokassaDebugModal useEffect called',data:{hasWindow:typeof window !== "undefined",hasDebugData:!!debugData},timestamp:Date.now(),sessionId:'debug-session',runId:'run2',hypothesisId:'C'})}).catch(()=>{});
-  }
-  // #endregion
     try {
       if (typeof window === "undefined") {
         setShouldRender(false);

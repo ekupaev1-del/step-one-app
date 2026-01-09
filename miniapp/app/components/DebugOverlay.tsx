@@ -22,30 +22,13 @@ interface ErrorInfo {
 }
 
 export default function DebugOverlay() {
-  // #region agent log
-  if (typeof window !== "undefined") {
-    fetch('http://127.0.0.1:7242/ingest/d069101c-6e3e-4591-845c-7911b62d2d17',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'DebugOverlay.tsx:24',message:'DebugOverlay render start',data:{timestamp:Date.now()},timestamp:Date.now(),sessionId:'debug-session',runId:'run2',hypothesisId:'B'})}).catch(()=>{});
-  }
-  // #endregion
-  
   const [isEnabled, setIsEnabled] = useState(false);
   const [errors, setErrors] = useState<ErrorInfo[]>([]);
   const [activeTab, setActiveTab] = useState<"summary" | "raw">("summary");
   const [copied, setCopied] = useState<string | null>(null);
-  
-  // #region agent log
-  if (typeof window !== "undefined") {
-    fetch('http://127.0.0.1:7242/ingest/d069101c-6e3e-4591-845c-7911b62d2d17',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'DebugOverlay.tsx:30',message:'DebugOverlay all useState hooks declared',data:{hookCount:4},timestamp:Date.now(),sessionId:'debug-session',runId:'run2',hypothesisId:'B'})}).catch(()=>{});
-  }
-  // #endregion
 
   // Check if debug mode is enabled
   useEffect(() => {
-  // #region agent log
-  if (typeof window !== "undefined") {
-    fetch('http://127.0.0.1:7242/ingest/d069101c-6e3e-4591-845c-7911b62d2d17',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'DebugOverlay.tsx:31',message:'DebugOverlay useEffect 1 called',data:{hasWindow:typeof window !== "undefined"},timestamp:Date.now(),sessionId:'debug-session',runId:'run2',hypothesisId:'B'})}).catch(()=>{});
-  }
-  // #endregion
     try {
       if (typeof window === "undefined") return;
 
@@ -64,11 +47,6 @@ export default function DebugOverlay() {
 
   // Capture ErrorBoundary errors
   useEffect(() => {
-  // #region agent log
-  if (typeof window !== "undefined") {
-    fetch('http://127.0.0.1:7242/ingest/d069101c-6e3e-4591-845c-7911b62d2d17',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'DebugOverlay.tsx:49',message:'DebugOverlay useEffect 2 called',data:{isEnabled,hasWindow:typeof window !== "undefined"},timestamp:Date.now(),sessionId:'debug-session',runId:'run2',hypothesisId:'B'})}).catch(()=>{});
-  }
-  // #endregion
     if (!isEnabled || typeof window === "undefined") return;
 
     const handleErrorBoundary = (event: CustomEvent) => {
@@ -76,8 +54,8 @@ export default function DebugOverlay() {
         const errorData = event.detail;
         const errorInfo: ErrorInfo = {
           message: errorData.message || "ErrorBoundary caught error",
-          stack: errorData.stack,
-          componentStack: errorData.componentStack,
+          stack: sanitizeStack(errorData.stack),
+          componentStack: sanitizeStack(errorData.componentStack),
           route: errorData.route || window.location.pathname + window.location.search,
           timestamp: errorData.timestamp || new Date().toISOString(),
           telegram: {
@@ -107,18 +85,13 @@ export default function DebugOverlay() {
 
   // Capture window errors
   useEffect(() => {
-  // #region agent log
-  if (typeof window !== "undefined") {
-    fetch('http://127.0.0.1:7242/ingest/d069101c-6e3e-4591-845c-7911b62d2d17',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'DebugOverlay.tsx:87',message:'DebugOverlay useEffect 3 called',data:{isEnabled,hasWindow:typeof window !== "undefined"},timestamp:Date.now(),sessionId:'debug-session',runId:'run2',hypothesisId:'B'})}).catch(()=>{});
-  }
-  // #endregion
     if (!isEnabled || typeof window === "undefined") return;
 
     const handleError = (event: ErrorEvent) => {
       try {
         const errorInfo: ErrorInfo = {
           message: event.message || "Unknown error",
-          stack: event.error?.stack,
+          stack: sanitizeStack(event.error?.stack),
           route: window.location.pathname + window.location.search,
           timestamp: new Date().toISOString(),
           telegram: {
@@ -143,7 +116,7 @@ export default function DebugOverlay() {
       try {
         const errorInfo: ErrorInfo = {
           message: event.reason?.message || String(event.reason) || "Unhandled promise rejection",
-          stack: event.reason?.stack,
+          stack: sanitizeStack(event.reason?.stack),
           route: window.location.pathname + window.location.search,
           timestamp: new Date().toISOString(),
           telegram: {
@@ -179,7 +152,7 @@ export default function DebugOverlay() {
     const message = String(error.message || "");
     const stack = String(error.stack || "");
 
-    if (message.includes("310") || message.includes("Rendered more hooks")) {
+    if (message.includes("310") || message.includes("Rendered more hooks") || message.includes("hooks order")) {
       return "hooks-order-changed";
     }
     if (message.includes("conditional") || stack.includes("conditional")) {
@@ -196,6 +169,19 @@ export default function DebugOverlay() {
     }
 
     return "unknown";
+  };
+
+  const sanitizeStack = (stack: string | undefined): string => {
+    if (!stack) return "";
+    
+    // Mask secrets in stack trace
+    return stack
+      .replace(/password[=:]\s*['"]?[^'"]+['"]?/gi, "password=[MASKED]")
+      .replace(/token[=:]\s*['"]?[^'"]+['"]?/gi, "token=[MASKED]")
+      .replace(/key[=:]\s*['"]?[^'"]+['"]?/gi, "key=[MASKED]")
+      .replace(/secret[=:]\s*['"]?[^'"]+['"]?/gi, "secret=[MASKED]")
+      .replace(/ROBOKASSA_PASSWORD[12][=:]\s*['"]?[^'"]+['"]?/gi, "ROBOKASSA_PASSWORD=[MASKED]")
+      .replace(/SUPABASE_SERVICE_ROLE_KEY[=:]\s*['"]?[^'"]+['"]?/gi, "SUPABASE_SERVICE_ROLE_KEY=[MASKED]");
   };
 
   const copyToClipboard = (text: string, type: string) => {
