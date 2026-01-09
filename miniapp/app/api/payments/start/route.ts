@@ -27,14 +27,15 @@ import { generateRobokassaUrl } from "../../../../lib/robokassa";
 export const dynamic = "force-dynamic";
 
 /**
- * Generate unique inv_id (bigint) for Robokassa
+ * Generate unique inv_id (number) for Robokassa
  * Format: timestamp_ms * 1000 + random(0-999)
  * This ensures uniqueness and fits within bigint range
+ * Returns as number (JavaScript number can safely represent integers up to 2^53)
  */
-function generateInvId(): bigint {
-  const timestamp = BigInt(Date.now());
-  const random = BigInt(Math.floor(Math.random() * 1000));
-  return timestamp * 1000n + random;
+function generateInvId(): number {
+  const timestamp = Date.now();
+  const random = Math.floor(Math.random() * 1000);
+  return timestamp * 1000 + random;
 }
 
 /**
@@ -43,7 +44,7 @@ function generateInvId(): bigint {
 async function generateUniqueInvId(
   supabase: any,
   maxRetries: number = 5
-): Promise<bigint> {
+): Promise<number> {
   for (let attempt = 0; attempt < maxRetries; attempt++) {
     const invId = generateInvId();
     
@@ -51,7 +52,7 @@ async function generateUniqueInvId(
     const { data, error } = await supabase
       .from("payments")
       .select("inv_id")
-      .eq("inv_id", invId.toString())
+      .eq("inv_id", invId)
       .limit(1);
     
     if (error) {
@@ -163,11 +164,11 @@ export async function POST(req: Request) {
     const supabase = createServerSupabaseClient();
     
     // Generate unique inv_id BEFORE insert
-    let invId: bigint;
+    let invId: number;
     try {
       invId = await generateUniqueInvId(supabase);
       console.log(`[payments/start:${debugId}] GENERATED_INV_ID`, {
-        invId: invId.toString(),
+        invId: invId,
         requestId: debugId
       });
     } catch (invIdError: any) {
