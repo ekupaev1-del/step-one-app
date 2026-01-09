@@ -45,18 +45,21 @@ export default function RobokassaDebugModal({
   const [activeTab, setActiveTab] = useState<"summary" | "raw">("summary");
   const [copied, setCopied] = useState<string | null>(null);
 
-  // Safety check
-  if (!debugData || typeof window === "undefined") {
+  // Safety check - ensure we're on client
+  if (typeof window === "undefined" || !debugData) {
     return null;
   }
 
   const copyToClipboard = (text: string, type: string) => {
     try {
       if (typeof navigator !== "undefined" && navigator.clipboard) {
-        navigator.clipboard.writeText(text);
-        setCopied(type);
-        setTimeout(() => setCopied(null), 2000);
-      } else {
+        navigator.clipboard.writeText(text).then(() => {
+          setCopied(type);
+          setTimeout(() => setCopied(null), 2000);
+        }).catch((e) => {
+          console.error("Failed to copy to clipboard:", e);
+        });
+      } else if (typeof document !== "undefined") {
         // Fallback for older browsers
         const textArea = document.createElement("textarea");
         textArea.value = text;
@@ -64,10 +67,15 @@ export default function RobokassaDebugModal({
         textArea.style.opacity = "0";
         document.body.appendChild(textArea);
         textArea.select();
-        document.execCommand("copy");
-        document.body.removeChild(textArea);
-        setCopied(type);
-        setTimeout(() => setCopied(null), 2000);
+        try {
+          document.execCommand("copy");
+          setCopied(type);
+          setTimeout(() => setCopied(null), 2000);
+        } catch (e) {
+          console.error("Failed to copy to clipboard:", e);
+        } finally {
+          document.body.removeChild(textArea);
+        }
       }
     } catch (e) {
       console.error("Failed to copy to clipboard:", e);

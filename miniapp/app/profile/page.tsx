@@ -2,10 +2,16 @@
 
 import { useSearchParams } from "next/navigation";
 import { useState, useEffect, Suspense, useRef } from "react";
+import dynamic from "next/dynamic";
 import Link from "next/link";
 import "../globals.css";
 import AppLayout from "../components/AppLayout";
-import RobokassaDebugModal from "../components/RobokassaDebugModal";
+
+// Dynamic import to prevent SSR issues
+const RobokassaDebugModal = dynamic(
+  () => import("../components/RobokassaDebugModal"),
+  { ssr: false }
+);
 
 interface ProfileData {
   name: string | null;
@@ -854,8 +860,8 @@ function ProfilePageContent() {
       </div>
     </div>
 
-    {/* Robokassa Debug Modal */}
-    {showDebugModal && debugData && typeof window !== "undefined" && (
+    {/* Robokassa Debug Modal - only render on client */}
+    {typeof window !== "undefined" && showDebugModal && debugData && (
       <RobokassaDebugModal
         debugData={debugData}
         error29={error29}
