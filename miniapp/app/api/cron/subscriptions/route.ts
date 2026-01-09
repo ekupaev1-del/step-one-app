@@ -4,7 +4,7 @@
  * 
  * Location: miniapp/app/api/cron/subscriptions/route.ts
  * 
- * Runs every 10 minutes to:
+ * Runs every 10 minutes (cron schedule: every 10 minutes) to:
  * 1. Find users with trial_end_at < now() and subscription_status = 'trial'
  * 2. Attempt to charge 199 RUB via Robokassa (generates payment URL)
  * 3. Update subscription status based on payment result
@@ -12,7 +12,7 @@
  * Security: Requires Authorization header with CRON_SECRET
  * 
  * Vercel Cron Configuration: vercel.json (project root)
- * Schedule: every 10 minutes (cron: */10 * * * *)
+ * Schedule: every 10 minutes
  * 
  * Manual Test:
  * curl -H "Authorization: Bearer <CRON_SECRET>" https://<domain>/api/cron/subscriptions
