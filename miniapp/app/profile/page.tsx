@@ -656,10 +656,32 @@ function ProfilePageContent() {
       // Store debug data if available
       if (data.debug?.robokassa) {
         setDebugData(data.debug.robokassa);
+        
+        // Store comprehensive debug info for UI panel
+        const debugInfo = {
+          merchantLogin: data.debug.robokassa.merchantLogin,
+          isTest: data.debug.robokassa.isTest,
+          isProd: !data.debug.robokassa.isTest,
+          outSum: data.debug.robokassa.outSum,
+          recurring: false, // We don't set recurring flag in URL params, it's configured in merchant settings
+          invoiceId: data.invoiceId || data.debug.robokassa.invoiceId,
+          paymentUrl: data.paymentUrl.substring(0, 120) + (data.paymentUrl.length > 120 ? "..." : ""),
+          timestamp: new Date().toISOString(),
+          environment: {
+            vercelEnv: data.debug.robokassa.environment?.vercelEnv || "unknown",
+            nodeEnv: data.debug.robokassa.environment?.nodeEnv || "unknown",
+          },
+          signatureStringMasked: data.debug.robokassa.signatureStringMasked,
+          signatureValue: data.debug.robokassa.signatureValue?.substring(0, 8) + "...",
+          signatureChecks: data.debug.robokassa.signatureChecks,
+        };
+        setPaymentDebugInfo(debugInfo);
+        
         try {
           if (typeof window !== "undefined" && window.sessionStorage) {
             sessionStorage.setItem("robokassa_debug", JSON.stringify(data.debug.robokassa));
             sessionStorage.setItem("robokassa_payment_url", data.paymentUrl);
+            sessionStorage.setItem("robokassa_debug_info", JSON.stringify(debugInfo));
             pushDebug("Debug данные сохранены в sessionStorage");
           }
         } catch (e) {
@@ -827,17 +849,94 @@ function ProfilePageContent() {
             </div>
           )}
           
-          {/* Debug panel (only in dev or with ?debug=1) */}
-          {payDebug.length > 0 && (process.env.NODE_ENV === "development" || (typeof window !== "undefined" && new URLSearchParams(window.location.search).get("debug") === "1")) && (
-            <details className="mt-3 p-3 bg-gray-50 border border-gray-200 rounded-lg text-xs">
-              <summary className="cursor-pointer text-gray-600 font-medium">Отладочная информация</summary>
-              <div className="mt-2 space-y-1 font-mono text-gray-700 max-h-40 overflow-y-auto">
-                {payDebug.map((msg, idx) => (
-                  <div key={idx} className="break-words">{msg}</div>
-                ))}
+          {/* Payment Debug Panel - shown when ?debug=1 or payment fails */}
+          {(() => {
+            const showDebug = typeof window !== "undefined" && (
+              new URLSearchParams(window.location.search).get("debug") === "1" ||
+              payError !== null ||
+              error29 ||
+              paymentDebugInfo !== null
+            );
+            
+            if (!showDebug) return null;
+            
+            return (
+              <div className="mt-3 p-4 bg-blue-50 border border-blue-200 rounded-lg">
+                <h3 className="text-sm font-semibold text-blue-900 mb-3">Отладочная информация о платеже</h3>
+                
+                {paymentDebugInfo ? (
+                  <div className="space-y-2 text-xs font-mono">
+                    <div className="grid grid-cols-2 gap-2">
+                      <div><span className="text-blue-700">Merchant Login:</span></div>
+                      <div className="text-gray-800">{paymentDebugInfo.merchantLogin || "N/A"}</div>
+                      
+                      <div><span className="text-blue-700">Режим:</span></div>
+                      <div className="text-gray-800">
+                        {paymentDebugInfo.isTest ? "Тестовый" : "Продакшн"} 
+                        {paymentDebugInfo.isProd && " (Prod)"}
+                      </div>
+                      
+                      <div><span className="text-blue-700">Сумма (OutSum):</span></div>
+                      <div className="text-gray-800">{paymentDebugInfo.outSum || "N/A"}</div>
+                      
+                      <div><span className="text-blue-700">Recurring:</span></div>
+                      <div className="text-gray-800">{paymentDebugInfo.recurring ? "Да" : "Нет"}</div>
+                      
+                      <div><span className="text-blue-700">Invoice ID:</span></div>
+                      <div className="text-gray-800 break-all">{paymentDebugInfo.invoiceId || "N/A"}</div>
+                      
+                      <div><span className="text-blue-700">Payment URL:</span></div>
+                      <div className="text-gray-800 break-all">{paymentDebugInfo.paymentUrl || "N/A"}</div>
+                      
+                      <div><span className="text-blue-700">Время:</span></div>
+                      <div className="text-gray-800">{paymentDebugInfo.timestamp || "N/A"}</div>
+                      
+                      <div><span className="text-blue-700">Vercel Env:</span></div>
+                      <div className="text-gray-800">{paymentDebugInfo.environment?.vercelEnv || "unknown"}</div>
+                      
+                      <div><span className="text-blue-700">Node Env:</span></div>
+                      <div className="text-gray-800">{paymentDebugInfo.environment?.nodeEnv || "unknown"}</div>
+                      
+                      {paymentDebugInfo.signatureStringMasked && (
+                        <>
+                          <div><span className="text-blue-700">Signature String:</span></div>
+                          <div className="text-gray-800 break-all text-[10px]">{paymentDebugInfo.signatureStringMasked}</div>
+                          
+                          <div><span className="text-blue-700">Signature Value:</span></div>
+                          <div className="text-gray-800 break-all">{paymentDebugInfo.signatureValue || "N/A"}</div>
+                        </>
+                      )}
+                      
+                      {paymentDebugInfo.signatureChecks && (
+                        <>
+                          <div><span className="text-blue-700">Signature Checks:</span></div>
+                          <div className="text-gray-800">
+                            Length: {paymentDebugInfo.signatureChecks.lengthIs32 ? "✓" : "✗"}, 
+                            Lowercase: {paymentDebugInfo.signatureChecks.lowercase ? "✓" : "✗"}, 
+                            Hex: {paymentDebugInfo.signatureChecks.hexOnly ? "✓" : "✗"}
+                          </div>
+                        </>
+                      )}
+                    </div>
+                  </div>
+                ) : (
+                  <p className="text-xs text-gray-600">Debug информация недоступна</p>
+                )}
+                
+                {/* Debug messages log */}
+                {payDebug.length > 0 && (
+                  <details className="mt-3">
+                    <summary className="cursor-pointer text-xs text-blue-700 font-medium">Лог отладки ({payDebug.length} сообщений)</summary>
+                    <div className="mt-2 space-y-1 font-mono text-[10px] text-gray-700 max-h-40 overflow-y-auto bg-white p-2 rounded border">
+                      {payDebug.map((msg, idx) => (
+                        <div key={idx} className="break-all">{msg}</div>
+                      ))}
+                    </div>
+                  </details>
+                )}
               </div>
-            </details>
-          )}
+            );
+          })()}
         </div>
 
         {/* Основная информация (сворачиваемая секция) */}
