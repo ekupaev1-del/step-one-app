@@ -70,6 +70,7 @@ function ProfilePageContent() {
   const [payError, setPayError] = useState<string | null>(null);
   const [payDebug, setPayDebug] = useState<string[]>([]);
   const [debugData, setDebugData] = useState<any>(null);
+  const [paymentDebugInfo, setPaymentDebugInfo] = useState<any>(null);
   const [showDebugModal, setShowDebugModal] = useState(false);
   const [error29, setError29] = useState(false);
   const [checkingPrivacy, setCheckingPrivacy] = useState(false);
@@ -226,15 +227,39 @@ function ProfilePageContent() {
       
       if (errorCode === "29" || urlParams.get("error")?.includes("29") || errorDesc?.includes("29")) {
         setError29(true);
-        setError("Robokassa Error 29: SignatureValue mismatch");
+        setPayError("Robokassa отклонил платеж (код ошибки 29). Это проблема на стороне мерчанта. Проверьте настройки в личном кабинете Robokassa.");
         
         // Try to get debug data from sessionStorage if available
         try {
           const storedDebug = sessionStorage.getItem("robokassa_debug");
+          const storedDebugInfo = sessionStorage.getItem("robokassa_debug_info");
+          
           if (storedDebug) {
             const parsedDebug = JSON.parse(storedDebug);
             setDebugData(parsedDebug);
             setShowDebugModal(true);
+          }
+          
+          if (storedDebugInfo) {
+            const parsedDebugInfo = JSON.parse(storedDebugInfo);
+            setPaymentDebugInfo(parsedDebugInfo);
+          } else if (storedDebug) {
+            // Reconstruct debug info from stored debug
+            const parsedDebug = JSON.parse(storedDebug);
+            setPaymentDebugInfo({
+              merchantLogin: parsedDebug.merchantLogin,
+              isTest: parsedDebug.isTest,
+              isProd: !parsedDebug.isTest,
+              outSum: parsedDebug.outSum,
+              recurring: false,
+              invoiceId: parsedDebug.invoiceId,
+              paymentUrl: parsedDebug.targetUrl || "N/A",
+              timestamp: new Date().toISOString(),
+              environment: parsedDebug.environment || { vercelEnv: "unknown", nodeEnv: "unknown" },
+              signatureStringMasked: parsedDebug.signatureStringMasked,
+              signatureValue: parsedDebug.signatureValue?.substring(0, 8) + "...",
+              signatureChecks: parsedDebug.signatureChecks,
+            });
           } else {
             // If no stored debug, try to fetch it from backend
             // This is a fallback - normally debug should be stored before redirect
@@ -529,12 +554,33 @@ function ProfilePageContent() {
         const isError29 = errorMessage.includes("29") || errorMessage.includes("SignatureValue");
         if (isError29) {
           setError29(true);
+          setPayError("Robokassa отклонил платеж (код ошибки 29). Это проблема на стороне мерчанта. Проверьте настройки в личном кабинете Robokassa.");
         }
         
         // If we have debug data, show modal even on error
         if (errorData?.debug?.robokassa) {
           setDebugData(errorData.debug.robokassa);
           setShowDebugModal(true);
+          
+          // Store debug info for UI panel
+          const debugInfo = {
+            merchantLogin: errorData.debug.robokassa.merchantLogin,
+            isTest: errorData.debug.robokassa.isTest,
+            isProd: !errorData.debug.robokassa.isTest,
+            outSum: errorData.debug.robokassa.outSum,
+            recurring: false,
+            invoiceId: errorData.debug.robokassa.invoiceId,
+            paymentUrl: errorData.debug.robokassa.targetUrl || "N/A",
+            timestamp: new Date().toISOString(),
+            environment: {
+              vercelEnv: errorData.debug.robokassa.environment?.vercelEnv || "unknown",
+              nodeEnv: errorData.debug.robokassa.environment?.nodeEnv || "unknown",
+            },
+            signatureStringMasked: errorData.debug.robokassa.signatureStringMasked,
+            signatureValue: errorData.debug.robokassa.signatureValue?.substring(0, 8) + "...",
+            signatureChecks: errorData.debug.robokassa.signatureChecks,
+          };
+          setPaymentDebugInfo(debugInfo);
         }
         
         throw new Error(errorMessage);
@@ -562,12 +608,33 @@ function ProfilePageContent() {
         const isError29 = errorMessage.includes("29") || errorMessage.includes("SignatureValue");
         if (isError29) {
           setError29(true);
+          setPayError("Robokassa отклонил платеж (код ошибки 29). Это проблема на стороне мерчанта. Проверьте настройки в личном кабинете Robokassa.");
         }
         
         // If we have debug data, show modal even on error
         if (data.debug?.robokassa) {
           setDebugData(data.debug.robokassa);
           setShowDebugModal(true);
+          
+          // Store debug info for UI panel
+          const debugInfo = {
+            merchantLogin: data.debug.robokassa.merchantLogin,
+            isTest: data.debug.robokassa.isTest,
+            isProd: !data.debug.robokassa.isTest,
+            outSum: data.debug.robokassa.outSum,
+            recurring: false,
+            invoiceId: data.debug.robokassa.invoiceId,
+            paymentUrl: data.debug.robokassa.targetUrl || "N/A",
+            timestamp: new Date().toISOString(),
+            environment: {
+              vercelEnv: data.debug.robokassa.environment?.vercelEnv || "unknown",
+              nodeEnv: data.debug.robokassa.environment?.nodeEnv || "unknown",
+            },
+            signatureStringMasked: data.debug.robokassa.signatureStringMasked,
+            signatureValue: data.debug.robokassa.signatureValue?.substring(0, 8) + "...",
+            signatureChecks: data.debug.robokassa.signatureChecks,
+          };
+          setPaymentDebugInfo(debugInfo);
         }
         
         throw new Error(errorMessage);
