@@ -67,6 +67,8 @@ function ProfilePageContent() {
   const [deleting, setDeleting] = useState(false);
   const [needsOnboarding, setNeedsOnboarding] = useState(false);
   const [subscribing, setSubscribing] = useState(false);
+  const [payError, setPayError] = useState<string | null>(null);
+  const [payDebug, setPayDebug] = useState<string[]>([]);
   const [debugData, setDebugData] = useState<any>(null);
   const [showDebugModal, setShowDebugModal] = useState(false);
   const [error29, setError29] = useState(false);
@@ -445,22 +447,44 @@ function ProfilePageContent() {
     }
   };
 
+  // Helper to add debug messages
+  const pushDebug = (msg: string) => {
+    const timestamp = new Date().toISOString();
+    setPayDebug(prev => [...prev, `[${timestamp}] ${msg}`]);
+    console.log(`[profile] PAY_DEBUG: ${msg}`);
+  };
+
   const handleSubscribe = async () => {
-    console.log("[profile] PAY_CLICK", { userId, timestamp: new Date().toISOString() });
+    const startTime = Date.now();
+    pushDebug("Клик по кнопке оплаты");
     
     if (!userId) {
-      console.error("[profile] PAY_CLICK: userId is missing");
-      setError("ID пользователя не найден");
+      const errorMsg = "ID пользователя не найден";
+      pushDebug(`ОШИБКА: ${errorMsg}`);
+      setPayError(errorMsg);
       return;
     }
 
-    try {
-      setSubscribing(true);
-      setError(null);
-      setDebugData(null);
-      setError29(false);
+    // Reset states
+    setPayError(null);
+    setPayDebug([]);
+    setSubscribing(true);
+    setError(null);
+    setDebugData(null);
+    setError29(false);
 
-      console.log("[profile] PAY_CLICK: calling endpoint /api/payments/start", { userId });
+    let navigated = false;
+    let navigationWatchdog: NodeJS.Timeout | null = null;
+
+    try {
+      pushDebug(`Вызов API /api/payments/start для userId=${userId}`);
+
+      // Create AbortController with 8s timeout
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => {
+        controller.abort();
+        pushDebug("Таймаут запроса (8 секунд)");
+      }, 8000);
 
       const response = await fetch("/api/payments/start", {
         method: "POST",
@@ -468,23 +492,66 @@ function ProfilePageContent() {
           "Content-Type": "application/json",
         },
         body: JSON.stringify({ userId }),
+        signal: controller.signal,
       });
 
-      console.log("[profile] PAY_CLICK: received response", { 
-        status: response.status, 
-        ok: response.ok 
-      });
+      clearTimeout(timeoutId);
+      pushDebug(`Получен ответ: status=${response.status}, ok=${response.ok}`);
 
-      const data = await response.json();
+      // Handle non-OK responses
+      if (!response.ok) {
+        let errorText = "";
+        try {
+          errorText = await response.text();
+          pushDebug(`Ошибка ответа: ${errorText.substring(0, 200)}`);
+        } catch (e) {
+          errorText = `HTTP ${response.status}`;
+          pushDebug(`Не удалось прочитать текст ошибки: ${e}`);
+        }
+        
+        // Try to parse as JSON
+        let errorData: any = null;
+        try {
+          errorData = JSON.parse(errorText);
+        } catch (e) {
+          // Not JSON, use text as error
+        }
 
-      if (!response.ok || !data.ok) {
-        console.error("[profile] PAY_CLICK: endpoint error", { 
-          error: data.error,
-          status: response.status 
-        });
+        const errorMessage = errorData?.error || errorText || `Ошибка сервера: ${response.status}`;
         
         // Check if it's Error 29
-        const isError29 = data.error?.includes("29") || data.error?.includes("SignatureValue");
+        const isError29 = errorMessage.includes("29") || errorMessage.includes("SignatureValue");
+        if (isError29) {
+          setError29(true);
+        }
+        
+        // If we have debug data, show modal even on error
+        if (errorData?.debug?.robokassa) {
+          setDebugData(errorData.debug.robokassa);
+          setShowDebugModal(true);
+        }
+        
+        throw new Error(errorMessage);
+      }
+
+      // Parse JSON safely
+      let data: any;
+      try {
+        const text = await response.text();
+        pushDebug(`Длина ответа: ${text.length} символов`);
+        data = JSON.parse(text);
+        pushDebug("JSON успешно распарсен");
+      } catch (parseError: any) {
+        pushDebug(`ОШИБКА парсинга JSON: ${parseError.message}`);
+        throw new Error(`Неверный формат ответа от сервера: ${parseError.message}`);
+      }
+
+      if (!data.ok) {
+        const errorMessage = data.error || "Не удалось начать оплату";
+        pushDebug(`ОШИБКА: ${errorMessage}`);
+        
+        // Check if it's Error 29
+        const isError29 = errorMessage.includes("29") || errorMessage.includes("SignatureValue");
         if (isError29) {
           setError29(true);
         }
@@ -495,58 +562,91 @@ function ProfilePageContent() {
           setShowDebugModal(true);
         }
         
-        throw new Error(data.error || "Не удалось начать оплату");
+        throw new Error(errorMessage);
       }
 
-      console.log("[profile] PAY_CLICK: received paymentUrl", { 
-        hasPaymentUrl: !!data.paymentUrl,
-        invoiceId: data.invoiceId 
-      });
-
-      if (!data.paymentUrl) {
+      // Validate paymentUrl
+      if (!data.paymentUrl || typeof data.paymentUrl !== "string") {
+        pushDebug(`ОШИБКА: paymentUrl отсутствует или не строка`);
         throw new Error("Ссылка на оплату не получена от сервера");
       }
+
+      if (!data.paymentUrl.startsWith("https://")) {
+        pushDebug(`ОШИБКА: paymentUrl не начинается с https://: ${data.paymentUrl.substring(0, 50)}`);
+        throw new Error("Некорректная ссылка на оплату");
+      }
+
+      pushDebug(`Получена ссылка на оплату: ${data.paymentUrl.substring(0, 80)}...`);
 
       // Store debug data if available
       if (data.debug?.robokassa) {
         setDebugData(data.debug.robokassa);
-        // Store in sessionStorage for Error 29 detection after redirect
         try {
           if (typeof window !== "undefined" && window.sessionStorage) {
             sessionStorage.setItem("robokassa_debug", JSON.stringify(data.debug.robokassa));
             sessionStorage.setItem("robokassa_payment_url", data.paymentUrl);
+            pushDebug("Debug данные сохранены в sessionStorage");
           }
         } catch (e) {
-          console.error("[profile] Failed to store debug data in sessionStorage:", e);
+          pushDebug(`Не удалось сохранить debug данные: ${e}`);
         }
-        // Show debug modal before redirect (for internal testing)
-        setShowDebugModal(true);
-        // Don't redirect immediately, let user see debug first
-        return;
       }
 
-      // Open payment URL using Telegram WebApp API if available
-      console.log("[profile] PAY_CLICK: opening payment URL", { 
-        hasTelegram: typeof window !== "undefined" && !!(window as any).Telegram?.WebApp 
-      });
+      // Open payment URL
+      pushDebug("Открытие страницы оплаты...");
+      const currentUrl = typeof window !== "undefined" ? window.location.href : "";
 
       if (typeof window !== "undefined" && (window as any).Telegram?.WebApp?.openLink) {
         try {
+          pushDebug("Используется Telegram.WebApp.openLink");
           (window as any).Telegram.WebApp.openLink(data.paymentUrl, { try_instant_view: false });
-          console.log("[profile] PAY_CLICK: opened via Telegram WebApp.openLink");
-        } catch (e) {
-          console.error("[profile] PAY_CLICK: Telegram.openLink failed, using fallback", e);
-          window.location.href = data.paymentUrl;
+          navigated = true;
+          pushDebug("openLink вызван успешно");
+        } catch (e: any) {
+          pushDebug(`ОШИБКА openLink: ${e.message}, используем fallback`);
+          window.location.assign(data.paymentUrl);
+          navigated = true;
         }
       } else {
-        // Fallback for browser or if Telegram API not available
-        console.log("[profile] PAY_CLICK: using window.location.href fallback");
-        window.location.href = data.paymentUrl;
+        pushDebug("Используется window.location.assign (fallback)");
+        window.location.assign(data.paymentUrl);
+        navigated = true;
       }
+
+      // Watchdog: if navigation didn't happen after 3s, reset loading
+      if (navigated && typeof window !== "undefined") {
+        navigationWatchdog = setTimeout(() => {
+          // Check if we're still on the same page
+          if (window.location.href === currentUrl && document.visibilityState === "visible") {
+            pushDebug("ВНИМАНИЕ: Страница оплаты не открылась через 3 секунды");
+            setPayError("Страница оплаты не открылась. Попробуйте еще раз или откройте ссылку вручную.");
+            setSubscribing(false);
+          }
+        }, 3000);
+      }
+
     } catch (err: any) {
-      console.error("[profile] PAY_CLICK: error", err);
-      setError(err.message || "Ошибка оформления подписки");
+      const elapsed = Date.now() - startTime;
+      pushDebug(`ОШИБКА после ${elapsed}ms: ${err.message}`);
+      
+      if (err.name === "AbortError") {
+        setPayError("Превышено время ожидания. Проверьте подключение к интернету и попробуйте еще раз.");
+      } else {
+        setPayError(err.message || "Ошибка оформления подписки");
+      }
+      
+      // Always reset loading state on error
       setSubscribing(false);
+    } finally {
+      // Only reset if we didn't navigate (navigation will happen asynchronously)
+      // The watchdog will handle the case where navigation fails
+      if (!navigated) {
+        setSubscribing(false);
+      }
+      // Clean up watchdog if handler completes before navigation
+      if (navigationWatchdog && !navigated) {
+        clearTimeout(navigationWatchdog);
+      }
     }
   };
 
