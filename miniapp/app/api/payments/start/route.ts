@@ -1,13 +1,23 @@
 /**
- * Payment Start Endpoint
+ * Payment Start Endpoint (Rebuilt)
  * POST /api/payments/start
  * 
- * Location: miniapp/app/api/payments/start/route.ts
+ * Creates a payment record and returns Robokassa payment URL
  * 
- * Creates Robokassa invoice for 1 RUB trial payment
- * Sets user subscription_status to 'trial' and trial_end_at to now() + 3 days
+ * Request body:
+ * {
+ *   planCode?: string,  // e.g. 'trial_3d_199'
+ *   userId?: number,     // internal app user id (optional)
+ *   telegramUserId: number  // REQUIRED: Telegram user ID from Telegram.WebApp.initDataUnsafe.user.id
+ * }
  * 
- * Called from: Mini App UI (profile page subscription button)
+ * Response:
+ * {
+ *   ok: true,
+ *   paymentUrl: string,
+ *   invId: string,
+ *   debugId: string
+ * }
  */
 
 import { NextResponse } from "next/server";
@@ -16,362 +26,322 @@ import { generateRobokassaUrl } from "../../../../lib/robokassa";
 
 export const dynamic = "force-dynamic";
 
+/**
+ * Generate unique inv_id (bigint) for Robokassa
+ * Format: timestamp_ms * 1000 + random(0-999)
+ * This ensures uniqueness and fits within bigint range
+ */
+function generateInvId(): bigint {
+  const timestamp = BigInt(Date.now());
+  const random = BigInt(Math.floor(Math.random() * 1000));
+  return timestamp * 1000n + random;
+}
+
+/**
+ * Retry inv_id generation if conflict occurs
+ */
+async function generateUniqueInvId(
+  supabase: any,
+  maxRetries: number = 5
+): Promise<bigint> {
+  for (let attempt = 0; attempt < maxRetries; attempt++) {
+    const invId = generateInvId();
+    
+    // Check if inv_id already exists
+    const { data, error } = await supabase
+      .from("payments")
+      .select("inv_id")
+      .eq("inv_id", invId.toString())
+      .limit(1);
+    
+    if (error) {
+      // If error is not about missing column, throw
+      if (!error.message.includes("Could not find") && !error.message.includes("schema cache")) {
+        throw error;
+      }
+      // Schema cache issue - return generated ID anyway
+      return invId;
+    }
+    
+    if (!data || data.length === 0) {
+      // inv_id is unique, return it
+      return invId;
+    }
+    
+    // Conflict - retry with new ID
+    if (attempt < maxRetries - 1) {
+      await new Promise(resolve => setTimeout(resolve, 10)); // Small delay
+    }
+  }
+  
+  // If all retries failed, throw error
+  throw new Error(`Failed to generate unique inv_id after ${maxRetries} attempts`);
+}
+
 export async function POST(req: Request) {
   const requestId = Date.now().toString();
+  const debugId = `pay-${requestId}`;
   const startTime = Date.now();
   
   try {
+    // Parse request body
     let body: any;
     try {
       body = await req.json();
     } catch (parseError: any) {
-      console.error(`[payments/start:${requestId}] CREATE_PAYMENT_ERROR`, { 
-        errorMessage: "Invalid JSON body",
-        error: parseError.message 
+      console.error(`[payments/start:${debugId}] PARSE_ERROR`, {
+        error: parseError.message,
+        requestId: debugId
       });
       return NextResponse.json(
-        { 
-          ok: false, 
-          error: "Invalid request body", 
+        {
+          ok: false,
+          error: "Invalid JSON body",
           details: "Expected JSON",
-          debug: { requestId, timestamp: new Date().toISOString() }
+          debugId
         },
         { status: 400 }
       );
     }
     
-    const userId = body.userId;
-    const planCode = body.plan || "trial_3d_199"; // Default plan
+    // Extract and validate telegram_user_id (REQUIRED)
+    const telegramUserId = body.telegramUserId;
+    if (!telegramUserId) {
+      console.error(`[payments/start:${debugId}] VALIDATION_ERROR`, {
+        error: "telegramUserId is required",
+        received: body
+      });
+      return NextResponse.json(
+        {
+          ok: false,
+          error: "telegramUserId is required",
+          details: "telegramUserId must be provided in request body. Get it from Telegram.WebApp.initDataUnsafe.user.id",
+          debugId
+        },
+        { status: 400 }
+      );
+    }
+    
+    const numericTelegramUserId = Number(telegramUserId);
+    if (!Number.isFinite(numericTelegramUserId) || numericTelegramUserId <= 0) {
+      console.error(`[payments/start:${debugId}] VALIDATION_ERROR`, {
+        error: "Invalid telegramUserId",
+        received: telegramUserId
+      });
+      return NextResponse.json(
+        {
+          ok: false,
+          error: "telegramUserId must be a positive number",
+          details: `Received: ${telegramUserId}`,
+          debugId
+        },
+        { status: 400 }
+      );
+    }
+    
+    // Extract optional fields
+    const planCode = body.planCode || "trial_3d_199";
+    const userId = body.userId ? Number(body.userId) : null;
     const amount = "1.00"; // 1 RUB for trial
     const isTest = process.env.ROBOKASSA_TEST_MODE === "true" || process.env.ROBOKASSA_TEST_MODE === "1";
-    const recurring = false; // Recurring is configured in merchant settings, not in URL
     
     // Check for debug mode
     const url = new URL(req.url);
     const debugMode = url.searchParams.get("debug") === "1" || req.headers.get("x-debug") === "1" || process.env.NODE_ENV !== "production";
     
-    console.log(`[payments/start:${requestId}] CREATE_PAYMENT_START`, {
+    console.log(`[payments/start:${debugId}] CREATE_PAYMENT_START`, {
+      telegramUserId: numericTelegramUserId,
       userId,
-      outSum: amount,
-      recurring,
+      planCode,
+      amount,
       isTest,
+      requestId: debugId,
       timestamp: new Date().toISOString()
     });
-
-    if (!userId) {
-      console.error(`[payments/start:${requestId}] CREATE_PAYMENT_ERROR`, {
-        errorMessage: "Missing userId"
-      });
-      return NextResponse.json(
-        { 
-          ok: false, 
-          error: "userId is required", 
-          details: "userId must be provided in request body",
-          debug: { requestId, timestamp: new Date().toISOString() }
-        },
-        { status: 400 }
-      );
-    }
-
-    const numericUserId = Number(userId);
-    if (!Number.isFinite(numericUserId) || numericUserId <= 0) {
-      console.error(`[payments/start:${requestId}] CREATE_PAYMENT_ERROR`, {
-        errorMessage: "Invalid userId",
-        received: userId
-      });
-      return NextResponse.json(
-        { 
-          ok: false, 
-          error: "userId must be a positive number", 
-          details: `Received: ${userId}`,
-          debug: { requestId, timestamp: new Date().toISOString() }
-        },
-        { status: 400 }
-      );
-    }
-
+    
+    // Initialize Supabase client
     const supabase = createServerSupabaseClient();
     
-    // Verify user exists (with timeout protection)
+    // Generate unique inv_id BEFORE insert
+    let invId: bigint;
     try {
-      const { data: user, error: userError } = await supabase
-        .from("users")
-        .select("id")
-        .eq("id", numericUserId)
-        .maybeSingle();
-      
-      if (userError) {
-        console.error(`[payments/start:${requestId}] CREATE_PAYMENT_ERROR`, {
-          errorMessage: "Supabase error",
-          error: userError.message
-        });
-        return NextResponse.json(
-          { 
-            ok: false, 
-            error: "Database error", 
-            details: userError.message,
-            debug: { requestId, timestamp: new Date().toISOString() }
-          },
-          { status: 500 }
-        );
-      }
-      
-      if (!user) {
-        console.error(`[payments/start:${requestId}] CREATE_PAYMENT_ERROR`, {
-          errorMessage: "User not found",
-          userId: numericUserId
-        });
-        return NextResponse.json(
-          { 
-            ok: false, 
-            error: "User not found", 
-            details: `User with id ${numericUserId} does not exist`,
-            debug: { requestId, timestamp: new Date().toISOString() }
-          },
-          { status: 404 }
-        );
-      }
-    } catch (dbError: any) {
-      console.error(`[payments/start:${requestId}] CREATE_PAYMENT_ERROR`, {
-        errorMessage: "Database query error",
-        error: dbError.message
+      invId = await generateUniqueInvId(supabase);
+      console.log(`[payments/start:${debugId}] GENERATED_INV_ID`, {
+        invId: invId.toString(),
+        requestId: debugId
+      });
+    } catch (invIdError: any) {
+      console.error(`[payments/start:${debugId}] INV_ID_GENERATION_ERROR`, {
+        error: invIdError.message,
+        requestId: debugId
       });
       return NextResponse.json(
-        { 
-          ok: false, 
-          error: "Database connection error", 
-          details: dbError.message,
-          debug: { requestId, timestamp: new Date().toISOString() }
+        {
+          ok: false,
+          error: "Failed to generate invoice ID",
+          details: invIdError.message,
+          debugId
         },
         { status: 500 }
       );
     }
-
-    // Create payment record in database to get auto-generated ID
+    
+    // Generate Robokassa payment URL and signature
     const description = "Пробный период 3 дня";
+    const result = generateRobokassaUrl(
+      amount,
+      invId.toString(),
+      description,
+      numericTelegramUserId.toString(),
+      planCode,
+      isTest,
+      debugMode
+    );
     
-    // Generate a temporary inv_id value (will be updated to match id after insert)
-    // Using timestamp + random to ensure uniqueness before we get the actual id
-    const tempInvId = Date.now();
+    const paymentUrl = typeof result === "string" ? result : result.paymentUrl;
+    const debug = typeof result === "string" ? undefined : result.debug;
     
-    const amountValue = parseFloat(amount);
+    if (!paymentUrl || typeof paymentUrl !== "string" || !paymentUrl.startsWith("https://")) {
+      console.error(`[payments/start:${debugId}] URL_GENERATION_ERROR`, {
+        error: "Invalid payment URL generated",
+        urlType: typeof paymentUrl,
+        urlPrefix: paymentUrl?.substring(0, 20)
+      });
+      return NextResponse.json(
+        {
+          ok: false,
+          error: "Failed to generate payment URL",
+          details: "Generated URL is invalid",
+          debugId
+        },
+        { status: 500 }
+      );
+    }
     
+    // Insert payment record with ALL required fields
     const { data: paymentRecord, error: insertError } = await supabase
       .from("payments")
       .insert({
-        user_id: numericUserId,
+        telegram_user_id: numericTelegramUserId,
+        user_id: userId,
         plan_code: planCode,
-        amount: amountValue,
-        out_sum: amountValue, // Robokassa OutSum (same as amount)
+        amount: parseFloat(amount),
         currency: "RUB",
+        inv_id: invId.toString(),
+        description: description,
         status: "created",
-        inv_id: tempInvId, // Temporary value, will be updated to match id
+        payment_url: paymentUrl,
+        provider: "robokassa",
+        provider_payload: debug ? { signature: debug.signatureValue?.substring(0, 6) + "..." } : {}
       })
-      .select("id")
+      .select("id, inv_id, telegram_user_id, created_at")
       .single();
-
+    
     if (insertError || !paymentRecord) {
       const errorDetails = insertError?.message || "No payment record returned";
-      const isSchemaCacheError = errorDetails.includes("schema cache") || 
-                                 errorDetails.includes("Could not find") ||
-                                 (errorDetails.includes("column") && errorDetails.includes("does not exist"));
       
-      // Extract missing column name from error if possible
-      const missingColumnMatch = errorDetails.match(/Could not find the '(\w+)' column/);
-      const missingColumn = missingColumnMatch ? missingColumnMatch[1] : null;
+      // Extract failing column name from error if possible
+      const columnMatch = errorDetails.match(/column "(\w+)" of relation "payments"/);
+      const failingColumn = columnMatch ? columnMatch[1] : null;
       
-      // Insert payload keys (for debugging, not values)
-      const insertPayloadKeys = Object.keys({
-        user_id: numericUserId,
-        plan_code: planCode,
-        amount: amountValue,
-        out_sum: amountValue,
-        currency: "RUB",
-        status: "created",
-        inv_id: tempInvId,
-      });
-      
-      console.error(`[payments/start:${requestId}] CREATE_PAYMENT_ERROR`, {
+      console.error(`[payments/start:${debugId}] CREATE_PAYMENT_ERROR`, {
         errorMessage: "Failed to create payment record",
         error: errorDetails,
-        isSchemaCacheError,
-        missingColumn,
-        insertPayloadKeys,
-        requestId,
+        failingColumn,
+        insertPayload: {
+          telegram_user_id: numericTelegramUserId,
+          user_id: userId,
+          plan_code: planCode,
+          amount: parseFloat(amount),
+          currency: "RUB",
+          inv_id: invId.toString(),
+          description: description,
+          status: "created",
+          payment_url: paymentUrl.substring(0, 50) + "...",
+          provider: "robokassa"
+        },
+        requestId: debugId,
         timestamp: new Date().toISOString()
       });
       
       return NextResponse.json(
-        { 
-          ok: false, 
-          error: "Failed to create payment record", 
+        {
+          ok: false,
+          error: "Failed to create payment record",
           details: errorDetails,
+          failingColumn,
+          hint: failingColumn 
+            ? `Column '${failingColumn}' is missing or has wrong type. Run migration rebuild_payments_table.sql in Supabase SQL Editor.`
+            : "Check database migration and ensure all columns exist.",
+          debugId,
           debug: debugMode ? {
-            requestId,
+            requestId: debugId,
             timestamp: new Date().toISOString(),
             environment: {
               nodeEnv: process.env.NODE_ENV || "unknown",
-              vercelEnv: process.env.VERCEL_ENV || "unknown",
+              vercelEnv: process.env.VERCEL_ENV || "unknown"
             },
-            isSchemaCacheError,
-            missingColumn,
-            insertPayloadKeys,
             dbError: insertError ? {
               message: insertError.message,
               code: insertError.code,
               details: insertError.details,
               hint: insertError.hint
-            } : null,
-            suggestion: isSchemaCacheError 
-              ? `PostgREST schema cache is stale. Missing column: ${missingColumn || 'unknown'}. Run in Supabase SQL Editor: SELECT pg_notify('pgrst', 'reload schema'); Then wait 1-2 minutes.`
-              : missingColumn
-              ? `Column '${missingColumn}' is missing. Run migration create_payments_table.sql in Supabase SQL Editor.`
-              : "Check database migration and ensure all columns exist. See insertPayloadKeys for required columns."
-          } : { 
-            requestId, 
-            timestamp: new Date().toISOString(),
-            insertPayloadKeys: insertPayloadKeys
-          }
+            } : null
+          } : undefined
         },
         { status: 500 }
       );
     }
-
-    // Use database-generated ID as InvId (must be within Robokassa limits)
-    const invId = paymentRecord.id.toString();
     
-    // Validate InvId is reasonable (Robokassa typically accepts up to 2,147,483,647 for bigint)
-    if (paymentRecord.id > 2147483647) {
-      console.warn(`[payments/start:${requestId}] WARNING: InvId ${paymentRecord.id} exceeds typical Robokassa limits`);
-    }
-
-    // Update inv_id column if it exists (set to same value as id)
-    // This ensures inv_id is populated for Robokassa tracking
-    const { error: invIdUpdateError } = await supabase
-      .from("payments")
-      .update({ inv_id: paymentRecord.id })
-      .eq("id", paymentRecord.id);
-
-    if (invIdUpdateError) {
-      // If inv_id column doesn't exist or update fails, log but don't fail
-      // The payment can still proceed using id as InvId
-      console.warn(`[payments/start:${requestId}] Failed to update inv_id:`, invIdUpdateError.message);
-    }
-
-    console.log(`[payments/start:${requestId}] Created payment record with InvId:`, invId);
-
-    // Calculate trial end date (now + 3 days)
-    const trialEndAt = new Date();
-    trialEndAt.setDate(trialEndAt.getDate() + 3);
-
-    // Update user subscription status
-    const { error: updateError } = await supabase
-      .from("users")
-      .update({
-        subscription_status: "trial",
-        trial_end_at: trialEndAt.toISOString(),
-        robokassa_parent_invoice_id: invId,
-      })
-      .eq("id", numericUserId);
-
-    if (updateError) {
-      console.error(`[payments/start:${requestId}] CREATE_PAYMENT_ERROR`, {
-        errorMessage: "Database update error",
-        error: updateError.message
-      });
-      // Don't fail the payment creation, just log the error
-      console.warn(`[payments/start:${requestId}] User subscription update failed, but payment record created`);
-    }
-
-    // Generate Robokassa payment URL with debug info
-    const result = generateRobokassaUrl(
-      amount,
-      invId,
-      description,
-      userId.toString(),
-      isTest,
-      debugMode // includeDebug based on debug mode
-    );
-
-    const paymentUrl = typeof result === "string" ? result : result.paymentUrl;
-    const debug = typeof result === "string" ? undefined : result.debug;
-
-    if (!paymentUrl || typeof paymentUrl !== "string" || !paymentUrl.startsWith("https://")) {
-      console.error(`[payments/start:${requestId}] CREATE_PAYMENT_ERROR`, {
-        errorMessage: "Invalid payment URL generated",
-        urlType: typeof paymentUrl,
-        urlPrefix: paymentUrl?.substring(0, 20)
-      });
-      return NextResponse.json(
-        { 
-          ok: false, 
-          error: "Failed to generate payment URL", 
-          details: "Generated URL is invalid",
-          debug: debugMode ? { requestId, timestamp: new Date().toISOString() } : undefined
-        },
-        { status: 500 }
-      );
-    }
-
-    // Update payment record with Robokassa details
-    const { error: updatePaymentError } = await supabase
-      .from("payments")
-      .update({
-        robokassa_invoice_id: paymentRecord.id,
-        payment_url: paymentUrl,
-        signature: debug?.signatureValue || null,
-        updated_at: new Date().toISOString(),
-      })
-      .eq("id", paymentRecord.id);
-
-    if (updatePaymentError) {
-      console.warn(`[payments/start:${requestId}] Failed to update payment record with URL:`, updatePaymentError.message);
-    }
-
-    // Log signature information
-    if (debug) {
-      console.log(`[payments/start:${requestId}] CREATE_PAYMENT_SIGNATURE`, {
-        signatureString: debug.signatureStringMasked,
-        signatureHash: debug.signatureValue?.substring(0, 8) + "...",
-        signatureChecks: debug.signatureChecks
-      });
-    }
-
     const elapsed = Date.now() - startTime;
-    console.log(`[payments/start:${requestId}] CREATE_PAYMENT_OK InvId=${invId} status=created elapsed=${elapsed}ms`);
-
-    // Build response
-    const response: any = {
+    
+    console.log(`[payments/start:${debugId}] CREATE_PAYMENT_OK`, {
+      paymentId: paymentRecord.id,
+      invId: invId.toString(),
+      telegramUserId: numericTelegramUserId,
+      userId,
+      planCode,
+      amount,
+      paymentUrlLength: paymentUrl.length,
+      elapsed,
+      requestId: debugId,
+      timestamp: new Date().toISOString()
+    });
+    
+    // Return success response
+    return NextResponse.json({
       ok: true,
       paymentUrl,
-      invoiceId: invId,
-      amount,
-    };
-
-    // Include debug info only in debug mode
-    if (debugMode && debug) {
-      response.debug = {
-        robokassa: {
-          ...debug,
-          urlLength: paymentUrl.length,
-        },
-      };
-    }
-
-    return NextResponse.json(response);
+      invId: invId.toString(),
+      debugId,
+      debug: debugMode ? {
+        requestId: debugId,
+        paymentId: paymentRecord.id,
+        invId: invId.toString(),
+        telegramUserId: numericTelegramUserId,
+        planCode,
+        amount,
+        signature: debug?.signatureValue?.substring(0, 6) + "...",
+        timestamp: new Date().toISOString()
+      } : undefined
+    });
+    
   } catch (error: any) {
     const elapsed = Date.now() - startTime;
-    console.error(`[payments/start:${requestId}] CREATE_PAYMENT_ERROR`, { 
-      errorMessage: error.message || "Internal server error",
-      error: error.stack?.substring(0, 200),
-      elapsed: `${elapsed}ms`
+    console.error(`[payments/start:${debugId}] UNEXPECTED_ERROR`, {
+      error: error.message,
+      stack: error.stack,
+      elapsed,
+      requestId: debugId,
+      timestamp: new Date().toISOString()
     });
+    
     return NextResponse.json(
-      { 
-        ok: false, 
-        error: error.message || "Internal server error", 
-        details: error.stack?.substring(0, 200),
-        debug: { requestId, timestamp: new Date().toISOString() }
+      {
+        ok: false,
+        error: "Internal server error",
+        details: error.message,
+        debugId
       },
       { status: 500 }
     );

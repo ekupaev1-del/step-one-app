@@ -491,6 +491,21 @@ function ProfilePageContent() {
       return;
     }
 
+    // Get telegram_user_id from Telegram.WebApp.initDataUnsafe
+    let telegramUserId: number | null = null;
+    if (typeof window !== "undefined" && tg?.initDataUnsafe?.user?.id) {
+      telegramUserId = tg.initDataUnsafe.user.id;
+      pushDebug(`Найден telegram_user_id из initDataUnsafe: ${telegramUserId}`);
+    } else if (typeof window !== "undefined" && (window as any).Telegram?.WebApp?.initDataUnsafe?.user?.id) {
+      telegramUserId = (window as any).Telegram.WebApp.initDataUnsafe.user.id;
+      pushDebug(`Найден telegram_user_id из window.Telegram: ${telegramUserId}`);
+    } else {
+      const errorMsg = "telegram_user_id не найден. Убедитесь, что приложение открыто в Telegram.";
+      pushDebug(`ОШИБКА: ${errorMsg}`);
+      setPayError(errorMsg);
+      return;
+    }
+
     // Reset states
     setPayError(null);
     setPayDebug([]);
@@ -503,7 +518,7 @@ function ProfilePageContent() {
     let navigationWatchdog: NodeJS.Timeout | null = null;
 
     try {
-      pushDebug(`Вызов API /api/payments/start для userId=${userId}`);
+      pushDebug(`Вызов API /api/payments/start для userId=${userId}, telegramUserId=${telegramUserId}`);
 
       // Create AbortController with 8s timeout
       const controller = new AbortController();
@@ -517,7 +532,11 @@ function ProfilePageContent() {
         headers: {
           "Content-Type": "application/json",
         },
-        body: JSON.stringify({ userId }),
+        body: JSON.stringify({ 
+          userId,
+          telegramUserId,
+          planCode: "trial_3d_199"
+        }),
         signal: controller.signal,
       });
 

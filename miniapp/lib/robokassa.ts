@@ -29,7 +29,8 @@ export function calculateSignature(...args: string[]): string {
  * @param amount - Payment amount (e.g., "1.00")
  * @param invId - Invoice ID (unique)
  * @param description - Payment description
- * @param userId - Telegram user ID (for Shp_userId parameter)
+ * @param telegramUserId - Telegram user ID (for Shp_telegram_user_id parameter)
+ * @param planCode - Plan code (for Shp_plan parameter)
  * @param isTest - Use test mode
  * @param includeDebug - Include debug information in return value
  * @returns Robokassa payment URL or object with URL and debug info
@@ -38,7 +39,8 @@ export function generateRobokassaUrl(
   amount: string,
   invId: string,
   description: string,
-  userId: string,
+  telegramUserId: string,
+  planCode: string,
   isTest: boolean = false,
   includeDebug: boolean = false
 ): string | { paymentUrl: string; debug: any } {
@@ -47,7 +49,7 @@ export function generateRobokassaUrl(
   const outSum = parseFloat(amount).toFixed(2);
 
   // Build signature parts: MerchantLogin:OutSum:InvId:Password1:Shp_*
-  // Signature formula: MerchantLogin:OutSum:InvId:Password1:Shp_userId=userId
+  // Signature formula: MerchantLogin:OutSum:InvId:Password1:Shp_plan=...:Shp_telegram_user_id=...
   const signatureParts: string[] = [
     ROBOKASSA_MERCHANT_LOGIN,
     outSum,
@@ -59,7 +61,8 @@ export function generateRobokassaUrl(
 
   // Add Shp_* parameters AFTER Password1, sorted alphabetically
   const shpParams: string[] = [];
-  shpParams.push(`Shp_userId=${userId}`);
+  shpParams.push(`Shp_plan=${planCode}`);
+  shpParams.push(`Shp_telegram_user_id=${telegramUserId}`);
   shpParams.sort(); // Alphabetical order
   signatureParts.push(...shpParams);
 
@@ -90,7 +93,8 @@ export function generateRobokassaUrl(
     InvId: invId.toString(), // Ensure InvId is string
     Description: description, // URLSearchParams will encode this automatically
     SignatureValue: signatureValue,
-    Shp_userId: userId,
+    Shp_plan: planCode,
+    Shp_telegram_user_id: telegramUserId,
     SuccessURL: successUrl,
     FailURL: failUrl,
     ...(isTest && { IsTest: "1" }),
@@ -114,7 +118,8 @@ export function generateRobokassaUrl(
   ].join(":");
 
   const customParams: Record<string, string> = {
-    Shp_userId: userId,
+    Shp_plan: planCode,
+    Shp_telegram_user_id: telegramUserId,
   };
 
   const debug = {
