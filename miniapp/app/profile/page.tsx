@@ -75,7 +75,8 @@ function ProfilePageContent() {
   // Safe Telegram bootstrap - must be unconditional hook
   useEffect(() => {
     if (typeof window !== "undefined") {
-      setTg(window.Telegram?.WebApp ?? null);
+      const tgWebApp = (window as any).Telegram?.WebApp ?? null;
+      setTg(tgWebApp);
     }
   }, []);
 
