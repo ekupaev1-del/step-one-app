@@ -100,3 +100,49 @@ SDK автоматически загружается через `<Script>` в `
 См. `.env.example` для списка необходимых переменных.
 
 **Важно**: Переменные с префиксом `NEXT_PUBLIC_` доступны в браузере.
+
+## Debug Mode
+
+Для отладки React ошибок и доступа к приложению через обычный браузер (не только через Telegram):
+
+### Настройка
+
+1. Установите переменную окружения в Vercel:
+   - Перейдите в Vercel Dashboard → Settings → Environment Variables
+   - Добавьте `NEXT_PUBLIC_DEBUG_KEY` (или `DEBUG_KEY`) со значением вашего секретного ключа
+   - Пример: `NEXT_PUBLIC_DEBUG_KEY=your-secret-debug-key-here`
+
+2. Используйте debug bypass в URL:
+   ```
+   https://your-app.vercel.app/?debug=1&debugKey=your-secret-debug-key-here&id=USER_ID
+   ```
+
+### Возможности Debug Mode
+
+- **Доступ через браузер**: Приложение можно открыть в обычном браузере (не только в Telegram)
+- **Debug Overlay**: Автоматически показывает детальную информацию об ошибках
+- **Error Reports**: Кнопка "Copy Error Report (JSON)" для копирования полного отчета об ошибке
+- **Diagnostics**: При `?debug=1` показывается информация об окружении, Telegram WebApp, и т.д.
+
+### Примеры использования
+
+1. **Отладка ошибки на странице профиля:**
+   ```
+   https://your-app.vercel.app/profile?debug=1&debugKey=your-key&id=123
+   ```
+
+2. **Просмотр диагностики без ошибки:**
+   ```
+   https://your-app.vercel.app/?debug=1&debugKey=your-key
+   ```
+
+3. **Доступ к регистрации через браузер:**
+   ```
+   https://your-app.vercel.app/registration?debug=1&debugKey=your-key&id=123
+   ```
+
+### Безопасность
+
+- Debug bypass работает **только** при наличии правильного `debugKey`
+- Без `debugKey` или с неправильным ключом приложение работает как обычно (только через Telegram)
+- **Не коммитьте** `DEBUG_KEY` в репозиторий - используйте только переменные окружения Vercel

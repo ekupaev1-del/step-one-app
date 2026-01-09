@@ -239,12 +239,38 @@ export default function DebugOverlay() {
     }
   };
 
-  if (!isEnabled || errors.length === 0) {
+  // Show overlay if enabled AND (has errors OR debug=1 is in URL for diagnostics)
+  const showDiagnostics = isEnabled && typeof window !== "undefined" && 
+    new URLSearchParams(window.location.search).get("debug") === "1";
+  
+  if (!isEnabled || (!showDiagnostics && errors.length === 0)) {
     return null;
   }
 
   const latestError = errors[errors.length - 1];
   const rawJson = safeStringify(errors, 2);
+  
+  // Generate diagnostics report if no errors but debug mode is on
+  const diagnosticsReport = showDiagnostics && errors.length === 0 ? {
+    diagnostics: {
+      route: typeof window !== "undefined" ? window.location.pathname + window.location.search : "N/A",
+      url: typeof window !== "undefined" ? window.location.href : "N/A",
+      userAgent: typeof navigator !== "undefined" ? navigator.userAgent : "N/A",
+      timestamp: new Date().toISOString(),
+      environment: {
+        nodeEnv: process.env.NODE_ENV,
+        vercelEnv: process.env.VERCEL_ENV,
+      },
+      telegram: typeof window !== "undefined" && (window as any).Telegram?.WebApp ? {
+        available: true,
+        version: (window as any).Telegram.WebApp.version,
+        platform: (window as any).Telegram.WebApp.platform,
+        initDataLength: (window as any).Telegram.WebApp.initData?.length || 0,
+      } : {
+        available: false,
+      },
+    },
+  } : null;
 
   return (
     <div className="fixed bottom-4 right-4 z-50 max-w-md">
@@ -284,43 +310,65 @@ export default function DebugOverlay() {
 
         {activeTab === "summary" ? (
           <div className="space-y-2 text-xs">
-            <div>
-              <span className="font-semibold">Error:</span> {latestError.message}
-            </div>
-            {latestError.suspectedCause && (
-              <div>
-                <span className="font-semibold">Suspected Cause:</span> {latestError.suspectedCause}
-              </div>
-            )}
-            {latestError.route && (
-              <div>
-                <span className="font-semibold">Route:</span> {latestError.route}
-              </div>
-            )}
-            <div>
-              <span className="font-semibold">Timestamp:</span> {latestError.timestamp}
-            </div>
-            <div className="flex gap-2 mt-2">
-              <button
-                onClick={() => copyToClipboard(latestError.stack || latestError.message, "stack")}
-                className="px-2 py-1 bg-red-200 text-red-900 rounded text-xs"
-              >
-                {copied === "stack" ? "✓ Copied" : "Copy Stack"}
-              </button>
-            </div>
+            {errors.length > 0 ? (
+              <>
+                <div>
+                  <span className="font-semibold">Error:</span> {latestError.message}
+                </div>
+                {latestError.suspectedCause && (
+                  <div>
+                    <span className="font-semibold">Suspected Cause:</span> {latestError.suspectedCause}
+                  </div>
+                )}
+                {latestError.route && (
+                  <div>
+                    <span className="font-semibold">Route:</span> {latestError.route}
+                  </div>
+                )}
+                <div>
+                  <span className="font-semibold">Timestamp:</span> {latestError.timestamp}
+                </div>
+                <div className="flex gap-2 mt-2">
+                  <button
+                    onClick={() => copyToClipboard(latestError.stack || latestError.message, "stack")}
+                    className="px-2 py-1 bg-red-200 text-red-900 rounded text-xs"
+                  >
+                    {copied === "stack" ? "✓ Copied" : "Copy Stack"}
+                  </button>
+                </div>
+              </>
+            ) : diagnosticsReport ? (
+              <>
+                <div>
+                  <span className="font-semibold">Debug Diagnostics</span>
+                </div>
+                <div>
+                  <span className="font-semibold">Route:</span> {diagnosticsReport.diagnostics.route}
+                </div>
+                <div>
+                  <span className="font-semibold">Environment:</span> {diagnosticsReport.diagnostics.environment.nodeEnv} / {diagnosticsReport.diagnostics.environment.vercelEnv || "N/A"}
+                </div>
+                <div>
+                  <span className="font-semibold">Telegram:</span> {diagnosticsReport.diagnostics.telegram.available ? `Available (${diagnosticsReport.diagnostics.telegram.platform}, v${diagnosticsReport.diagnostics.telegram.version})` : "Not available"}
+                </div>
+                <div>
+                  <span className="font-semibold">Timestamp:</span> {diagnosticsReport.diagnostics.timestamp}
+                </div>
+              </>
+            ) : null}
           </div>
         ) : (
           <div className="space-y-2">
             <div className="flex gap-2">
               <button
-                onClick={() => copyToClipboard(rawJson, "json")}
+                onClick={() => copyToClipboard(diagnosticsReport ? safeStringify(diagnosticsReport, 2) : rawJson, "json")}
                 className="px-2 py-1 bg-red-200 text-red-900 rounded text-xs"
               >
                 {copied === "json" ? "✓ Copied" : "Copy JSON"}
               </button>
             </div>
             <pre className="bg-white p-2 rounded text-xs overflow-auto max-h-64 font-mono">
-              {rawJson}
+              {diagnosticsReport ? safeStringify(diagnosticsReport, 2) : rawJson}
             </pre>
           </div>
         )}
