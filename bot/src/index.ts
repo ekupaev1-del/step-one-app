@@ -437,6 +437,12 @@ async function handleQuestionnaireSaved(
     confirmationSent = true;
     console.log("[bot] ✅ Подтверждение отправлено через sendMessage");
   } catch (confirmError: any) {
+    // Если пользователь заблокировал бота - просто логируем
+    if (confirmError?.response?.error_code === 403 && confirmError?.response?.description?.includes("blocked")) {
+      console.warn(`[bot] Пользователь ${telegram_id} заблокировал бота, пропускаем отправку подтверждения`);
+      return; // Выходим из функции, не пытаемся отправлять меню
+    }
+    
     console.error("[bot] ❌ Ошибка отправки подтверждения:", confirmError);
     console.error("[bot] Error details:", {
       message: confirmError?.message,
@@ -768,13 +774,42 @@ async function getTodayMeals(telegram_id: number): Promise<{
   try {
     const today = new Date();
     today.setHours(0, 0, 0, 0);
+    const endOfDay = new Date(today);
+    endOfDay.setHours(23, 59, 59, 999);
     const todayISO = today.toISOString();
+    const endOfDayISO = endOfDay.toISOString();
 
-    const { data, error } = await supabase
+    // Получаем пользователя, чтобы проверить id (для iOS пользователей)
+    const { data: user } = await supabase
+      .from("users")
+      .select("id")
+      .eq("telegram_id", telegram_id)
+      .maybeSingle();
+
+    // Ищем записи по telegram_id (основной способ)
+    let { data, error } = await supabase
       .from("diary")
       .select("calories, protein, fat, carbs")
       .eq("user_id", telegram_id)
-      .gte("created_at", todayISO);
+      .gte("created_at", todayISO)
+      .lte("created_at", endOfDayISO);
+
+    // Если не нашли по telegram_id и у пользователя есть id, пробуем поиск по id
+    if ((!data || data.length === 0) && user?.id && user.id !== telegram_id) {
+      console.log(`[getTodayMeals] Не найдено по telegram_id=${telegram_id}, пробуем по id=${user.id}`);
+      const { data: dataById, error: errorById } = await supabase
+        .from("diary")
+        .select("calories, protein, fat, carbs")
+        .eq("user_id", user.id)
+        .gte("created_at", todayISO)
+        .lte("created_at", endOfDayISO);
+      
+      if (!errorById && dataById) {
+        data = dataById;
+        error = null;
+        console.log(`[getTodayMeals] Найдено ${data.length} записей по id=${user.id}`);
+      }
+    }
 
     if (error) {
       console.error("[getTodayMeals] Ошибка:", error);
@@ -1329,9 +1364,26 @@ bot.on("text", async (ctx) => {
       undefined,
       response
     );
-  } catch (error) {
+  } catch (error: any) {
     console.error("[bot] Ошибка обработки текста:", error);
-    ctx.reply("Произошла ошибка при обработке сообщения.");
+    
+    // Если пользователь заблокировал бота - просто логируем, не пытаемся отправить сообщение
+    if (error?.response?.error_code === 403 && error?.response?.description?.includes("blocked")) {
+      console.warn(`[bot] Пользователь ${ctx.from?.id} заблокировал бота, пропускаем отправку сообщения`);
+      return;
+    }
+    
+    // Для других ошибок пытаемся отправить сообщение
+    try {
+      await ctx.reply("Произошла ошибка при обработке сообщения.");
+    } catch (replyErr: any) {
+      // Если и это не получилось (например, пользователь заблокирован) - просто логируем
+      if (replyErr?.response?.error_code === 403) {
+        console.warn(`[bot] Не удалось отправить сообщение об ошибке - пользователь заблокирован`);
+      } else {
+        console.error("[bot] Ошибка отправки сообщения об ошибке:", replyErr);
+      }
+    }
   }
 });
 
@@ -1638,9 +1690,24 @@ bot.command("отменить", async (ctx) => {
     ctx.reply(
       `✅ Удалено: ${lastMeal.meal_text} (${lastMeal.calories} ккал)\n\n${formatProgressMessage(todayMeals, dailyNorm, waterInfo || undefined)}`
     );
-  } catch (error) {
+  } catch (error: any) {
     console.error("[bot] Ошибка /отменить:", error);
-    ctx.reply("Произошла ошибка.");
+    
+    // Если пользователь заблокировал бота - просто логируем
+    if (error?.response?.error_code === 403 && error?.response?.description?.includes("blocked")) {
+      console.warn(`[bot] Пользователь ${ctx.from?.id} заблокировал бота, пропускаем отправку сообщения`);
+      return;
+    }
+    
+    try {
+      await ctx.reply("Произошла ошибка.");
+    } catch (replyErr: any) {
+      if (replyErr?.response?.error_code === 403) {
+        console.warn(`[bot] Не удалось отправить сообщение об ошибке - пользователь заблокирован`);
+      } else {
+        console.error("[bot] Ошибка отправки сообщения об ошибке:", replyErr);
+      }
+    }
   }
 });
 
@@ -1655,16 +1722,62 @@ bot.command("отчет", async (ctx) => {
       return ctx.reply("Ошибка: не удалось определить ваш Telegram ID");
     }
 
+    // Получаем пользователя, чтобы проверить, есть ли у него id (для iOS пользователей)
+    const { data: user, error: userError } = await supabase
+      .from("users")
+      .select("id, telegram_id")
+      .eq("telegram_id", telegram_id)
+      .maybeSingle();
+
+    if (userError) {
+      console.error("[bot] Ошибка получения пользователя:", userError);
+      return ctx.reply("❌ Ошибка базы данных.");
+    }
+
+    // Используем telegram_id для поиска, но также проверяем id (для iOS пользователей без telegram_id)
+    // ВАЖНО: Если у пользователя нет telegram_id, значит он зарегистрирован только через iOS
+    // В этом случае записи могут быть сохранены с id вместо telegram_id
+    const diaryUserId = user?.telegram_id || user?.id;
+
+    if (!diaryUserId) {
+      return ctx.reply("❌ Пользователь не найден. Используйте /start для регистрации.");
+    }
+
     const today = new Date();
     today.setHours(0, 0, 0, 0);
+    const endOfDay = new Date(today);
+    endOfDay.setHours(23, 59, 59, 999);
     const todayISO = today.toISOString();
+    const endOfDayISO = endOfDay.toISOString();
 
-    const { data: meals, error } = await supabase
+    console.log(`[bot] /отчет: telegram_id=${telegram_id}, diaryUserId=${diaryUserId}, диапазон: ${todayISO} - ${endOfDayISO}`);
+
+    // Ищем записи по telegram_id (основной способ)
+    let { data: meals, error } = await supabase
       .from("diary")
-      .select("meal_text, calories, protein, fat, carbs, created_at")
+      .select("meal_text, calories, protein, fat, carbs, created_at, user_id")
       .eq("user_id", telegram_id)
       .gte("created_at", todayISO)
+      .lte("created_at", endOfDayISO)
       .order("created_at", { ascending: true });
+
+    // Если не нашли по telegram_id и у пользователя есть id, пробуем поиск по id
+    if ((!meals || meals.length === 0) && user?.id && user.id !== telegram_id) {
+      console.log(`[bot] /отчет: Не найдено записей по telegram_id=${telegram_id}, пробуем по id=${user.id}`);
+      const { data: mealsById, error: errorById } = await supabase
+        .from("diary")
+        .select("meal_text, calories, protein, fat, carbs, created_at, user_id")
+        .eq("user_id", user.id)
+        .gte("created_at", todayISO)
+        .lte("created_at", endOfDayISO)
+        .order("created_at", { ascending: true });
+      
+      if (!errorById && mealsById && mealsById.length > 0) {
+        meals = mealsById;
+        error = null;
+        console.log(`[bot] /отчет: Найдено ${meals.length} записей по id=${user.id}`);
+      }
+    }
 
     if (error) {
       console.error("[bot] Ошибка получения отчёта:", error);
@@ -1674,6 +1787,8 @@ bot.command("отчет", async (ctx) => {
     if (!meals || meals.length === 0) {
       return ctx.reply("📋 Сегодня ещё не было приёмов пищи.");
     }
+
+    console.log(`[bot] /отчет: Найдено ${meals.length} записей`);
 
     const todayMeals = await getTodayMeals(telegram_id);
     const dailyNorm = await getUserDailyNorm(telegram_id);
@@ -1691,9 +1806,24 @@ bot.command("отчет", async (ctx) => {
     report += `\n${formatProgressMessage(todayMeals, dailyNorm, waterInfo || undefined)}`;
 
     ctx.reply(report);
-  } catch (error) {
+  } catch (error: any) {
     console.error("[bot] Ошибка /отчет:", error);
-    ctx.reply("Произошла ошибка.");
+    
+    // Если пользователь заблокировал бота - просто логируем
+    if (error?.response?.error_code === 403 && error?.response?.description?.includes("blocked")) {
+      console.warn(`[bot] Пользователь ${ctx.from?.id} заблокировал бота, пропускаем отправку сообщения`);
+      return;
+    }
+    
+    try {
+      await ctx.reply("Произошла ошибка.");
+    } catch (replyErr: any) {
+      if (replyErr?.response?.error_code === 403) {
+        console.warn(`[bot] Не удалось отправить сообщение об ошибке - пользователь заблокирован`);
+      } else {
+        console.error("[bot] Ошибка отправки сообщения об ошибке:", replyErr);
+      }
+    }
   }
 });
 
@@ -1927,9 +2057,24 @@ bot.on("photo", async (ctx) => {
       undefined,
       response
     );
-  } catch (error) {
+  } catch (error: any) {
     console.error("[bot] Ошибка обработки фото:", error);
-    ctx.reply("Произошла ошибка при обработке фото.");
+    
+    // Если пользователь заблокировал бота - просто логируем
+    if (error?.response?.error_code === 403 && error?.response?.description?.includes("blocked")) {
+      console.warn(`[bot] Пользователь ${ctx.from?.id} заблокировал бота, пропускаем отправку сообщения`);
+      return;
+    }
+    
+    try {
+      await ctx.reply("Произошла ошибка при обработке фото.");
+    } catch (replyErr: any) {
+      if (replyErr?.response?.error_code === 403) {
+        console.warn(`[bot] Не удалось отправить сообщение об ошибке - пользователь заблокирован`);
+      } else {
+        console.error("[bot] Ошибка отправки сообщения об ошибке:", replyErr);
+      }
+    }
   }
 });
 
@@ -2102,9 +2247,24 @@ bot.on("voice", async (ctx) => {
       undefined,
       response
     );
-  } catch (error) {
+  } catch (error: any) {
     console.error("[bot] Ошибка обработки аудио:", error);
-    ctx.reply("Произошла ошибка при обработке голосового сообщения.");
+    
+    // Если пользователь заблокировал бота - просто логируем
+    if (error?.response?.error_code === 403 && error?.response?.description?.includes("blocked")) {
+      console.warn(`[bot] Пользователь ${ctx.from?.id} заблокировал бота, пропускаем отправку сообщения`);
+      return;
+    }
+    
+    try {
+      await ctx.reply("Произошла ошибка при обработке голосового сообщения.");
+    } catch (replyErr: any) {
+      if (replyErr?.response?.error_code === 403) {
+        console.warn(`[bot] Не удалось отправить сообщение об ошибке - пользователь заблокирован`);
+      } else {
+        console.error("[bot] Ошибка отправки сообщения об ошибке:", replyErr);
+      }
+    }
   }
 });
 // TODO: Добавить напоминания
