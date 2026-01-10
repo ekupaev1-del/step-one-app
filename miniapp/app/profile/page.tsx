@@ -1329,10 +1329,10 @@ function ProfilePageContent() {
         <div className="bg-white rounded-2xl shadow-soft p-6 mb-4">
           <button
             onClick={() => setNormsExpanded(!normsExpanded)}
-            className="w-full flex justify-between items-center"
+            className="w-full flex justify-between items-center bg-yellow-400 hover:bg-yellow-500 rounded-lg px-4 py-3 transition-colors duration-200"
           >
-            <h2 className="text-lg font-semibold text-textPrimary">Ваши нормы</h2>
-            <span className={`transform transition-transform duration-200 text-textPrimary ${normsExpanded ? 'rotate-180' : ''}`}>
+            <h2 className="text-lg font-semibold text-gray-900">Ваши нормы</h2>
+            <span className={`transform transition-transform duration-200 text-gray-900 ${normsExpanded ? 'rotate-180' : ''}`}>
               ▼
             </span>
           </button>
