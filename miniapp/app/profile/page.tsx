@@ -495,28 +495,27 @@ function ProfilePageContent() {
 
     // Get telegram_user_id from Telegram.WebApp.initDataUnsafe
     // Try multiple ways to access Telegram WebApp
-    const tgWebApp = typeof window !== "undefined" 
-      ? (window as any).Telegram?.WebApp 
+    const tg = typeof window !== "undefined" 
+      ? (globalThis as any).Telegram?.WebApp 
       : null;
     
-    const initDataUnsafe = tgWebApp?.initDataUnsafe;
-    const initDataLength = initDataUnsafe ? JSON.stringify(initDataUnsafe).length : 0;
+    const telegramUserId = tg?.initDataUnsafe?.user?.id;
+    const initDataLength = tg?.initData ? tg.initData.length : 0;
     
-    pushDebug(`Telegram WebApp доступен: ${!!tgWebApp}`);
-    pushDebug(`initDataUnsafe длина: ${initDataLength} символов`);
+    // Log to client debug panel
+    console.log("Telegram available:", !!tg);
+    console.log("initData length:", initDataLength);
+    console.log("telegramUserId:", telegramUserId);
     
-    let telegramUserId: number | null = null;
+    pushDebug(`Telegram WebApp доступен: ${!!tg}`);
+    pushDebug(`initData длина: ${initDataLength} символов`);
+    pushDebug(`telegramUserId: ${telegramUserId || "НЕ НАЙДЕН"}`);
     
-    if (tgWebApp?.initDataUnsafe?.user?.id) {
-      telegramUserId = tgWebApp.initDataUnsafe.user.id;
-      pushDebug(`Найден telegram_user_id из tg.initDataUnsafe: ${telegramUserId}`);
-    } else if (typeof window !== "undefined" && (window as any).Telegram?.WebApp?.initDataUnsafe?.user?.id) {
-      telegramUserId = (window as any).Telegram.WebApp.initDataUnsafe.user.id;
-      pushDebug(`Найден telegram_user_id из window.Telegram: ${telegramUserId}`);
-    } else {
-      const errorMsg = "telegram_user_id не найден. Убедитесь, что приложение открыто в Telegram боте.";
+    // Validate telegramUserId BEFORE calling API
+    if (!telegramUserId) {
+      const errorMsg = "Откройте приложение внутри Telegram бота";
       pushDebug(`ОШИБКА: ${errorMsg}`);
-      pushDebug(`tgWebApp: ${!!tgWebApp}, initDataUnsafe: ${!!initDataUnsafe}, user: ${!!initDataUnsafe?.user}`);
+      pushDebug(`tg: ${!!tg}, initDataUnsafe: ${!!tg?.initDataUnsafe}, user: ${!!tg?.initDataUnsafe?.user}`);
       setPayError(errorMsg);
       // DO NOT call API if telegramUserId is missing
       return;
@@ -546,15 +545,22 @@ function ProfilePageContent() {
         pushDebug("Таймаут запроса (8 секунд)");
       }, 8000);
 
-      // Prepare request payload
+      // Prepare request payload - EXACT field name telegramUserId
       const requestPayload = {
+        planCode: "trial_3d_199",
         userId,
-        telegramUserId, // EXACT field name as expected by backend
-        planCode: "trial_3d_199"
+        telegramUserId // EXACT field name as expected by backend
       };
       
-      // Store request payload for debug overlay
+      // Store request payload for debug overlay (both state and sessionStorage)
       setLastRequestPayload(requestPayload);
+      try {
+        if (typeof window !== "undefined" && window.sessionStorage) {
+          sessionStorage.setItem("debug_last_request_payload", JSON.stringify(requestPayload));
+        }
+      } catch (e) {
+        // Ignore
+      }
       
       pushDebug(`Отправка запроса с payload: ${JSON.stringify(requestPayload)}`);
       
@@ -578,6 +584,33 @@ function ProfilePageContent() {
       } catch (readError: any) {
         pushDebug(`ОШИБКА чтения ответа: ${readError.message}`);
         throw new Error(`Не удалось прочитать ответ от сервера: ${readError.message}`);
+      }
+      
+      // Store response for debug overlay (both state and sessionStorage)
+      try {
+        let responseData: any = null;
+        if (responseText && responseText.trim().length > 0) {
+          try {
+            responseData = JSON.parse(responseText);
+          } catch {
+            responseData = { raw: responseText };
+          }
+        }
+        const responseInfo = {
+          status: response.status,
+          ok: response.ok,
+          data: responseData
+        };
+        setLastResponse(responseInfo);
+        try {
+          if (typeof window !== "undefined" && window.sessionStorage) {
+            sessionStorage.setItem("debug_last_response", JSON.stringify(responseInfo));
+          }
+        } catch (e) {
+          // Ignore
+        }
+      } catch (e) {
+        // Ignore
       }
 
       // Handle non-OK responses

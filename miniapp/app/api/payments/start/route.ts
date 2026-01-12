@@ -137,13 +137,12 @@ export async function POST(req: Request) {
                           body.tg_user_id ||
                           null;
     
-    // Log what we found
-    console.log(`[payments/start:${debugId}] TELEGRAM_USER_ID_EXTRACTION`, {
-      requestId: debugId,
-      telegramUserIdType: typeof telegramUserId,
-      telegramUserIdValue: telegramUserId ? String(telegramUserId).slice(0, 6) + "..." : null,
-      foundInKeys: receivedKeys.filter(k => k.toLowerCase().includes('telegram') || k.toLowerCase().includes('tg')),
-      allKeys: receivedKeys
+    // Log what we found (Vercel logs format)
+    console.log("[payments/start]", { 
+      requestId: debugId, 
+      receivedKeys, 
+      telegramUserIdType: typeof telegramUserId, 
+      telegramUserIdValue: telegramUserId ? String(telegramUserId).slice(0, 6) + "..." : null 
     });
     
     // Validate telegram_user_id BEFORE any DB operations
@@ -162,8 +161,7 @@ export async function POST(req: Request) {
           debug: {
             requestId: debugId,
             receivedKeys,
-            receivedBodyPreview: safePreview(body),
-            suggestion: "Ensure you're opening the app inside Telegram bot, or explicitly pass telegramUserId in request body"
+            receivedBodyPreview: safePreview(body)
           },
           debugId
         },
@@ -171,17 +169,32 @@ export async function POST(req: Request) {
       );
     }
     
-    // Normalize to number (safe conversion)
+    // Normalize to bigint (safe conversion: number -> string -> bigint)
+    let telegramUserIdBigInt: bigint;
     let numericTelegramUserId: number;
-    if (typeof telegramUserId === 'string') {
-      numericTelegramUserId = parseInt(telegramUserId, 10);
-    } else if (typeof telegramUserId === 'number') {
-      numericTelegramUserId = telegramUserId;
-    } else {
+    
+    try {
+      if (typeof telegramUserId === 'string') {
+        // Try parsing as number first
+        numericTelegramUserId = parseInt(telegramUserId, 10);
+        if (isNaN(numericTelegramUserId)) {
+          throw new Error("Invalid numeric string");
+        }
+        // Convert to bigint: number -> string -> bigint
+        telegramUserIdBigInt = BigInt(numericTelegramUserId);
+      } else if (typeof telegramUserId === 'number') {
+        numericTelegramUserId = telegramUserId;
+        // Convert to bigint: number -> string -> bigint
+        telegramUserIdBigInt = BigInt(numericTelegramUserId);
+      } else {
+        throw new Error(`Invalid type: ${typeof telegramUserId}`);
+      }
+    } catch (conversionError: any) {
       console.error(`[payments/start:${debugId}] VALIDATION_ERROR_INVALID_TYPE`, {
         error: "Invalid telegramUserId type",
         received: telegramUserId,
-        type: typeof telegramUserId
+        type: typeof telegramUserId,
+        conversionError: conversionError.message
       });
       return NextResponse.json(
         {
@@ -225,6 +238,7 @@ export async function POST(req: Request) {
     console.log(`[payments/start:${debugId}] TELEGRAM_USER_ID_VALIDATED`, {
       requestId: debugId,
       telegramUserId: numericTelegramUserId,
+      telegramUserIdBigInt: telegramUserIdBigInt.toString(),
       timestamp: new Date().toISOString()
     });
     

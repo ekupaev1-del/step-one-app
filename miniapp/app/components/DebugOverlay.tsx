@@ -21,11 +21,19 @@ interface ErrorInfo {
   suspectedCause?: string;
 }
 
+interface PaymentDebugInfo {
+  telegramUserId?: number | null;
+  requestPayload?: any;
+  response?: any;
+  timestamp?: string;
+}
+
 export default function DebugOverlay() {
   const [isEnabled, setIsEnabled] = useState(false);
   const [errors, setErrors] = useState<ErrorInfo[]>([]);
   const [activeTab, setActiveTab] = useState<"summary" | "raw">("summary");
   const [copied, setCopied] = useState<string | null>(null);
+  const [paymentDebug, setPaymentDebug] = useState<PaymentDebugInfo | null>(null);
 
   // Check if debug mode is enabled
   useEffect(() => {
@@ -44,6 +52,55 @@ export default function DebugOverlay() {
       setIsEnabled(false);
     }
   }, []);
+
+  // Read payment debug info from window/sessionStorage
+  useEffect(() => {
+    if (!isEnabled || typeof window === "undefined") return;
+
+    const updatePaymentDebug = () => {
+      try {
+        // Get telegramUserId from Telegram WebApp
+        const tg = (window as any).Telegram?.WebApp;
+        const telegramUserId = tg?.initDataUnsafe?.user?.id || null;
+
+        // Get request/response from sessionStorage (set by profile page)
+        let requestPayload = null;
+        let response = null;
+
+        try {
+          const storedRequest = sessionStorage.getItem("debug_last_request_payload");
+          if (storedRequest) {
+            requestPayload = JSON.parse(storedRequest);
+          }
+        } catch (e) {
+          // Ignore
+        }
+
+        try {
+          const storedResponse = sessionStorage.getItem("debug_last_response");
+          if (storedResponse) {
+            response = JSON.parse(storedResponse);
+          }
+        } catch (e) {
+          // Ignore
+        }
+
+        setPaymentDebug({
+          telegramUserId,
+          requestPayload,
+          response,
+          timestamp: new Date().toISOString()
+        });
+      } catch (e) {
+        // Ignore
+      }
+    };
+
+    updatePaymentDebug();
+    // Update every 500ms to catch changes
+    const interval = setInterval(updatePaymentDebug, 500);
+    return () => clearInterval(interval);
+  }, [isEnabled]);
 
   // Capture ErrorBoundary errors
   useEffect(() => {
@@ -306,6 +363,16 @@ export default function DebugOverlay() {
           >
             Raw JSON
           </button>
+          <button
+            onClick={() => setActiveTab("payment")}
+            className={`flex-1 px-2 py-1 text-xs font-medium ${
+              activeTab === "payment"
+                ? "text-red-800 border-b-2 border-red-800"
+                : "text-red-600"
+            }`}
+          >
+            Payment
+          </button>
         </div>
 
         {activeTab === "summary" ? (
@@ -356,6 +423,44 @@ export default function DebugOverlay() {
                 </div>
               </>
             ) : null}
+          </div>
+        ) : activeTab === "payment" ? (
+          <div className="space-y-2 text-xs">
+            <div>
+              <span className="font-semibold">Telegram User ID:</span> {paymentDebug?.telegramUserId ? String(paymentDebug.telegramUserId) : "Not available"}
+            </div>
+            {paymentDebug?.requestPayload && (
+              <>
+                <div className="mt-2">
+                  <span className="font-semibold">Request Payload:</span>
+                  <div className="flex gap-2 mt-1">
+                    <button
+                      onClick={() => copyToClipboard(safeStringify(paymentDebug.requestPayload, 2), "request")}
+                      className="px-2 py-1 bg-red-200 text-red-900 rounded text-xs"
+                    >
+                      {copied === "request" ? "✓ Copied" : "Copy Request"}
+                    </button>
+                  </div>
+                  <pre className="bg-white p-2 rounded text-xs overflow-auto max-h-32 font-mono mt-1">
+                    {safeStringify(paymentDebug.requestPayload, 2)}
+                  </pre>
+                </div>
+              </>
+            )}
+            {paymentDebug?.response && (
+              <div className="mt-2">
+                <span className="font-semibold">Response:</span>
+                <div className="text-xs mt-1">
+                  Status: {paymentDebug.response.status} ({paymentDebug.response.ok ? "OK" : "Error"})
+                </div>
+                <pre className="bg-white p-2 rounded text-xs overflow-auto max-h-32 font-mono mt-1">
+                  {safeStringify(paymentDebug.response.data, 2)}
+                </pre>
+              </div>
+            )}
+            {!paymentDebug?.requestPayload && !paymentDebug?.response && (
+              <div className="text-gray-500">No payment debug data available. Try making a payment request.</div>
+            )}
           </div>
         ) : (
           <div className="space-y-2">
