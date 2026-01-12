@@ -169,8 +169,7 @@ export async function POST(req: Request) {
       );
     }
     
-    // Normalize to bigint (safe conversion: number -> string -> bigint)
-    let telegramUserIdBigInt: bigint;
+    // Normalize to number (safe conversion for DB bigint column)
     let numericTelegramUserId: number;
     
     try {
@@ -180,12 +179,8 @@ export async function POST(req: Request) {
         if (isNaN(numericTelegramUserId)) {
           throw new Error("Invalid numeric string");
         }
-        // Convert to bigint: number -> string -> bigint
-        telegramUserIdBigInt = BigInt(numericTelegramUserId);
       } else if (typeof telegramUserId === 'number') {
         numericTelegramUserId = telegramUserId;
-        // Convert to bigint: number -> string -> bigint
-        telegramUserIdBigInt = BigInt(numericTelegramUserId);
       } else {
         throw new Error(`Invalid type: ${typeof telegramUserId}`);
       }
@@ -238,7 +233,6 @@ export async function POST(req: Request) {
     console.log(`[payments/start:${debugId}] TELEGRAM_USER_ID_VALIDATED`, {
       requestId: debugId,
       telegramUserId: numericTelegramUserId,
-      telegramUserIdBigInt: telegramUserIdBigInt.toString(),
       timestamp: new Date().toISOString()
     });
     
