@@ -55,6 +55,7 @@ async function attemptCharge(
       invoiceId,
       description,
       userId.toString(),
+      "month", // planCode
       false, // isTest
       false // includeDebug
     );
