@@ -7,7 +7,11 @@
 
 import { NextResponse } from "next/server";
 import { createServerSupabaseClient } from "../../../../lib/supabaseAdmin";
-import { verifyReturnSignature } from "../../../../lib/paymentProvider";
+import {
+  verifyRobokassaReturn,
+  getProviderConfig,
+  PaymentProvider,
+} from "../../../../lib/paymentProviders";
 
 export const dynamic = "force-dynamic";
 
@@ -39,30 +43,27 @@ export async function GET(req: Request) {
       return NextResponse.redirect(new URL("/subscription?error=missing_fields", req.url));
     }
 
-    // Get payment provider config
-    const password1 = process.env.ROBO_PASSWORD1;
-    if (!password1) {
-      console.error(`[payments/return:${requestId}] ROBO_PASSWORD1 not configured`);
+    // Get provider config (assume robokassa for now)
+    const provider: PaymentProvider = "robokassa";
+    const config = getProviderConfig(provider);
+
+    if (!config) {
+      console.error(`[payments/return:${requestId}] Provider not configured`);
       return NextResponse.redirect(new URL("/subscription?error=config_error", req.url));
     }
 
     // Verify signature (use password1 for return URL)
-    const isValid = verifyReturnSignature(
-      {
-        merchantLogin: process.env.ROBO_MERCHANT_LOGIN || "",
-        password1,
-        password2: process.env.ROBO_PASSWORD2 || "",
-        baseUrl: "",
-      },
-      {
+    let isValid = false;
+    if (provider === "robokassa") {
+      isValid = verifyRobokassaReturn(config, {
         OutSum,
         InvId,
         SignatureValue,
         Shp_userId,
         Shp_planCode,
         Shp_method,
-      }
-    );
+      });
+    }
 
     if (!isValid) {
       console.error(`[payments/return:${requestId}] Invalid signature`);
@@ -101,20 +102,42 @@ export async function GET(req: Request) {
       } else {
         console.log(`[payments/return:${requestId}] Payment marked as paid: ${payment.id}`);
 
+        // Calculate subscription dates
+        const now = new Date();
+        let activeUntil: Date;
+        let nextChargeAt: Date | null = null;
+
+        if (payment.plan_code === "trial_3d_then_199") {
+          if (payment.amount.toString() === "1.00") {
+            // Trial: 3 days
+            activeUntil = new Date(now);
+            activeUntil.setDate(activeUntil.getDate() + 3);
+            nextChargeAt = new Date(activeUntil);
+          } else {
+            // Regular monthly: 30 days
+            activeUntil = new Date(now);
+            activeUntil.setDate(activeUntil.getDate() + 30);
+            nextChargeAt = new Date(activeUntil);
+          }
+        } else {
+          activeUntil = new Date(now);
+          activeUntil.setDate(activeUntil.getDate() + 30);
+          nextChargeAt = new Date(activeUntil);
+        }
+
         // Update or create subscription
         const userId = payment.user_id;
-        const planCode = payment.plan_code;
-        const activeUntil = new Date();
-        activeUntil.setDate(activeUntil.getDate() + 30); // 30 days subscription
-
         await supabase
           .from("subscriptions")
           .upsert(
             {
               user_id: userId,
-              plan_code: planCode,
               active_until: activeUntil.toISOString(),
-              is_active: true,
+              next_charge_at: nextChargeAt?.toISOString() || null,
+              status: "active",
+              provider: provider,
+              plan_code: payment.plan_code,
+              updated_at: new Date().toISOString(),
             },
             { onConflict: "user_id" }
           );

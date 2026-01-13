@@ -8,7 +8,9 @@ import AppLayout from "../components/AppLayout";
 
 interface SubscriptionStatus {
   isActive: boolean;
+  status: string;
   activeUntil: string | null;
+  nextChargeAt: string | null;
   planCode: string | null;
 }
 
@@ -59,7 +61,7 @@ function SubscriptionPageContent() {
       setError(null);
 
       try {
-        const response = await fetch(`/api/subscription/me?userId=${userId}`);
+        const response = await fetch(`/api/subscription/status?userId=${userId}`);
         const data = await response.json();
 
         if (!response.ok || !data.ok) {
@@ -132,20 +134,20 @@ function SubscriptionPageContent() {
         addDebugLog(`Telegram user ID получен: ${telegramUserId}`);
       } else {
         addDebugLog("Telegram WebApp не доступен, будет использован fallback");
+        telegramUserId = `web:${userId}`;
       }
     }
 
     try {
       const requestPayload = {
-        method: paymentMethod,
-        planCode: "monthly_199",
-        amount: 199,
-        currency: "RUB",
         userId,
-        ...(telegramUserId && { telegramUserId }),
+        telegramUserId: telegramUserId || `web:${userId}`,
+        method: paymentMethod,
+        planCode: "trial_3d_then_199",
+        returnPath: "/subscription",
       };
 
-      addDebugLog(`Отправка запроса: ${JSON.stringify(requestPayload)}`);
+      addDebugLog(`Отправка запроса: ${JSON.stringify({ ...requestPayload, telegramUserId: "***" })}`);
 
       const response = await fetch("/api/payments/start", {
         method: "POST",
@@ -166,11 +168,31 @@ function SubscriptionPageContent() {
       }
 
       // Store debug data
-      setDebugData({
-        request: requestPayload,
+      const debugInfo = {
+        request: { ...requestPayload, telegramUserId: "***" },
         response: data,
         timestamp: new Date().toISOString(),
-      });
+        telegramWebApp: typeof window !== "undefined" ? {
+          available: !!(window as any).Telegram?.WebApp,
+          version: (window as any).Telegram?.WebApp?.version,
+          platform: (window as any).Telegram?.WebApp?.platform,
+        } : null,
+        envVars: {
+          hasRoboLogin: !!process.env.ROBO_MERCHANT_LOGIN,
+          hasRoboPassword1: !!process.env.ROBO_PASSWORD1,
+          hasRoboPassword2: !!process.env.ROBO_PASSWORD2,
+        },
+      };
+      setDebugData(debugInfo);
+
+      // Store in sessionStorage
+      try {
+        if (typeof window !== "undefined" && window.sessionStorage) {
+          sessionStorage.setItem("subscription_debug", JSON.stringify(debugInfo));
+        }
+      } catch (e) {
+        // Ignore
+      }
 
       if (!response.ok || !data.ok) {
         const errorMsg = data.error || "Не удалось начать оплату";
@@ -217,8 +239,8 @@ function SubscriptionPageContent() {
     if (!iso) return "—";
     const d = new Date(iso);
     return d.toLocaleDateString("ru-RU", {
-      day: "numeric",
-      month: "long",
+      day: "2-digit",
+      month: "2-digit",
       year: "numeric",
     });
   };
@@ -254,26 +276,36 @@ function SubscriptionPageContent() {
         <div className="max-w-md mx-auto">
           {/* Header */}
           <div className="mb-6 text-center">
-            <h1 className="text-3xl font-bold text-textPrimary">Subscription</h1>
+            <h1 className="text-3xl font-bold text-textPrimary">Подписка</h1>
           </div>
 
           {/* Subscription Status Card */}
           <div className="bg-white rounded-2xl shadow-soft p-6 mb-6">
-            <div className="text-center">
+            <h2 className="text-lg font-semibold text-textPrimary mb-4">Статус</h2>
+            <div className="space-y-3">
               {subscription?.isActive && subscription.activeUntil ? (
                 <>
-                  <div className="text-sm text-textSecondary mb-2">Active until</div>
-                  <div className="text-2xl font-semibold text-textPrimary">
-                    {formatDate(subscription.activeUntil)}
+                  <div>
+                    <div className="text-sm text-textSecondary mb-1">Активна до:</div>
+                    <div className="text-xl font-semibold text-textPrimary">
+                      {formatDate(subscription.activeUntil)}
+                    </div>
                   </div>
+                  {subscription.nextChargeAt && (
+                    <div>
+                      <div className="text-sm text-textSecondary mb-1">Следующее списание:</div>
+                      <div className="text-lg font-medium text-textPrimary">
+                        {formatDate(subscription.nextChargeAt)} (199 ₽)
+                      </div>
+                    </div>
+                  )}
                 </>
               ) : (
-                <>
-                  <div className="text-sm text-textSecondary mb-2">Status</div>
-                  <div className="text-2xl font-semibold text-textPrimary">
-                    No active subscription
+                <div>
+                  <div className="text-lg font-medium text-textPrimary">
+                    Активной подписки нет
                   </div>
-                </>
+                </div>
               )}
             </div>
           </div>
@@ -281,7 +313,7 @@ function SubscriptionPageContent() {
           {/* Payment Method Selection */}
           <div className="bg-white rounded-2xl shadow-soft p-6 mb-6">
             <h2 className="text-lg font-semibold text-textPrimary mb-4">
-              Choose payment method
+              Выберите способ оплаты
             </h2>
 
             <div className="space-y-3 mb-6">
@@ -300,7 +332,7 @@ function SubscriptionPageContent() {
                   onChange={(e) => setPaymentMethod(e.target.value as "sbp" | "card")}
                   className="mr-3 w-5 h-5"
                 />
-                <span className="text-textPrimary font-medium">SBP</span>
+                <span className="text-textPrimary font-medium">СБП</span>
               </label>
 
               {/* Card Option */}
@@ -318,7 +350,7 @@ function SubscriptionPageContent() {
                   onChange={(e) => setPaymentMethod(e.target.value as "sbp" | "card")}
                   className="mr-3 w-5 h-5"
                 />
-                <span className="text-textPrimary font-medium">Card</span>
+                <span className="text-textPrimary font-medium">Карта</span>
               </label>
             </div>
 
@@ -332,7 +364,7 @@ function SubscriptionPageContent() {
                   className="mt-1 mr-3 w-5 h-5"
                 />
                 <span className="text-sm text-textPrimary">
-                  I agree to monthly recurring charges
+                  Согласен на ежемесячное списание
                 </span>
               </label>
 
@@ -344,13 +376,13 @@ function SubscriptionPageContent() {
                   className="mt-1 mr-3 w-5 h-5"
                 />
                 <span className="text-sm text-textPrimary">
-                  I agree with the{" "}
+                  Согласен с{" "}
                   <Link
                     href={`/privacy?id=${userId || ""}`}
                     target="_blank"
                     className="text-accent underline"
                   >
-                    Privacy Policy
+                    Политикой конфиденциальности
                   </Link>
                 </span>
               </label>
@@ -372,51 +404,51 @@ function SubscriptionPageContent() {
               {processing ? (
                 <>
                   <span className="inline-block w-5 h-5 border-2 border-white border-t-transparent rounded-full animate-spin"></span>
-                  <span>Processing...</span>
+                  <span>Обработка...</span>
                 </>
               ) : (
-                "Pay"
+                "Оплатить"
               )}
             </button>
 
             {/* Debug Toggle */}
             <button
               onClick={() => setShowDebug(!showDebug)}
-              className="mt-4 w-full text-xs text-textSecondary hover:text-textPrimary"
+              className="mt-4 w-full text-xs text-textSecondary hover:text-textPrimary text-center"
             >
-              {showDebug ? "Hide" : "Show"} Debug Info
+              {showDebug ? "Скрыть отладку" : "Показать отладку"}
             </button>
 
             {/* Debug Drawer */}
             {showDebug && (
               <div className="mt-4 p-4 bg-blue-50 border border-blue-200 rounded-lg">
-                <h3 className="text-sm font-semibold text-blue-900 mb-3">Debug Information</h3>
+                <h3 className="text-sm font-semibold text-blue-900 mb-3">Отладочная информация</h3>
                 
                 {debugData && (
                   <div className="mb-4">
-                    <div className="text-xs font-semibold text-blue-900 mb-2">Request/Response</div>
+                    <div className="text-xs font-semibold text-blue-900 mb-2">Запрос/Ответ</div>
                     <pre className="text-xs font-mono text-gray-700 whitespace-pre-wrap break-all max-h-40 overflow-y-auto bg-white p-2 rounded border">
                       {JSON.stringify(debugData, null, 2)}
                     </pre>
                     <button
                       onClick={() => {
                         navigator.clipboard.writeText(JSON.stringify(debugData, null, 2));
-                        addDebugLog("JSON copied to clipboard");
+                        addDebugLog("JSON скопирован в буфер обмена");
                       }}
                       className="mt-2 px-3 py-1 bg-blue-600 text-white text-xs rounded hover:bg-blue-700"
                     >
-                      Copy JSON
+                      Копировать JSON
                     </button>
                   </div>
                 )}
 
                 <div>
                   <div className="text-xs font-semibold text-blue-900 mb-2">
-                    Debug Log ({debugLogRef.current.length} entries)
+                    Лог отладки ({debugLogRef.current.length} записей)
                   </div>
                   <div className="text-xs font-mono text-gray-700 max-h-40 overflow-y-auto bg-white p-2 rounded border space-y-1">
                     {debugLogRef.current.length === 0 ? (
-                      <div className="text-gray-500">No log entries yet</div>
+                      <div className="text-gray-500">Нет записей в логе</div>
                     ) : (
                       debugLogRef.current.map((entry, idx) => (
                         <div key={idx} className="break-all">{entry}</div>

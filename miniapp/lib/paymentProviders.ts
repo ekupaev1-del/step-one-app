@@ -1,37 +1,45 @@
 /**
- * Payment Provider Integration (Robokassa)
- * Handles payment URL generation for SBP and Card methods
+ * Payment Provider Abstraction
+ * Supports multiple providers: Robokassa, YooKassa, etc.
  */
 
 import { createHash } from "crypto";
 
+export type PaymentMethod = "sbp" | "card";
+export type PaymentProvider = "robokassa" | "yookassa" | "cloudpayments";
+
 export interface PaymentProviderConfig {
-  merchantLogin: string;
-  password1: string;
-  password2: string;
+  provider: PaymentProvider;
+  merchantLogin?: string;
+  shopId?: string;
+  password1?: string;
+  password2?: string;
+  secretKey?: string;
+  publicKey?: string;
   baseUrl: string;
   isTest?: boolean;
 }
 
 export interface PaymentRequest {
   amount: string; // e.g., "199.00"
-  invId: string; // Invoice ID (bigint as string)
+  invId: string; // Invoice ID
   description: string;
   telegramUserId: string;
-  method: "sbp" | "card";
+  method: PaymentMethod;
   planCode: string;
+  returnUrl: string;
 }
 
 export interface PaymentResponse {
   paymentUrl: string;
   invId: string;
+  provider: PaymentProvider;
 }
 
 /**
- * Calculate MD5 signature for Robokassa
- * Returns lowercase hex string (32 characters)
+ * Calculate MD5 signature
  */
-function calculateSignature(...parts: string[]): string {
+function calculateMD5Signature(...parts: string[]): string {
   const signatureString = parts.join(":");
   const hash = createHash("md5").update(signatureString).digest("hex");
   return hash.toLowerCase();
@@ -40,21 +48,24 @@ function calculateSignature(...parts: string[]): string {
 /**
  * Generate Robokassa payment URL
  */
-export function generatePaymentUrl(
+function generateRobokassaUrl(
   config: PaymentProviderConfig,
   request: PaymentRequest
 ): PaymentResponse {
-  const { merchantLogin, password1, baseUrl, isTest = false } = config;
+  const { merchantLogin, password1, isTest = false } = config;
   const { amount, invId, description, telegramUserId, method, planCode } = request;
 
-  // Robokassa base URL
+  if (!merchantLogin || !password1) {
+    throw new Error("Robokassa credentials not configured");
+  }
+
   const robokassaBaseUrl = isTest
     ? "https://auth.robokassa.ru/Merchant/Index.aspx"
     : "https://auth.robokassa.ru/Merchant/Index.aspx";
 
-  // Build signature string: MerchantLogin:OutSum:InvId:Password1
+  // Build signature: MerchantLogin:OutSum:InvId:Password1
   const signatureParts = [merchantLogin, amount, invId, password1];
-  const signatureValue = calculateSignature(...signatureParts);
+  const signatureValue = calculateMD5Signature(...signatureParts);
 
   // Build payment URL parameters
   const params = new URLSearchParams({
@@ -79,13 +90,43 @@ export function generatePaymentUrl(
   return {
     paymentUrl,
     invId,
+    provider: "robokassa",
   };
+}
+
+/**
+ * Generate YooKassa payment URL (stub - requires credentials)
+ */
+function generateYooKassaUrl(
+  config: PaymentProviderConfig,
+  request: PaymentRequest
+): PaymentResponse {
+  // YooKassa requires API calls to create payment
+  // This is a stub - implement when credentials are available
+  throw new Error("YooKassa not yet implemented - requires API credentials");
+}
+
+/**
+ * Generate payment URL based on provider
+ */
+export function generatePaymentUrl(
+  config: PaymentProviderConfig,
+  request: PaymentRequest
+): PaymentResponse {
+  switch (config.provider) {
+    case "robokassa":
+      return generateRobokassaUrl(config, request);
+    case "yookassa":
+      return generateYooKassaUrl(config, request);
+    default:
+      throw new Error(`Unsupported payment provider: ${config.provider}`);
+  }
 }
 
 /**
  * Verify Robokassa callback signature (server-to-server, uses password2)
  */
-export function verifyCallbackSignature(
+export function verifyRobokassaCallback(
   config: PaymentProviderConfig,
   params: {
     OutSum: string;
@@ -97,9 +138,11 @@ export function verifyCallbackSignature(
   }
 ): boolean {
   const { password2 } = config;
+  if (!password2) return false;
+
   const { OutSum, InvId, SignatureValue, Shp_userId, Shp_planCode, Shp_method } = params;
 
-  // Build signature string: OutSum:InvId:Password2:Shp_*
+  // Build signature: OutSum:InvId:Password2:Shp_*
   const signatureParts = [OutSum, InvId, password2];
 
   // Add Shp_ parameters in alphabetical order
@@ -110,14 +153,14 @@ export function verifyCallbackSignature(
   shpParams.sort();
   signatureParts.push(...shpParams);
 
-  const expectedSignature = calculateSignature(...signatureParts);
+  const expectedSignature = calculateMD5Signature(...signatureParts);
   return expectedSignature.toLowerCase() === SignatureValue.toLowerCase();
 }
 
 /**
  * Verify Robokassa return URL signature (user redirect, uses password1)
  */
-export function verifyReturnSignature(
+export function verifyRobokassaReturn(
   config: PaymentProviderConfig,
   params: {
     OutSum: string;
@@ -129,9 +172,11 @@ export function verifyReturnSignature(
   }
 ): boolean {
   const { password1 } = config;
+  if (!password1) return false;
+
   const { OutSum, InvId, SignatureValue, Shp_userId, Shp_planCode, Shp_method } = params;
 
-  // Build signature string: OutSum:InvId:Password1:Shp_*
+  // Build signature: OutSum:InvId:Password1:Shp_*
   const signatureParts = [OutSum, InvId, password1];
 
   // Add Shp_ parameters in alphabetical order
@@ -142,16 +187,50 @@ export function verifyReturnSignature(
   shpParams.sort();
   signatureParts.push(...shpParams);
 
-  const expectedSignature = calculateSignature(...signatureParts);
+  const expectedSignature = calculateMD5Signature(...signatureParts);
   return expectedSignature.toLowerCase() === SignatureValue.toLowerCase();
 }
 
 /**
- * Generate unique invoice ID (timestamp-based)
+ * Generate unique invoice ID
  */
 export function generateInvoiceId(): string {
-  // Use timestamp in milliseconds + random component for uniqueness
   const timestamp = Date.now();
-  const random = Math.floor(Math.random() * 1000);
+  const random = Math.floor(Math.random() * 10000);
   return `${timestamp}${random}`;
+}
+
+/**
+ * Get provider config from environment variables
+ */
+export function getProviderConfig(provider: PaymentProvider): PaymentProviderConfig | null {
+  const baseUrl = process.env.APP_BASE_URL || process.env.NEXT_PUBLIC_VERCEL_URL || "";
+
+  switch (provider) {
+    case "robokassa":
+      const merchantLogin = process.env.ROBO_MERCHANT_LOGIN;
+      const password1 = process.env.ROBO_PASSWORD1;
+      const password2 = process.env.ROBO_PASSWORD2;
+      const isTest = process.env.ROBO_IS_TEST === "true";
+
+      if (!merchantLogin || !password1 || !password2) {
+        return null;
+      }
+
+      return {
+        provider: "robokassa",
+        merchantLogin,
+        password1,
+        password2,
+        baseUrl,
+        isTest,
+      };
+
+    case "yookassa":
+      // Stub - implement when credentials available
+      return null;
+
+    default:
+      return null;
+  }
 }

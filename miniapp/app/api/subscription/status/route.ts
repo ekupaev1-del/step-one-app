@@ -1,6 +1,6 @@
 /**
- * Get User Subscription Status
- * GET /api/subscription/me?userId=123
+ * Get Subscription Status
+ * GET /api/subscription/status?userId=123
  */
 
 import { NextResponse } from "next/server";
@@ -15,7 +15,7 @@ export async function GET(req: Request) {
 
     if (!userId) {
       return NextResponse.json(
-        { ok: false, error: "userId is required" },
+        { ok: false, error: "Не указан ID пользователя" },
         { status: 400 }
       );
     }
@@ -23,7 +23,7 @@ export async function GET(req: Request) {
     const numericId = Number(userId);
     if (!Number.isFinite(numericId) || numericId <= 0) {
       return NextResponse.json(
-        { ok: false, error: "Invalid userId" },
+        { ok: false, error: "Неверный ID пользователя" },
         { status: 400 }
       );
     }
@@ -38,9 +38,9 @@ export async function GET(req: Request) {
       .maybeSingle();
 
     if (error) {
-      console.error("[subscription/me] Database error:", error);
+      console.error("[subscription/status] Database error:", error);
       return NextResponse.json(
-        { ok: false, error: "Database error" },
+        { ok: false, error: "Ошибка базы данных" },
         { status: 500 }
       );
     }
@@ -48,21 +48,29 @@ export async function GET(req: Request) {
     // Check if subscription is still active (not expired)
     let isActive = false;
     let activeUntil: string | null = null;
+    let nextChargeAt: string | null = null;
+    let status: string = "inactive";
 
     if (subscription) {
       activeUntil = subscription.active_until;
-      if (subscription.is_active && activeUntil) {
+      nextChargeAt = subscription.next_charge_at;
+      status = subscription.status || "inactive";
+
+      if (status === "active" && activeUntil) {
         const expiryDate = new Date(activeUntil);
         const now = new Date();
         isActive = expiryDate > now;
 
         // Auto-update if expired
-        if (!isActive && subscription.is_active) {
+        if (!isActive && status === "active") {
           await supabase
             .from("subscriptions")
-            .update({ is_active: false })
+            .update({ status: "past_due" })
             .eq("user_id", numericId);
+          status = "past_due";
         }
+      } else {
+        isActive = false;
       }
     }
 
@@ -70,14 +78,16 @@ export async function GET(req: Request) {
       ok: true,
       subscription: {
         isActive,
+        status,
         activeUntil,
+        nextChargeAt,
         planCode: subscription?.plan_code || null,
       },
     });
   } catch (error: any) {
-    console.error("[subscription/me] Unexpected error:", error);
+    console.error("[subscription/status] Unexpected error:", error);
     return NextResponse.json(
-      { ok: false, error: error.message || "Internal server error" },
+      { ok: false, error: error.message || "Внутренняя ошибка сервера" },
       { status: 500 }
     );
   }

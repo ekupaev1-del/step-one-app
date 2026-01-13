@@ -159,7 +159,7 @@ function AppNavigation() {
                 fontWeight: isSubscriptionActive ? 600 : 500
               }}
             >
-              Subscription
+              Подписка
             </span>
             {isSubscriptionActive && (
               <div 

@@ -2,7 +2,7 @@
  * Payment Start Endpoint
  * POST /api/payments/start
  * 
- * Creates a payment record and returns payment URL for redirect
+ * Creates a payment record and returns payment URL
  */
 
 import { NextResponse } from "next/server";
@@ -10,25 +10,30 @@ import { createServerSupabaseClient } from "../../../../lib/supabaseAdmin";
 import {
   generatePaymentUrl,
   generateInvoiceId,
+  getProviderConfig,
   PaymentRequest,
-} from "../../../../lib/paymentProvider";
+  PaymentProvider,
+} from "../../../../lib/paymentProviders";
 
 export const dynamic = "force-dynamic";
 
 interface StartPaymentRequest {
+  userId: number;
+  telegramUserId: string;
   method: "sbp" | "card";
   planCode: string;
-  amount: number;
-  currency: string;
-  userId?: number;
-  telegramUserId?: string; // Optional: can be sent from client
+  returnPath?: string;
 }
 
 /**
- * Extract Telegram user ID from initData or request
+ * Get Telegram user ID from request
  */
-function getTelegramUserId(req: Request): string | null {
-  // Try to get from Telegram WebApp initData
+function getTelegramUserId(req: Request, body: StartPaymentRequest): string {
+  // Priority: 1) From request body, 2) From initData header, 3) Fallback
+  if (body.telegramUserId) {
+    return body.telegramUserId;
+  }
+
   const initDataHeader = req.headers.get("x-telegram-init-data");
   if (initDataHeader) {
     try {
@@ -36,16 +41,25 @@ function getTelegramUserId(req: Request): string | null {
       const userParam = params.get("user");
       if (userParam) {
         const user = JSON.parse(decodeURIComponent(userParam));
-        return user.id?.toString() || null;
+        return user.id?.toString() || `web:${body.userId}`;
       }
     } catch (e) {
       console.error("[payments/start] Failed to parse initData:", e);
     }
   }
 
-  // Try to get from client-side (if available in request body)
-  // This will be handled by reading the request body
-  return null;
+  return `web:${body.userId}`;
+}
+
+/**
+ * Determine payment amount based on plan code
+ */
+function getPaymentAmount(planCode: string, subscriptionExists: boolean): string {
+  // Trial logic: first payment is 1 RUB for 3 days, then 199 RUB monthly
+  if (planCode === "trial_3d_then_199") {
+    return subscriptionExists ? "199.00" : "1.00";
+  }
+  return "199.00";
 }
 
 export async function POST(req: Request) {
@@ -60,133 +74,114 @@ export async function POST(req: Request) {
     } catch (e) {
       console.error(`[payments/start:${requestId}] JSON parse error:`, e);
       return NextResponse.json(
-        { ok: false, error: "Invalid JSON in request body" },
+        { ok: false, error: "Неверный формат запроса", requestId },
         { status: 400 }
       );
     }
 
-    const { method, planCode, amount, currency, userId, telegramUserId: clientTelegramUserId } = body;
+    const { userId, method, planCode } = body;
 
     // Validate required fields
+    if (!userId || typeof userId !== "number" || userId <= 0) {
+      return NextResponse.json(
+        { ok: false, error: "Не указан ID пользователя", requestId },
+        { status: 400 }
+      );
+    }
+
     if (!method || (method !== "sbp" && method !== "card")) {
       return NextResponse.json(
-        { ok: false, error: "method must be 'sbp' or 'card'" },
+        { ok: false, error: "Неверный способ оплаты", requestId },
         { status: 400 }
       );
     }
 
     if (!planCode || typeof planCode !== "string") {
       return NextResponse.json(
-        { ok: false, error: "planCode is required" },
-        { status: 400 }
-      );
-    }
-
-    if (!amount || typeof amount !== "number" || amount <= 0) {
-      return NextResponse.json(
-        { ok: false, error: "amount must be a positive number" },
-        { status: 400 }
-      );
-    }
-
-    if (!currency || currency !== "RUB") {
-      return NextResponse.json(
-        { ok: false, error: "currency must be 'RUB'" },
-        { status: 400 }
-      );
-    }
-
-    // Get user ID from request or query params
-    let finalUserId: number | null = userId || null;
-    if (!finalUserId) {
-      const url = new URL(req.url);
-      const userIdParam = url.searchParams.get("userId") || url.searchParams.get("id");
-      if (userIdParam) {
-        finalUserId = Number(userIdParam);
-        if (!Number.isFinite(finalUserId) || finalUserId <= 0) {
-          finalUserId = null;
-        }
-      }
-    }
-
-    if (!finalUserId) {
-      return NextResponse.json(
-        { ok: false, error: "userId is required" },
+        { ok: false, error: "Не указан код тарифа", requestId },
         { status: 400 }
       );
     }
 
     // Get Telegram user ID
-    // Priority: 1) From request body, 2) From initData header, 3) Fallback
-    let telegramUserId = clientTelegramUserId || getTelegramUserId(req);
-    if (!telegramUserId) {
-      // Fallback: use web:<userId> format for browser access
-      telegramUserId = `web:${finalUserId}`;
-      console.log(`[payments/start:${requestId}] Using fallback telegramUserId: ${telegramUserId}`);
-    }
-
-    console.log(`[payments/start:${requestId}] userId: ${finalUserId}, telegramUserId: ${telegramUserId}, method: ${method}`);
+    const telegramUserId = getTelegramUserId(req, body);
+    console.log(`[payments/start:${requestId}] userId: ${userId}, telegramUserId: ${telegramUserId}, method: ${method}`);
 
     // Initialize Supabase
     const supabase = createServerSupabaseClient();
 
+    // Check if user has existing subscription (for trial logic)
+    const { data: existingSubscription } = await supabase
+      .from("subscriptions")
+      .select("user_id")
+      .eq("user_id", userId)
+      .maybeSingle();
+
+    // Determine payment amount
+    const amount = getPaymentAmount(planCode, !!existingSubscription);
+    console.log(`[payments/start:${requestId}] Payment amount: ${amount} RUB`);
+
     // Generate invoice ID
     const invId = generateInvoiceId();
-    const invIdNumeric = BigInt(invId);
-
     console.log(`[payments/start:${requestId}] Generated invId: ${invId}`);
 
-    // Get payment provider config from env
-    const merchantLogin = process.env.ROBO_MERCHANT_LOGIN;
-    const password1 = process.env.ROBO_PASSWORD1;
-    const password2 = process.env.ROBO_PASSWORD2;
-    const baseUrl = process.env.APP_BASE_URL || process.env.NEXT_PUBLIC_VERCEL_URL || "";
-    const isTest = process.env.ROBO_IS_TEST === "true";
+    // Get provider config (try robokassa first, fallback to others)
+    let provider: PaymentProvider = "robokassa";
+    let config = getProviderConfig("robokassa");
 
-    if (!merchantLogin || !password1 || !password2) {
-      console.error(`[payments/start:${requestId}] Missing payment provider credentials`);
+    if (!config) {
+      // Try other providers if robokassa not configured
+      // For now, return error if no provider configured
+      console.error(`[payments/start:${requestId}] No payment provider configured`);
       return NextResponse.json(
-        { ok: false, error: "Payment provider not configured" },
+        { ok: false, error: "Платежный провайдер не настроен", requestId },
         { status: 500 }
       );
     }
 
+    // Build return URL
+    const baseUrl = config.baseUrl || process.env.APP_BASE_URL || "";
+    const returnPath = body.returnPath || "/subscription";
+    const returnUrl = `${baseUrl}${returnPath}?id=${userId}`;
+
     // Generate payment URL
     const paymentRequest: PaymentRequest = {
-      amount: amount.toFixed(2),
+      amount,
       invId,
       description: `Подписка ${planCode}`,
       telegramUserId,
       method,
       planCode,
+      returnUrl,
     };
 
-    const { paymentUrl } = generatePaymentUrl(
-      {
-        merchantLogin,
-        password1,
-        password2,
-        baseUrl,
-        isTest,
-      },
-      paymentRequest
-    );
+    let paymentResponse;
+    try {
+      paymentResponse = generatePaymentUrl(config, paymentRequest);
+    } catch (error: any) {
+      console.error(`[payments/start:${requestId}] Failed to generate payment URL:`, error);
+      return NextResponse.json(
+        { ok: false, error: `Ошибка генерации ссылки на оплату: ${error.message}`, requestId },
+        { status: 500 }
+      );
+    }
 
-    console.log(`[payments/start:${requestId}] Generated payment URL: ${paymentUrl.substring(0, 100)}...`);
+    console.log(`[payments/start:${requestId}] Generated payment URL: ${paymentResponse.paymentUrl.substring(0, 100)}...`);
 
     // Create payment record in database BEFORE returning URL
     const { data: paymentRecord, error: insertError } = await supabase
       .from("payments")
       .insert({
-        user_id: finalUserId,
+        user_id: userId,
         telegram_user_id: telegramUserId,
         plan_code: planCode,
-        amount: amount.toFixed(2),
+        amount: amount,
         currency: "RUB",
+        method: method,
+        provider: provider,
         inv_id: invId,
-        provider: "robokassa",
         status: "created",
-        payment_url: paymentUrl,
+        payment_url: paymentResponse.paymentUrl,
       })
       .select()
       .single();
@@ -196,8 +191,9 @@ export async function POST(req: Request) {
       return NextResponse.json(
         {
           ok: false,
-          error: "Failed to create payment record",
+          error: "Не удалось создать запись о платеже",
           details: insertError?.message,
+          requestId,
         },
         { status: 500 }
       );
@@ -208,25 +204,19 @@ export async function POST(req: Request) {
     // Return success response
     return NextResponse.json({
       ok: true,
+      paymentUrl: paymentResponse.paymentUrl,
+      provider: provider,
       invId,
-      paymentUrl,
-      paymentId: paymentRecord.id,
-      debug: {
-        requestId,
-        userId: finalUserId,
-        telegramUserId,
-        method,
-        planCode,
-        amount,
-        currency,
-      },
+      amount,
+      currency: "RUB",
+      requestId,
     });
   } catch (error: any) {
     console.error(`[payments/start:${requestId}] Unexpected error:`, error);
     return NextResponse.json(
       {
         ok: false,
-        error: error.message || "Internal server error",
+        error: error.message || "Внутренняя ошибка сервера",
         requestId,
       },
       { status: 500 }
