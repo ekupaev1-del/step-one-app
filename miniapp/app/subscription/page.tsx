@@ -167,6 +167,18 @@ function SubscriptionPageContent() {
         throw new Error(`Неверный формат ответа: ${responseText.substring(0, 200)}`);
       }
 
+      // Fetch provider health status for debug info
+      let providerHealth: any = null;
+      try {
+        const healthResponse = await fetch("/api/payments/health");
+        if (healthResponse.ok) {
+          const healthData = await healthResponse.json();
+          providerHealth = healthData.providers?.robokassa || null;
+        }
+      } catch (e) {
+        // Ignore health check errors
+      }
+
       // Store debug data
       const debugInfo = {
         request: { ...requestPayload, telegramUserId: "***" },
@@ -177,11 +189,12 @@ function SubscriptionPageContent() {
           version: (window as any).Telegram?.WebApp?.version,
           platform: (window as any).Telegram?.WebApp?.platform,
         } : null,
-        envVars: {
-          hasRoboLogin: !!process.env.ROBO_MERCHANT_LOGIN,
-          hasRoboPassword1: !!process.env.ROBO_PASSWORD1,
-          hasRoboPassword2: !!process.env.ROBO_PASSWORD2,
-        },
+        providerConfig: providerHealth ? {
+          configured: providerHealth.configured,
+          source: providerHealth.source,
+          envVarStatus: providerHealth.envVarStatus,
+          missingEnvVars: providerHealth.missingEnvVars,
+        } : null,
       };
       setDebugData(debugInfo);
 
@@ -426,6 +439,49 @@ function SubscriptionPageContent() {
                 
                 {debugData && (
                   <div className="mb-4">
+                    {/* Provider Config Status */}
+                    {debugData.providerConfig && (
+                      <div className="mb-3 p-3 bg-white rounded border border-blue-200">
+                        <div className="text-xs font-semibold text-blue-900 mb-2">Конфигурация провайдера</div>
+                        <div className="space-y-1 text-xs">
+                          <div>
+                            <span className="font-medium">Настроен:</span>{" "}
+                            <span className={debugData.providerConfig.configured ? "text-green-600" : "text-red-600"}>
+                              {debugData.providerConfig.configured ? "✅ Да" : "❌ Нет"}
+                            </span>
+                          </div>
+                          {debugData.providerConfig.source && (
+                            <div>
+                              <span className="font-medium">Источник:</span>{" "}
+                              <span className="text-gray-700">{debugData.providerConfig.source}</span>
+                            </div>
+                          )}
+                          <div>
+                            <span className="font-medium">Env переменные:</span>
+                            <div className="ml-2 mt-1 space-y-0.5">
+                              <div>ROBOKASSA_MERCHANT_LOGIN: {debugData.providerConfig.envVarStatus?.robokassaMerchantLogin ? "✅" : "❌"}</div>
+                              <div>ROBOKASSA_PASSWORD1: {debugData.providerConfig.envVarStatus?.robokassaPassword1 ? "✅" : "❌"}</div>
+                              <div>ROBOKASSA_PASSWORD2: {debugData.providerConfig.envVarStatus?.robokassaPassword2 ? "✅" : "❌"}</div>
+                              <div className="text-gray-500 text-[10px] mt-1">Алиасы (fallback):</div>
+                              <div className="ml-2">ROBO_MERCHANT_LOGIN: {debugData.providerConfig.envVarStatus?.roboMerchantLogin ? "✅" : "❌"}</div>
+                              <div className="ml-2">ROBO_PASSWORD1: {debugData.providerConfig.envVarStatus?.roboPassword1 ? "✅" : "❌"}</div>
+                              <div className="ml-2">ROBO_PASSWORD2: {debugData.providerConfig.envVarStatus?.roboPassword2 ? "✅" : "❌"}</div>
+                            </div>
+                          </div>
+                          {debugData.providerConfig.missingEnvVars && debugData.providerConfig.missingEnvVars.length > 0 && (
+                            <div className="mt-2 p-2 bg-red-50 rounded text-red-700">
+                              <div className="font-medium">Отсутствуют:</div>
+                              <ul className="list-disc list-inside ml-2">
+                                {debugData.providerConfig.missingEnvVars.map((varName: string, idx: number) => (
+                                  <li key={idx} className="text-[10px]">{varName}</li>
+                                ))}
+                              </ul>
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                    )}
+
                     <div className="text-xs font-semibold text-blue-900 mb-2">Запрос/Ответ</div>
                     <pre className="text-xs font-mono text-gray-700 whitespace-pre-wrap break-all max-h-40 overflow-y-auto bg-white p-2 rounded border">
                       {JSON.stringify(debugData, null, 2)}

@@ -201,30 +201,101 @@ export function generateInvoiceId(): string {
 }
 
 /**
+ * Get Robokassa environment variables with fallback support
+ * Primary: ROBOKASSA_* (new naming)
+ * Fallback: ROBO_* (backward compatibility)
+ */
+function getRobokassaEnvVars(): {
+  merchantLogin: string | undefined;
+  password1: string | undefined;
+  password2: string | undefined;
+  isTest: boolean;
+  source: "ROBOKASSA_*" | "ROBO_*" | "mixed";
+} {
+  // Primary: ROBOKASSA_* (new naming)
+  const robokassaMerchantLogin = process.env.ROBOKASSA_MERCHANT_LOGIN;
+  const robokassaPassword1 = process.env.ROBOKASSA_PASSWORD1;
+  const robokassaPassword2 = process.env.ROBOKASSA_PASSWORD2;
+  const robokassaIsTest = process.env.ROBOKASSA_IS_TEST === "true";
+
+  // Fallback: ROBO_* (backward compatibility)
+  const roboMerchantLogin = process.env.ROBO_MERCHANT_LOGIN;
+  const roboPassword1 = process.env.ROBO_PASSWORD1;
+  const roboPassword2 = process.env.ROBO_PASSWORD2;
+  const roboIsTest = process.env.ROBO_IS_TEST === "true";
+
+  // Determine source
+  const hasRobokassa = !!(robokassaMerchantLogin || robokassaPassword1 || robokassaPassword2);
+  const hasRobo = !!(roboMerchantLogin || roboPassword1 || roboPassword2);
+  let source: "ROBOKASSA_*" | "ROBO_*" | "mixed" = "ROBOKASSA_*";
+  if (hasRobokassa && hasRobo) {
+    source = "mixed";
+  } else if (hasRobo && !hasRobokassa) {
+    source = "ROBO_*";
+  }
+
+  // Use primary (ROBOKASSA_*) with fallback to ROBO_*
+  const merchantLogin = robokassaMerchantLogin || roboMerchantLogin;
+  const password1 = robokassaPassword1 || roboPassword1;
+  const password2 = robokassaPassword2 || roboPassword2;
+  const isTest = robokassaIsTest || roboIsTest;
+
+  return {
+    merchantLogin,
+    password1,
+    password2,
+    isTest,
+    source,
+  };
+}
+
+/**
  * Get provider config from environment variables
  */
 export function getProviderConfig(provider: PaymentProvider): PaymentProviderConfig | null {
   const baseUrl = process.env.APP_BASE_URL || process.env.NEXT_PUBLIC_VERCEL_URL || "";
 
   switch (provider) {
-    case "robokassa":
-      const merchantLogin = process.env.ROBO_MERCHANT_LOGIN;
-      const password1 = process.env.ROBO_PASSWORD1;
-      const password2 = process.env.ROBO_PASSWORD2;
-      const isTest = process.env.ROBO_IS_TEST === "true";
+    case "robokassa": {
+      const envVars = getRobokassaEnvVars();
 
-      if (!merchantLogin || !password1 || !password2) {
+      if (!envVars.merchantLogin || !envVars.password1 || !envVars.password2) {
+        // Log which env vars are missing
+        const missing: string[] = [];
+        if (!envVars.merchantLogin) {
+          missing.push("ROBOKASSA_MERCHANT_LOGIN (or ROBO_MERCHANT_LOGIN)");
+        }
+        if (!envVars.password1) {
+          missing.push("ROBOKASSA_PASSWORD1 (or ROBO_PASSWORD1)");
+        }
+        if (!envVars.password2) {
+          missing.push("ROBOKASSA_PASSWORD2 (or ROBO_PASSWORD2)");
+        }
+        console.error(
+          `[paymentProviders] Robokassa not configured. Missing env vars: ${missing.join(", ")}. ` +
+          `Checked: ROBOKASSA_MERCHANT_LOGIN=${!!process.env.ROBOKASSA_MERCHANT_LOGIN}, ` +
+          `ROBOKASSA_PASSWORD1=${!!process.env.ROBOKASSA_PASSWORD1}, ` +
+          `ROBOKASSA_PASSWORD2=${!!process.env.ROBOKASSA_PASSWORD2}, ` +
+          `ROBO_MERCHANT_LOGIN=${!!process.env.ROBO_MERCHANT_LOGIN}, ` +
+          `ROBO_PASSWORD1=${!!process.env.ROBO_PASSWORD1}, ` +
+          `ROBO_PASSWORD2=${!!process.env.ROBO_PASSWORD2}`
+        );
         return null;
       }
 
+      console.log(
+        `[paymentProviders] Robokassa config loaded from ${envVars.source} naming convention`
+      );
+
       return {
         provider: "robokassa",
-        merchantLogin,
-        password1,
-        password2,
+        merchantLogin: envVars.merchantLogin,
+        password1: envVars.password1,
+        password2: envVars.password2,
         baseUrl,
-        isTest,
+        isTest: envVars.isTest,
       };
+    }
 
     case "yookassa":
       // Stub - implement when credentials available
@@ -233,4 +304,49 @@ export function getProviderConfig(provider: PaymentProvider): PaymentProviderCon
     default:
       return null;
   }
+}
+
+/**
+ * Check Robokassa configuration status
+ * Returns which env vars are present (without values)
+ */
+export function checkRobokassaConfig(): {
+  configured: boolean;
+  missingEnvVars: string[];
+  envVarStatus: {
+    robokassaMerchantLogin: boolean;
+    robokassaPassword1: boolean;
+    robokassaPassword2: boolean;
+    roboMerchantLogin: boolean;
+    roboPassword1: boolean;
+    roboPassword2: boolean;
+  };
+  source: "ROBOKASSA_*" | "ROBO_*" | "mixed" | "none";
+} {
+  const envVars = getRobokassaEnvVars();
+  const missing: string[] = [];
+
+  if (!envVars.merchantLogin) {
+    missing.push("ROBOKASSA_MERCHANT_LOGIN (or ROBO_MERCHANT_LOGIN)");
+  }
+  if (!envVars.password1) {
+    missing.push("ROBOKASSA_PASSWORD1 (or ROBO_PASSWORD1)");
+  }
+  if (!envVars.password2) {
+    missing.push("ROBOKASSA_PASSWORD2 (or ROBO_PASSWORD2)");
+  }
+
+  return {
+    configured: !!(envVars.merchantLogin && envVars.password1 && envVars.password2),
+    missingEnvVars: missing,
+    envVarStatus: {
+      robokassaMerchantLogin: !!process.env.ROBOKASSA_MERCHANT_LOGIN,
+      robokassaPassword1: !!process.env.ROBOKASSA_PASSWORD1,
+      robokassaPassword2: !!process.env.ROBOKASSA_PASSWORD2,
+      roboMerchantLogin: !!process.env.ROBO_MERCHANT_LOGIN,
+      roboPassword1: !!process.env.ROBO_PASSWORD1,
+      roboPassword2: !!process.env.ROBO_PASSWORD2,
+    },
+    source: envVars.merchantLogin && envVars.password1 && envVars.password2 ? envVars.source : "none",
+  };
 }

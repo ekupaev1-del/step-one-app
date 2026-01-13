@@ -48,7 +48,23 @@ export async function GET(req: Request) {
     const config = getProviderConfig(provider);
 
     if (!config) {
-      console.error(`[payments/return:${requestId}] Provider not configured`);
+      // Log which env vars were checked
+      const checkedVars = [
+        "ROBOKASSA_MERCHANT_LOGIN",
+        "ROBOKASSA_PASSWORD1",
+        "ROBOKASSA_PASSWORD2",
+        "ROBO_MERCHANT_LOGIN",
+        "ROBO_PASSWORD1",
+        "ROBO_PASSWORD2",
+      ];
+      const missingVars = checkedVars.filter(
+        (name) => !process.env[name]
+      );
+      console.error(
+        `[payments/return:${requestId}] Robokassa provider not configured. ` +
+        `Checked env vars: ${checkedVars.join(", ")}. ` +
+        `Missing: ${missingVars.join(", ")}`
+      );
       return NextResponse.redirect(new URL("/subscription?error=config_error", req.url));
     }
 

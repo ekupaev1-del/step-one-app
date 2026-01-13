@@ -130,9 +130,23 @@ export async function POST(req: Request) {
     let config = getProviderConfig("robokassa");
 
     if (!config) {
-      // Try other providers if robokassa not configured
-      // For now, return error if no provider configured
-      console.error(`[payments/start:${requestId}] No payment provider configured`);
+      // Log which env vars were checked
+      const checkedVars = [
+        "ROBOKASSA_MERCHANT_LOGIN",
+        "ROBOKASSA_PASSWORD1",
+        "ROBOKASSA_PASSWORD2",
+        "ROBO_MERCHANT_LOGIN",
+        "ROBO_PASSWORD1",
+        "ROBO_PASSWORD2",
+      ];
+      const missingVars = checkedVars.filter(
+        (name) => !process.env[name]
+      );
+      console.error(
+        `[payments/start:${requestId}] Robokassa provider not configured. ` +
+        `Checked env vars: ${checkedVars.join(", ")}. ` +
+        `Missing: ${missingVars.join(", ")}`
+      );
       return NextResponse.json(
         { ok: false, error: "Платежный провайдер не настроен", requestId },
         { status: 500 }
