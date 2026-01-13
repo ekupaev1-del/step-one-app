@@ -34,6 +34,7 @@ function SubscriptionPageContent() {
   const [showDebug, setShowDebug] = useState(false);
   const [debugData, setDebugData] = useState<any>(null);
   const debugLogRef = useRef<string[]>([]);
+  const lastErrorRef = useRef<{ message: string; stack?: string; timestamp: string } | null>(null);
 
   // Initialize userId
   useEffect(() => {
@@ -182,7 +183,11 @@ function SubscriptionPageContent() {
       // Store debug data
       const debugInfo = {
         request: { ...requestPayload, telegramUserId: "***" },
-        response: data,
+        response: {
+          ...data,
+          // Include debug info from server if available
+          debug: data.debug || null,
+        },
         timestamp: new Date().toISOString(),
         telegramWebApp: typeof window !== "undefined" ? {
           available: !!(window as any).Telegram?.WebApp,
@@ -195,6 +200,8 @@ function SubscriptionPageContent() {
           envVarStatus: providerHealth.envVarStatus,
           missingEnvVars: providerHealth.missingEnvVars,
         } : null,
+        lastError: lastErrorRef.current,
+        logs: debugLogRef.current.slice(-30), // Last 30 log entries
       };
       setDebugData(debugInfo);
 
@@ -240,8 +247,27 @@ function SubscriptionPageContent() {
       }
     } catch (err: any) {
       const errorMsg = err.message || "Ошибка оформления подписки";
+      const errorStack = err.stack || undefined;
       addDebugLog(`Ошибка: ${errorMsg}`);
+      if (errorStack) {
+        addDebugLog(`Stack: ${errorStack.substring(0, 500)}`);
+      }
+      
+      // Store last error for debug panel
+      lastErrorRef.current = {
+        message: errorMsg,
+        stack: errorStack,
+        timestamp: new Date().toISOString(),
+      };
+      
       setPaymentError(errorMsg);
+      
+      // Update debug data with error
+      setDebugData((prev: any) => ({
+        ...prev,
+        lastError: lastErrorRef.current,
+        logs: debugLogRef.current.slice(-30),
+      }));
     } finally {
       setProcessing(false);
     }
@@ -498,15 +524,40 @@ function SubscriptionPageContent() {
                   </div>
                 )}
 
+                {/* Last Error */}
+                {debugData?.lastError && (
+                  <div className="mb-4 p-3 bg-red-50 rounded border border-red-200">
+                    <div className="text-xs font-semibold text-red-900 mb-2">Последняя ошибка</div>
+                    <div className="text-xs space-y-1">
+                      <div>
+                        <span className="font-medium">Сообщение:</span>{" "}
+                        <span className="text-red-700">{debugData.lastError.message}</span>
+                      </div>
+                      {debugData.lastError.stack && (
+                        <div>
+                          <span className="font-medium">Stack:</span>
+                          <pre className="text-[10px] font-mono text-red-600 mt-1 whitespace-pre-wrap break-all max-h-32 overflow-y-auto">
+                            {debugData.lastError.stack}
+                          </pre>
+                        </div>
+                      )}
+                      <div className="text-gray-500 text-[10px]">
+                        Время: {new Date(debugData.lastError.timestamp).toLocaleString("ru-RU")}
+                      </div>
+                    </div>
+                  </div>
+                )}
+
+                {/* Debug Logs */}
                 <div>
                   <div className="text-xs font-semibold text-blue-900 mb-2">
-                    Лог отладки ({debugLogRef.current.length} записей)
+                    Лог отладки ({debugData?.logs?.length || debugLogRef.current.length} записей, последние 30)
                   </div>
                   <div className="text-xs font-mono text-gray-700 max-h-40 overflow-y-auto bg-white p-2 rounded border space-y-1">
-                    {debugLogRef.current.length === 0 ? (
+                    {(!debugData?.logs || debugData.logs.length === 0) && debugLogRef.current.length === 0 ? (
                       <div className="text-gray-500">Нет записей в логе</div>
                     ) : (
-                      debugLogRef.current.map((entry, idx) => (
+                      (debugData?.logs || debugLogRef.current).map((entry: string, idx: number) => (
                         <div key={idx} className="break-all">{entry}</div>
                       ))
                     )}

@@ -14,6 +14,7 @@ import {
   PaymentRequest,
   PaymentProvider,
 } from "../../../../lib/paymentProviders";
+import { getRobokassaConfig } from "../../../../lib/payments/robokassaConfig";
 
 export const dynamic = "force-dynamic";
 
@@ -27,13 +28,16 @@ interface StartPaymentRequest {
 
 /**
  * Get Telegram user ID from request
+ * Priority: 1) From request body, 2) From initData header, 3) Safe fallback
+ * Never returns NULL - always generates a deterministic value
  */
-function getTelegramUserId(req: Request, body: StartPaymentRequest): string {
-  // Priority: 1) From request body, 2) From initData header, 3) Fallback
-  if (body.telegramUserId) {
-    return body.telegramUserId;
+function getTelegramUserId(req: Request, body: StartPaymentRequest, userId: number): string {
+  // Priority 1: From request body
+  if (body.telegramUserId && body.telegramUserId.trim()) {
+    return body.telegramUserId.trim();
   }
 
+  // Priority 2: From initData header
   const initDataHeader = req.headers.get("x-telegram-init-data");
   if (initDataHeader) {
     try {
@@ -41,14 +45,26 @@ function getTelegramUserId(req: Request, body: StartPaymentRequest): string {
       const userParam = params.get("user");
       if (userParam) {
         const user = JSON.parse(decodeURIComponent(userParam));
-        return user.id?.toString() || `web:${body.userId}`;
+        if (user.id) {
+          return user.id.toString();
+        }
       }
     } catch (e) {
-      console.error("[payments/start] Failed to parse initData:", e);
+      console.error(`[payments/start] Failed to parse initData:`, e);
     }
   }
 
-  return `web:${body.userId}`;
+  // Priority 3: Safe fallback
+  // In production, this should not happen, but we need a deterministic value
+  const isProduction = process.env.NODE_ENV === "production";
+  if (isProduction) {
+    // In production, log error but still generate a value
+    console.error(`[payments/start] WARNING: No telegram_user_id found in production for userId=${userId}`);
+    return `prod:${userId}`;
+  } else {
+    // In dev, allow this
+    return `dev:${userId}`;
+  }
 }
 
 /**
@@ -103,8 +119,8 @@ export async function POST(req: Request) {
       );
     }
 
-    // Get Telegram user ID
-    const telegramUserId = getTelegramUserId(req, body);
+    // Get Telegram user ID (never null)
+    const telegramUserId = getTelegramUserId(req, body, userId);
     console.log(`[payments/start:${requestId}] userId: ${userId}, telegramUserId: ${telegramUserId}, method: ${method}`);
 
     // Initialize Supabase
@@ -121,31 +137,31 @@ export async function POST(req: Request) {
     const amount = getPaymentAmount(planCode, !!existingSubscription);
     console.log(`[payments/start:${requestId}] Payment amount: ${amount} RUB`);
 
-    // Generate invoice ID
+    // Generate invoice ID BEFORE inserting payment record
+    // This ensures inv_id is never null
     const invId = generateInvoiceId();
     console.log(`[payments/start:${requestId}] Generated invId: ${invId}`);
+    
+    // Validate invId is not empty
+    if (!invId || invId.trim() === "") {
+      console.error(`[payments/start:${requestId}] Generated empty invId`);
+      return NextResponse.json(
+        { ok: false, error: "Ошибка генерации ID платежа", requestId },
+        { status: 500 }
+      );
+    }
 
     // Get provider config (try robokassa first, fallback to others)
     let provider: PaymentProvider = "robokassa";
     let config = getProviderConfig("robokassa");
 
     if (!config) {
-      // Log which env vars were checked
-      const checkedVars = [
-        "ROBOKASSA_MERCHANT_LOGIN",
-        "ROBOKASSA_PASSWORD1",
-        "ROBOKASSA_PASSWORD2",
-        "ROBO_MERCHANT_LOGIN",
-        "ROBO_PASSWORD1",
-        "ROBO_PASSWORD2",
-      ];
-      const missingVars = checkedVars.filter(
-        (name) => !process.env[name]
-      );
+      // Get detailed config status for logging
+      const configStatus = getRobokassaConfig();
       console.error(
         `[payments/start:${requestId}] Robokassa provider not configured. ` +
-        `Checked env vars: ${checkedVars.join(", ")}. ` +
-        `Missing: ${missingVars.join(", ")}`
+        `Source: ${configStatus.source}, ` +
+        `Missing: ${configStatus.missingEnvVars.join(", ")}`
       );
       return NextResponse.json(
         { ok: false, error: "Платежный провайдер не настроен", requestId },
@@ -215,6 +231,9 @@ export async function POST(req: Request) {
 
     console.log(`[payments/start:${requestId}] Payment record created: ${paymentRecord.id}`);
 
+    // Get config status for debug info (without secrets)
+    const configStatus = getRobokassaConfig();
+
     // Return success response
     return NextResponse.json({
       ok: true,
@@ -224,6 +243,12 @@ export async function POST(req: Request) {
       amount,
       currency: "RUB",
       requestId,
+      debug: {
+        configSource: configStatus.source,
+        configConfigured: configStatus.configured,
+        envVarStatus: configStatus.envVarStatus,
+        // Never include secrets
+      },
     });
   } catch (error: any) {
     console.error(`[payments/start:${requestId}] Unexpected error:`, error);

@@ -6,13 +6,13 @@
  */
 
 import { NextResponse } from "next/server";
-import { checkRobokassaConfig } from "../../../../lib/paymentProviders";
+import { getRobokassaConfig } from "../../../../lib/payments/robokassaConfig";
 
 export const dynamic = "force-dynamic";
 
 export async function GET(req: Request) {
   try {
-    const robokassaStatus = checkRobokassaConfig();
+    const robokassaStatus = getRobokassaConfig();
 
     return NextResponse.json({
       ok: true,
