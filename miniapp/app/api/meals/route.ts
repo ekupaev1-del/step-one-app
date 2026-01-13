@@ -21,10 +21,10 @@ export async function GET(req: Request) {
     return NextResponse.json({ ok: false, error: "userId должен быть числом" }, { status: 400 });
   }
 
-  // Получаем telegram_id из users
+  // FIXED FOR SUPABASE: Получаем telegram_id и id из users для универсального поиска
   const { data: user, error: userError } = await supabase
     .from("users")
-    .select("telegram_id")
+    .select("id, telegram_id")
     .eq("id", numericId)
     .maybeSingle();
 
@@ -32,18 +32,60 @@ export async function GET(req: Request) {
     return NextResponse.json({ ok: false, error: "Пользователь не найден" }, { status: 404 });
   }
 
-  // Получаем все приемы пищи пользователя
-  const { data: meals, error } = await supabase
+  // FIXED FOR SUPABASE: Используем telegram_id если есть, иначе id (единая логика с iOS)
+  const diaryUserId = user.telegram_id || user.id;
+
+  // FIXED FOR SUPABASE: Ищем записи по ОБОИМ идентификаторам для совместимости
+  let allMeals: any[] = [];
+
+  // Сначала ищем по diaryUserId (telegram_id если есть, иначе id)
+  const { data: mealsByDiaryUserId, error: errorByDiaryUserId } = await supabase
     .from("diary")
     .select("*")
-    .eq("user_id", user.telegram_id)
-    .order("created_at", { ascending: false });
+    .eq("user_id", diaryUserId)
+    .order("created_at", ascending: false);
 
-  if (error) {
-    console.error("[/api/meals] Ошибка:", error);
-    return NextResponse.json({ ok: false, error: error.message }, { status: 500 });
+  if (errorByDiaryUserId) {
+    console.error("[/api/meals] Ошибка поиска по diaryUserId:", errorByDiaryUserId);
+  } else if (mealsByDiaryUserId) {
+    allMeals.push(...mealsByDiaryUserId);
   }
+
+  // FIXED FOR SUPABASE: ВСЕГДА ищем по обоим ID для полной синхронизации
+  // КРИТИЧНО: Если diaryUserId отличается от user.id, ищем также по user.id
+  // Это гарантирует, что мы найдем все записи независимо от того, с каким user_id они были созданы
+  if (diaryUserId !== user.id) {
+    console.log(`[/api/meals] Дополнительный поиск по id=${user.id} (для записей iOS, созданных с user_id=id)`);
+    const { data: mealsById, error: errorById } = await supabase
+      .from("diary")
+      .select("*")
+      .eq("user_id", user.id)
+      .order("created_at", ascending: false);
+
+    if (errorById) {
+      console.error("[/api/meals] Ошибка поиска по id:", errorById);
+    } else if (mealsById) {
+      allMeals.push(...mealsById);
+      console.log(`[/api/meals] Найдено дополнительных записей по id=${user.id}:`, mealsById.length);
+    }
+  }
+
+  // Удаляем дубликаты по id записи
+  const uniqueMealsMap = new Map();
+  allMeals.forEach(meal => {
+    if (!uniqueMealsMap.has(meal.id)) {
+      uniqueMealsMap.set(meal.id, meal);
+    }
+  });
+
+  const meals = Array.from(uniqueMealsMap.values())
+    .sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
+
+  console.log("[/api/meals] Итого получено уникальных записей:", meals.length, {
+    diaryUserId,
+    userId: user.id,
+    telegramId: user.telegram_id
+  });
 
   return NextResponse.json({ ok: true, meals: meals || [] });
 }
-
