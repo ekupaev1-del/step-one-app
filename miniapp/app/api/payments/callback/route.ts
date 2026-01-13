@@ -37,14 +37,14 @@ export async function POST(req: Request) {
     // Validate required fields
     if (!OutSum || !InvId || !SignatureValue) {
       console.error(`[payments/callback:${requestId}] Missing required fields`);
-      return NextResponse.text("ERROR: Missing required fields", { status: 400 });
+      return new Response("ERROR: Missing required fields", { status: 400 });
     }
 
     // Get payment provider config
     const password2 = process.env.ROBO_PASSWORD2;
     if (!password2) {
       console.error(`[payments/callback:${requestId}] ROBO_PASSWORD2 not configured`);
-      return NextResponse.text("ERROR: Payment provider not configured", { status: 500 });
+      return new Response("ERROR: Payment provider not configured", { status: 500 });
     }
 
     // Verify signature
@@ -67,7 +67,7 @@ export async function POST(req: Request) {
 
     if (!isValid) {
       console.error(`[payments/callback:${requestId}] Invalid signature`);
-      return NextResponse.text("ERROR: Invalid signature", { status: 400 });
+      return new Response("ERROR: Invalid signature", { status: 400 });
     }
 
     console.log(`[payments/callback:${requestId}] Signature verified`);
@@ -84,18 +84,18 @@ export async function POST(req: Request) {
 
     if (findError) {
       console.error(`[payments/callback:${requestId}] Database error:`, findError);
-      return NextResponse.text("ERROR: Database error", { status: 500 });
+      return new Response("ERROR: Database error", { status: 500 });
     }
 
     if (!payment) {
       console.error(`[payments/callback:${requestId}] Payment not found for invId: ${InvId}`);
-      return NextResponse.text("ERROR: Payment not found", { status: 404 });
+      return new Response("ERROR: Payment not found", { status: 404 });
     }
 
     // Check if already paid
     if (payment.status === "paid") {
       console.log(`[payments/callback:${requestId}] Payment already marked as paid`);
-      return NextResponse.text(`OK${InvId}`);
+      return new Response(`OK${InvId}`);
     }
 
     // Update payment status
@@ -109,7 +109,7 @@ export async function POST(req: Request) {
 
     if (updateError) {
       console.error(`[payments/callback:${requestId}] Failed to update payment:`, updateError);
-      return NextResponse.text("ERROR: Failed to update payment", { status: 500 });
+      return new Response("ERROR: Failed to update payment", { status: 500 });
     }
 
     console.log(`[payments/callback:${requestId}] Payment marked as paid: ${payment.id}`);
@@ -140,9 +140,9 @@ export async function POST(req: Request) {
     }
 
     // Return OK with InvId (Robokassa requirement)
-    return NextResponse.text(`OK${InvId}`);
+    return new Response(`OK${InvId}`);
   } catch (error: any) {
     console.error(`[payments/callback:${requestId}] Unexpected error:`, error);
-    return NextResponse.text("ERROR: Internal server error", { status: 500 });
+    return new Response("ERROR: Internal server error", { status: 500 });
   }
 }
