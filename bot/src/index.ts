@@ -779,24 +779,41 @@ async function getTodayMeals(telegram_id: number): Promise<{
     const todayISO = today.toISOString();
     const endOfDayISO = endOfDay.toISOString();
 
-    // Получаем пользователя, чтобы проверить id (для iOS пользователей)
+    // FIXED FOR SUPABASE: Получаем пользователя с id и telegram_id для универсального поиска
     const { data: user } = await supabase
       .from("users")
-      .select("id")
+      .select("id, telegram_id")
       .eq("telegram_id", telegram_id)
       .maybeSingle();
 
-    // Ищем записи по telegram_id (основной способ)
-    let { data, error } = await supabase
+    // FIXED FOR SUPABASE: Ищем записи по ОБОИМ идентификаторам для полной синхронизации
+    // Используем telegram_id (он всегда есть, так как ищем по нему), но также ищем по id для совместимости
+    const diaryUserId = telegram_id; // В боте всегда используем telegram_id
+    
+    let allMeals: any[] = [];
+    let error: any = null;
+
+    // Сначала ищем по diaryUserId (telegram_id если есть, иначе id)
+    const { data: dataByDiaryUserId, error: errorByDiaryUserId } = await supabase
       .from("diary")
       .select("calories, protein, fat, carbs")
-      .eq("user_id", telegram_id)
+      .eq("user_id", diaryUserId)
       .gte("created_at", todayISO)
       .lte("created_at", endOfDayISO);
 
-    // Если не нашли по telegram_id и у пользователя есть id, пробуем поиск по id
-    if ((!data || data.length === 0) && user?.id && user.id !== telegram_id) {
-      console.log(`[getTodayMeals] Не найдено по telegram_id=${telegram_id}, пробуем по id=${user.id}`);
+    if (errorByDiaryUserId) {
+      console.error(`[getTodayMeals] Ошибка поиска по diaryUserId=${diaryUserId}:`, errorByDiaryUserId);
+      error = errorByDiaryUserId;
+    } else if (dataByDiaryUserId) {
+      allMeals.push(...dataByDiaryUserId);
+      console.log(`[getTodayMeals] Найдено ${dataByDiaryUserId.length} записей по diaryUserId=${diaryUserId}`);
+    }
+
+    // FIXED FOR SUPABASE: ВСЕГДА ищем по обоим ID для полной синхронизации
+    // Если у пользователя есть telegram_id, ищем также по id (для записей, созданных iOS до регистрации в боте)
+    // ВАЖНО: Проверяем наличие user.id, так как user может быть null
+    if (user?.id && user.telegram_id && user.telegram_id !== user.id) {
+      console.log(`[getTodayMeals] Дополнительный поиск по id=${user.id} (для записей iOS)`);
       const { data: dataById, error: errorById } = await supabase
         .from("diary")
         .select("calories, protein, fat, carbs")
@@ -804,12 +821,16 @@ async function getTodayMeals(telegram_id: number): Promise<{
         .gte("created_at", todayISO)
         .lte("created_at", endOfDayISO);
       
-      if (!errorById && dataById) {
-        data = dataById;
-        error = null;
-        console.log(`[getTodayMeals] Найдено ${data.length} записей по id=${user.id}`);
+      if (errorById) {
+        console.error(`[getTodayMeals] Ошибка поиска по id=${user.id}:`, errorById);
+      } else if (dataById) {
+        allMeals.push(...dataById);
+        console.log(`[getTodayMeals] Найдено дополнительных ${dataById.length} записей по id=${user.id}`);
       }
     }
+
+    // Объединяем результаты (дубликаты не критичны для суммирования, но можно убрать)
+    const data = allMeals;
 
     if (error) {
       console.error("[getTodayMeals] Ошибка:", error);
@@ -1648,24 +1669,57 @@ bot.command("отменить", async (ctx) => {
       return ctx.reply("Ошибка: не удалось определить ваш Telegram ID");
     }
 
-    // Находим последнюю запись за сегодня
+    // FIXED FOR SUPABASE: Получаем пользователя для универсального поиска
+    const { data: user } = await supabase
+      .from("users")
+      .select("id, telegram_id")
+      .eq("telegram_id", telegram_id)
+      .maybeSingle();
+
+    const diaryUserId = user?.telegram_id || user?.id || telegram_id;
+
+    // FIXED FOR SUPABASE: Ищем последнюю запись по ОБОИМ идентификаторам
     const today = new Date();
     today.setHours(0, 0, 0, 0);
     const todayISO = today.toISOString();
+    const endOfDay = new Date(today);
+    endOfDay.setHours(23, 59, 59, 999);
+    const endOfDayISO = endOfDay.toISOString();
 
-    const { data: lastMeal, error: selectError } = await supabase
+    let allMeals: any[] = [];
+
+    // Сначала ищем по diaryUserId
+    const { data: mealsByDiaryUserId, error: errorByDiaryUserId } = await supabase
       .from("diary")
-      .select("id, meal_text, calories")
-      .eq("user_id", telegram_id)
+      .select("id, meal_text, calories, created_at")
+      .eq("user_id", diaryUserId)
       .gte("created_at", todayISO)
-      .order("created_at", { ascending: false })
-      .limit(1)
-      .maybeSingle();
+      .lte("created_at", endOfDayISO)
+      .order("created_at", { ascending: false });
 
-    if (selectError) {
-      console.error("[bot] Ошибка поиска:", selectError);
-      return ctx.reply("❌ Ошибка базы данных.");
+    if (!errorByDiaryUserId && mealsByDiaryUserId) {
+      allMeals.push(...mealsByDiaryUserId);
     }
+
+    // Если diaryUserId отличается от id, также ищем по id
+    if (user?.id && diaryUserId !== user.id) {
+      const { data: mealsById, error: errorById } = await supabase
+        .from("diary")
+        .select("id, meal_text, calories, created_at")
+        .eq("user_id", user.id)
+        .gte("created_at", todayISO)
+        .lte("created_at", endOfDayISO)
+        .order("created_at", { ascending: false });
+
+      if (!errorById && mealsById) {
+        allMeals.push(...mealsById);
+      }
+    }
+
+    // Находим самую последнюю запись из всех (по дате)
+    const lastMeal = allMeals
+      .filter(m => !isNaN(new Date(m.created_at).getTime()))
+      .sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime())[0];
 
     if (!lastMeal) {
       return ctx.reply("❌ Сегодня ещё не было добавлено ни одного приёма пищи.");
@@ -1722,19 +1776,46 @@ bot.command("отчет", async (ctx) => {
       return ctx.reply("Ошибка: не удалось определить ваш Telegram ID");
     }
 
-    // Получаем пользователя, чтобы проверить, есть ли у него id (для iOS пользователей)
-    const { data: user, error: userError } = await supabase
+    // Получаем пользователя - сначала по telegram_id, если не найден, то по id
+    // Это нужно для iOS пользователей, которые могут не иметь telegram_id в таблице users
+    let user: any = null;
+    let userError: any = null;
+
+    // Сначала пытаемся найти по telegram_id (обычный случай - пользователь зарегистрирован через бот)
+    const { data: userByTelegramId, error: errorByTelegramId } = await supabase
       .from("users")
       .select("id, telegram_id")
       .eq("telegram_id", telegram_id)
       .maybeSingle();
 
-    if (userError) {
+    if (userByTelegramId) {
+      user = userByTelegramId;
+      console.log(`[bot] /отчет: Пользователь найден по telegram_id=${telegram_id}:`, user);
+    } else {
+      // Если не найден по telegram_id, ищем по id (для iOS пользователей)
+      // iOS может создавать записи с user_id = id, если telegram_id отсутствует
+      // Пробуем найти пользователя, у которого id совпадает с telegram_id (для совместимости)
+      const { data: userById, error: errorById } = await supabase
+        .from("users")
+        .select("id, telegram_id")
+        .eq("id", telegram_id)
+        .maybeSingle();
+      
+      if (userById) {
+        user = userById;
+        console.log(`[bot] /отчет: Пользователь найден по id=${telegram_id}:`, user);
+      } else {
+        userError = errorById || errorByTelegramId;
+        console.error(`[bot] /отчет: Пользователь не найден ни по telegram_id=${telegram_id}, ни по id=${telegram_id}`);
+      }
+    }
+
+    if (userError && !user) {
       console.error("[bot] Ошибка получения пользователя:", userError);
       return ctx.reply("❌ Ошибка базы данных.");
     }
 
-    // Используем telegram_id для поиска, но также проверяем id (для iOS пользователей без telegram_id)
+    // Используем telegram_id если есть, иначе id (единая логика с iOS и Edge Functions)
     // ВАЖНО: Если у пользователя нет telegram_id, значит он зарегистрирован только через iOS
     // В этом случае записи могут быть сохранены с id вместо telegram_id
     const diaryUserId = user?.telegram_id || user?.id;
@@ -1751,19 +1832,45 @@ bot.command("отчет", async (ctx) => {
     const endOfDayISO = endOfDay.toISOString();
 
     console.log(`[bot] /отчет: telegram_id=${telegram_id}, diaryUserId=${diaryUserId}, диапазон: ${todayISO} - ${endOfDayISO}`);
+    // #region agent log
+    fetch('http://127.0.0.1:7242/ingest/43e8883f-375d-4d43-af6f-fef79b5ebbe3',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'bot/src/index.ts:1807',message:'HYP-A: Bot user data',data:{userId:user?.id,telegramId:user?.telegram_id,diaryUserId,todayISO,endOfDayISO},timestamp:Date.now(),sessionId:'debug-sync',runId:'run1',hypothesisId:'A'})}).catch(()=>{});
+    // #endregion
 
-    // Ищем записи по telegram_id (основной способ)
-    let { data: meals, error } = await supabase
+    // FIXED FOR SUPABASE: Ищем записи по ОБОИМ идентификаторам для полной синхронизации
+    let allMeals: any[] = [];
+    let error: any = null;
+
+    // Сначала ищем по diaryUserId (telegram_id если есть, иначе id)
+    const { data: mealsByDiaryUserId, error: errorByDiaryUserId } = await supabase
       .from("diary")
       .select("meal_text, calories, protein, fat, carbs, created_at, user_id")
-      .eq("user_id", telegram_id)
+      .eq("user_id", diaryUserId)
       .gte("created_at", todayISO)
       .lte("created_at", endOfDayISO)
       .order("created_at", { ascending: true });
 
-    // Если не нашли по telegram_id и у пользователя есть id, пробуем поиск по id
-    if ((!meals || meals.length === 0) && user?.id && user.id !== telegram_id) {
-      console.log(`[bot] /отчет: Не найдено записей по telegram_id=${telegram_id}, пробуем по id=${user.id}`);
+    if (errorByDiaryUserId) {
+      console.error(`[bot] /отчет: Ошибка поиска по diaryUserId=${diaryUserId}:`, errorByDiaryUserId);
+      error = errorByDiaryUserId;
+      // #region agent log
+      fetch('http://127.0.0.1:7242/ingest/43e8883f-375d-4d43-af6f-fef79b5ebbe3',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'bot/src/index.ts:1823',message:'HYP-A: Bot error searching by diaryUserId',data:{diaryUserId,error:errorByDiaryUserId.message},timestamp:Date.now(),sessionId:'debug-sync',runId:'run1',hypothesisId:'A'})}).catch(()=>{});
+      // #endregion
+    } else if (mealsByDiaryUserId) {
+      allMeals.push(...mealsByDiaryUserId);
+      console.log(`[bot] /отчет: Найдено ${mealsByDiaryUserId.length} записей по diaryUserId=${diaryUserId}`);
+      // #region agent log
+      fetch('http://127.0.0.1:7242/ingest/43e8883f-375d-4d43-af6f-fef79b5ebbe3',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'bot/src/index.ts:1827',message:'HYP-A: Bot found meals by diaryUserId',data:{diaryUserId,count:mealsByDiaryUserId.length,mealIds:mealsByDiaryUserId.map(m=>m.id)},timestamp:Date.now(),sessionId:'debug-sync',runId:'run1',hypothesisId:'A'})}).catch(()=>{});
+      // #endregion
+    }
+
+    // FIXED FOR SUPABASE: ВСЕГДА ищем по обоим ID для полной синхронизации
+    // КРИТИЧНО: Если diaryUserId отличается от user.id, ищем также по user.id
+    // Это гарантирует, что мы найдём все записи, независимо от того, с каким user_id они были созданы
+    // #region agent log
+    fetch('http://127.0.0.1:7242/ingest/43e8883f-375d-4d43-af6f-fef79b5ebbe3',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'bot/src/index.ts:1830',message:'HYP-B: Bot checking fallback condition',data:{hasUserId:!!user?.id,hasTelegramId:!!user?.telegram_id,userId:user?.id,telegramId:user?.telegram_id,diaryUserId,willSearch:user?.id&&diaryUserId!==user.id},timestamp:Date.now(),sessionId:'debug-sync',runId:'run1',hypothesisId:'B'})}).catch(()=>{});
+    // #endregion
+    if (user?.id && diaryUserId !== user.id) {
+      console.log(`[bot] /отчет: Дополнительный поиск по id=${user.id} (для записей iOS, созданных с user_id=id)`);
       const { data: mealsById, error: errorById } = await supabase
         .from("diary")
         .select("meal_text, calories, protein, fat, carbs, created_at, user_id")
@@ -1772,14 +1879,38 @@ bot.command("отчет", async (ctx) => {
         .lte("created_at", endOfDayISO)
         .order("created_at", { ascending: true });
       
-      if (!errorById && mealsById && mealsById.length > 0) {
-        meals = mealsById;
-        error = null;
-        console.log(`[bot] /отчет: Найдено ${meals.length} записей по id=${user.id}`);
+      if (errorById) {
+        console.error(`[bot] /отчет: Ошибка поиска по id=${user.id}:`, errorById);
+        // #region agent log
+        fetch('http://127.0.0.1:7242/ingest/43e8883f-375d-4d43-af6f-fef79b5ebbe3',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'bot/src/index.ts:1837',message:'HYP-B: Bot error in fallback search',data:{userId:user.id,error:errorById.message},timestamp:Date.now(),sessionId:'debug-sync',runId:'run1',hypothesisId:'B'})}).catch(()=>{});
+        // #endregion
+      } else if (mealsById) {
+        allMeals.push(...mealsById);
+        console.log(`[bot] /отчет: Найдено дополнительных ${mealsById.length} записей по id=${user.id}`);
+        // #region agent log
+        fetch('http://127.0.0.1:7242/ingest/43e8883f-375d-4d43-af6f-fef79b5ebbe3',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'bot/src/index.ts:1842',message:'HYP-B: Bot found meals in fallback search',data:{userId:user.id,count:mealsById.length,mealIds:mealsById.map(m=>m.id)},timestamp:Date.now(),sessionId:'debug-sync',runId:'run1',hypothesisId:'B'})}).catch(()=>{});
+        // #endregion
       }
     }
 
-    if (error) {
+    // Удаляем дубликаты по id записи
+    const uniqueMealsMap = new Map();
+    allMeals.forEach(meal => {
+      if (!uniqueMealsMap.has(meal.id)) {
+        uniqueMealsMap.set(meal.id, meal);
+      }
+    });
+    // #region agent log
+    fetch('http://127.0.0.1:7242/ingest/43e8883f-375d-4d43-af6f-fef79b5ebbe3',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'bot/src/index.ts:1853',message:'HYP-D: Bot after deduplication',data:{beforeDedup:allMeals.length,afterDedup:uniqueMealsMap.size,todayISO,endOfDayISO},timestamp:Date.now(),sessionId:'debug-sync',runId:'run1',hypothesisId:'D'})}).catch(()=>{});
+    // #endregion
+
+    const meals = Array.from(uniqueMealsMap.values())
+      .sort((a, b) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime());
+    // #region agent log
+    fetch('http://127.0.0.1:7242/ingest/43e8883f-375d-4d43-af6f-fef79b5ebbe3',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'bot/src/index.ts:1859',message:'HYP-C: Bot final result',data:{todayISO,endOfDayISO,mealsCount:meals.length,mealCreatedAts:meals.map(m=>m.created_at)},timestamp:Date.now(),sessionId:'debug-sync',runId:'run1',hypothesisId:'C'})}).catch(()=>{});
+    // #endregion
+
+    if (error && allMeals.length === 0) {
       console.error("[bot] Ошибка получения отчёта:", error);
       return ctx.reply("❌ Ошибка базы данных.");
     }
@@ -1788,7 +1919,7 @@ bot.command("отчет", async (ctx) => {
       return ctx.reply("📋 Сегодня ещё не было приёмов пищи.");
     }
 
-    console.log(`[bot] /отчет: Найдено ${meals.length} записей`);
+    console.log(`[bot] /отчет: Итого найдено ${meals.length} уникальных записей (после объединения по обоим ID)`);
 
     const todayMeals = await getTodayMeals(telegram_id);
     const dailyNorm = await getUserDailyNorm(telegram_id);

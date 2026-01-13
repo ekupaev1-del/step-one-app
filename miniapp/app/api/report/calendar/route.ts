@@ -97,10 +97,10 @@ export async function GET(req: Request) {
       );
     }
 
-    // Получаем пользователя и его целевую норму калорий
+    // FIXED FOR SUPABASE: Получаем пользователя с id и telegram_id для универсального поиска
     const { data: user, error: userError } = await supabase
       .from("users")
-      .select("telegram_id, calories")
+      .select("id, telegram_id, calories")
       .eq("id", numericId)
       .maybeSingle();
 
@@ -118,6 +118,9 @@ export async function GET(req: Request) {
         { status: 404, headers: corsHeaders }
       );
     }
+
+    // FIXED FOR SUPABASE: Используем telegram_id если есть, иначе id (единая логика с iOS)
+    const diaryUserId = user.telegram_id || user.id;
 
     const targetCalories = user.calories || 0;
 
@@ -139,30 +142,65 @@ export async function GET(req: Request) {
     const startUTC = monthStart.toISOString();
     const endUTC = monthEnd.toISOString();
 
-    // Получаем все записи за месяц из БД с калориями
+    // FIXED FOR SUPABASE: Ищем записи по ОБОИМ идентификаторам для совместимости
+    let allMealsCombined: any[] = [];
+
     console.log("[/api/report/calendar] Запрос к БД:", {
-      userId: user.telegram_id,
+      userId: user.id,
+      telegramId: user.telegram_id,
+      diaryUserId,
       month,
       startUTC,
       endUTC
     });
 
-    const { data: meals, error: mealsError } = await supabase
+    // Сначала ищем по diaryUserId
+    const { data: mealsByDiaryUserId, error: errorByDiaryUserId } = await supabase
       .from("diary")
       .select("created_at, calories")
-      .eq("user_id", user.telegram_id)
+      .eq("user_id", diaryUserId)
       .gte("created_at", startUTC)
       .lte("created_at", endUTC);
 
-    if (mealsError) {
-      console.error("[/api/report/calendar] Ошибка получения записей:", mealsError);
-      return NextResponse.json(
-        { ok: false, error: "Ошибка получения данных" },
-        { status: 500, headers: corsHeaders }
-      );
+    if (errorByDiaryUserId) {
+      console.error("[/api/report/calendar] Ошибка поиска по diaryUserId:", errorByDiaryUserId);
+    } else if (mealsByDiaryUserId) {
+      allMealsCombined.push(...mealsByDiaryUserId);
+      console.log(`[/api/report/calendar] Найдено записей по diaryUserId=${diaryUserId}:`, mealsByDiaryUserId.length);
     }
 
-    console.log("[/api/report/calendar] Получено записей из БД:", meals?.length || 0);
+    // FIXED FOR SUPABASE: ВСЕГДА ищем по обоим ID для полной синхронизации
+    // КРИТИЧНО: Если diaryUserId отличается от user.id, ищем также по user.id
+    // Это гарантирует, что мы найдем все записи независимо от того, с каким user_id они были созданы
+    if (diaryUserId !== user.id) {
+      console.log(`[/api/report/calendar] Дополнительный поиск по id=${user.id} (для записей iOS, созданных с user_id=id)`);
+      const { data: mealsById, error: errorById } = await supabase
+        .from("diary")
+        .select("created_at, calories")
+        .eq("user_id", user.id)
+        .gte("created_at", startUTC)
+        .lte("created_at", endUTC);
+
+      if (errorById) {
+        console.error("[/api/report/calendar] Ошибка поиска по id:", errorById);
+      } else if (mealsById) {
+        allMealsCombined.push(...mealsById);
+        console.log(`[/api/report/calendar] Найдено дополнительных записей по id=${user.id}:`, mealsById.length);
+      }
+    }
+
+    // Удаляем дубликаты по id записи (используем created_at + calories как ключ)
+    const uniqueMealsMap = new Map();
+    allMealsCombined.forEach(meal => {
+      const key = `${meal.created_at}_${meal.calories}`;
+      if (!uniqueMealsMap.has(key)) {
+        uniqueMealsMap.set(key, meal);
+      }
+    });
+
+    const meals = Array.from(uniqueMealsMap.values());
+
+    console.log("[/api/report/calendar] Итого получено уникальных записей (после объединения по обоим ID):", meals?.length || 0);
 
     // Агрегируем калории по дням
     const caloriesByDate = new Map<string, number>();

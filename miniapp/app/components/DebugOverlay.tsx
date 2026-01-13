@@ -31,7 +31,7 @@ interface PaymentDebugInfo {
 export default function DebugOverlay() {
   const [isEnabled, setIsEnabled] = useState(false);
   const [errors, setErrors] = useState<ErrorInfo[]>([]);
-  const [activeTab, setActiveTab] = useState<"summary" | "raw">("summary");
+  const [activeTab, setActiveTab] = useState<"summary" | "raw" | "payment">("summary");
   const [copied, setCopied] = useState<string | null>(null);
   const [paymentDebug, setPaymentDebug] = useState<PaymentDebugInfo | null>(null);
 

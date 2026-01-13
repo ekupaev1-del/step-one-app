@@ -59,10 +59,10 @@ export async function GET(req: Request) {
       );
     }
 
-    // Получаем пользователя и его дневную норму (включая воду)
+    // FIXED FOR SUPABASE: Получаем пользователя с id и telegram_id для универсального поиска
     const { data: user, error: userError } = await supabase
       .from("users")
-      .select("telegram_id, calories, protein, fat, carbs, water_goal_ml")
+      .select("id, telegram_id, calories, protein, fat, carbs, water_goal_ml")
       .eq("id", numericId)
       .maybeSingle();
 
@@ -80,6 +80,9 @@ export async function GET(req: Request) {
         { status: 404, headers: corsHeaders }
       );
     }
+
+    // FIXED FOR SUPABASE: Используем telegram_id если есть, иначе id (единая логика с iOS)
+    const diaryUserId = user.telegram_id || user.id;
 
     // Парсим дату (локальное время пользователя)
     // КРИТИЧНО: Создаём даты в локальном времени, но без указания таймзоны
@@ -105,40 +108,95 @@ export async function GET(req: Request) {
     const startUTCStr = startUTC.toISOString();
     const endUTCStr = endUTC.toISOString();
 
-    // Получаем все записи за день из БД
+    // FIXED FOR SUPABASE: Ищем записи по ОБОИМ идентификаторам для совместимости
+    let allMealsCombined: any[] = [];
+
     console.log("[/api/report/day] Запрос к БД:", {
-      userId: user.telegram_id,
+      userId: user.id,
+      telegramId: user.telegram_id,
+      diaryUserId,
       date,
       startUTC: startUTCStr,
       endUTC: endUTCStr
     });
 
-    const { data: allMeals, error: mealsError } = await supabase
+    // Сначала ищем по diaryUserId
+    const { data: mealsByDiaryUserId, error: errorByDiaryUserId } = await supabase
       .from("diary")
       .select("*")
-      .eq("user_id", user.telegram_id)
+      .eq("user_id", diaryUserId)
       .gte("created_at", startUTCStr)
       .lte("created_at", endUTCStr)
-      .order("created_at", { ascending: false }); // Новые сначала
+      .order("created_at", { ascending: false });
+
+    if (errorByDiaryUserId) {
+      console.error("[/api/report/day] Ошибка поиска по diaryUserId:", errorByDiaryUserId);
+      // #region agent log
+      fetch('http://127.0.0.1:7242/ingest/43e8883f-375d-4d43-af6f-fef79b5ebbe3',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'miniapp/api/report/day:133',message:'HYP-A: Error searching by diaryUserId',data:{diaryUserId,error:errorByDiaryUserId.message},timestamp:Date.now(),sessionId:'debug-sync',runId:'run1',hypothesisId:'A'})}).catch(()=>{});
+      // #endregion
+    } else if (mealsByDiaryUserId) {
+      allMealsCombined.push(...mealsByDiaryUserId);
+      console.log(`[/api/report/day] Найдено записей по diaryUserId=${diaryUserId}:`, mealsByDiaryUserId.length);
+      // #region agent log
+      fetch('http://127.0.0.1:7242/ingest/43e8883f-375d-4d43-af6f-fef79b5ebbe3',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'miniapp/api/report/day:137',message:'HYP-A: Found meals by diaryUserId',data:{diaryUserId,count:mealsByDiaryUserId.length,mealIds:mealsByDiaryUserId.map(m=>m.id)},timestamp:Date.now(),sessionId:'debug-sync',runId:'run1',hypothesisId:'A'})}).catch(()=>{});
+      // #endregion
+    }
+
+    // FIXED FOR SUPABASE: ВСЕГДА ищем по обоим ID для полной синхронизации
+    // КРИТИЧНО: Если diaryUserId отличается от user.id, ищем также по user.id
+    // Это гарантирует, что мы найдем все записи независимо от того, с каким user_id они были созданы
+    // #region agent log
+    fetch('http://127.0.0.1:7242/ingest/43e8883f-375d-4d43-af6f-fef79b5ebbe3',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'miniapp/api/report/day:141',message:'HYP-B: Checking fallback condition',data:{hasTelegramId:!!user.telegram_id,telegramId:user.telegram_id,userId:user.id,diaryUserId,willSearch:diaryUserId!==user.id},timestamp:Date.now(),sessionId:'debug-sync',runId:'run1',hypothesisId:'B'})}).catch(()=>{});
+    // #endregion
+    if (diaryUserId !== user.id) {
+      // Если diaryUserId отличается от user.id, ищем также по user.id (для записей iOS, созданных с user_id=id)
+      console.log(`[/api/report/day] Дополнительный поиск по id=${user.id} (для записей iOS, созданных с user_id=id)`);
+      const { data: mealsById, error: errorById } = await supabase
+        .from("diary")
+        .select("*")
+        .eq("user_id", user.id)
+        .gte("created_at", startUTCStr)
+        .lte("created_at", endUTCStr)
+        .order("created_at", { ascending: false });
+
+      if (errorById) {
+        console.error("[/api/report/day] Ошибка поиска по id:", errorById);
+        // #region agent log
+        fetch('http://127.0.0.1:7242/ingest/43e8883f-375d-4d43-af6f-fef79b5ebbe3',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'miniapp/api/report/day:152',message:'HYP-B: Error in fallback search',data:{userId:user.id,error:errorById.message},timestamp:Date.now(),sessionId:'debug-sync',runId:'run1',hypothesisId:'B'})}).catch(()=>{});
+        // #endregion
+      } else if (mealsById) {
+        allMealsCombined.push(...mealsById);
+        console.log(`[/api/report/day] Найдено дополнительных записей по id=${user.id}:`, mealsById.length);
+        // #region agent log
+        fetch('http://127.0.0.1:7242/ingest/43e8883f-375d-4d43-af6f-fef79b5ebbe3',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'miniapp/api/report/day:156',message:'HYP-B: Found meals in fallback search',data:{userId:user.id,count:mealsById.length,mealIds:mealsById.map(m=>m.id)},timestamp:Date.now(),sessionId:'debug-sync',runId:'run1',hypothesisId:'B'})}).catch(()=>{});
+        // #endregion
+      }
+    }
+
+    // Удаляем дубликаты по id записи
+    const uniqueMealsMap = new Map();
+    allMealsCombined.forEach(meal => {
+      if (!uniqueMealsMap.has(meal.id)) {
+        uniqueMealsMap.set(meal.id, meal);
+      }
+    });
+    // #region agent log
+    fetch('http://127.0.0.1:7242/ingest/43e8883f-375d-4d43-af6f-fef79b5ebbe3',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'miniapp/api/report/day:165',message:'HYP-D: After deduplication',data:{beforeDedup:allMealsCombined.length,afterDedup:uniqueMealsMap.size,date,startUTC:startUTCStr,endUTC:endUTCStr},timestamp:Date.now(),sessionId:'debug-sync',runId:'run1',hypothesisId:'D'})}).catch(()=>{});
+    // #endregion
 
     // КРИТИЧНО: Фильтруем записи по локальной дате после получения из БД
     // Это гарантирует, что мы покажем только записи за нужный день
-    const meals = (allMeals || []).filter(meal => {
+    const meals = Array.from(uniqueMealsMap.values()).filter(meal => {
       const mealDate = new Date(meal.created_at);
       const mealDateStr = mealDate.toISOString().split("T")[0]; // YYYY-MM-DD
       return mealDateStr === date;
-    });
+    }).sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime()); // Новые сначала
+    // #region agent log
+    fetch('http://127.0.0.1:7242/ingest/43e8883f-375d-4d43-af6f-fef79b5ebbe3',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'miniapp/api/report/day:192',message:'HYP-C: Miniapp final result after date filter',data:{date,startUTC:startUTCStr,endUTC:endUTCStr,mealsCount:meals.length,mealCreatedAts:meals.map(m=>m.created_at)},timestamp:Date.now(),sessionId:'debug-sync',runId:'run1',hypothesisId:'C'})}).catch(()=>{});
+    // #endregion
 
-    if (mealsError) {
-      console.error("[/api/report/day] Ошибка получения записей:", mealsError);
-      return NextResponse.json(
-        { ok: false, error: "Ошибка получения данных" },
-        { status: 500, headers: corsHeaders }
-      );
-    }
-
-    console.log("[/api/report/day] Получено записей из БД:", meals?.length || 0, {
-      meals: meals?.map(m => ({ id: m.id, text: m.meal_text, created_at: m.created_at }))
+    console.log("[/api/report/day] Итого получено уникальных записей (после объединения по обоим ID):", meals?.length || 0, {
+      meals: meals?.map(m => ({ id: m.id, text: m.meal_text, created_at: m.created_at, user_id: m.user_id }))
     });
 
     // Вычисляем итоговые значения за день

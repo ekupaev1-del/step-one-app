@@ -128,9 +128,20 @@ serve(async (req) => {
       )
     }
 
-    // Получаем telegram_id для использования в diary (бот использует telegram_id как user_id)
+    // КРИТИЧНО: Получаем telegram_id для использования в diary (бот использует telegram_id как user_id)
     // Если telegram_id нет, используем id (для iOS пользователей без Telegram)
+    // Это гарантирует, что записи будут видны и в боте, и в iOS/miniapp
     const diaryUserId = userProfile.telegram_id || userId
+
+    console.log('[chat_food_log] Пользователь:', {
+      id: userId,
+      telegram_id: userProfile.telegram_id,
+      diaryUserId,
+      'Используется для БД': diaryUserId === userProfile.telegram_id ? 'telegram_id' : 'id'
+    })
+    // #region agent log
+    fetch('http://127.0.0.1:7242/ingest/43e8883f-375d-4d43-af6f-fef79b5ebbe3',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'backend/supabase/functions/chat_food_log/index.ts:136',message:'HYP-A: Edge Function user data',data:{userId,userProfileId:userProfile.id,telegramId:userProfile.telegram_id,diaryUserId},timestamp:Date.now(),sessionId:'debug-sync',runId:'run1',hypothesisId:'A'})}).catch(()=>{});
+    // #endregion
 
     let analyzedText = text
     let parsed: any = null
@@ -427,18 +438,24 @@ serve(async (req) => {
 
     console.log('[chat_food_log] ========== СОХРАНЕНИЕ ЗАПИСИ ==========')
     console.log('[chat_food_log] userId (из запроса):', userId)
-    console.log('[chat_food_log] diaryUserId (используется для БД):', diaryUserId)
-    console.log('[chat_food_log] date параметр:', date)
-    console.log('[chat_food_log] mealDate объект:', mealDate)
-    console.log('[chat_food_log] created_at (UTC для БД):', createdAtIndexDB)
-    console.log('[chat_food_log] dateStr (для ответа):', dateStr)
-    console.log('[chat_food_log] mealText:', mealText)
-    console.log('[chat_food_log] calories:', parsed.calories || 0)
     console.log('[chat_food_log] =========================================')
+    console.log('[chat_food_log] СОЗДАНИЕ ЗАПИСИ В БД:')
+    console.log('[chat_food_log]   user_id (для БД):', diaryUserId, `(${diaryUserId === userProfile.telegram_id ? 'telegram_id' : 'id из users'})`)
+    console.log('[chat_food_log]   meal_text:', mealText)
+    console.log('[chat_food_log]   calories:', parsed.calories || 0)
+    console.log('[chat_food_log]   protein:', parsed.protein || 0)
+    console.log('[chat_food_log]   fat:', parsed.fat || 0)
+    console.log('[chat_food_log]   carbs:', parsed.carbs || 0)
+    console.log('[chat_food_log]   created_at (UTC):', createdAtIndexDB)
+    console.log('[chat_food_log]   date (для ответа):', dateStr)
+    console.log('[chat_food_log] =========================================')
+    
+    // КРИТИЧНО: Используем diaryUserId (telegram_id если есть, иначе id)
+    // Это гарантирует единый формат записи, который будет виден и в боте, и в miniapp
     const { data: meal, error: mealError } = await supabase
       .from('diary')
       .insert({
-        user_id: diaryUserId,
+        user_id: diaryUserId,  // КРИТИЧНО: telegram_id || id - единый формат для всех клиентов
         meal_text: mealText,
         calories: parsed.calories || 0,
         protein: parsed.protein || 0,
