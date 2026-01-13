@@ -180,7 +180,7 @@ function SubscriptionPageContent() {
         // Ignore health check errors
       }
 
-      // Store debug data
+      // Store debug data with enhanced information
       const debugInfo = {
         request: { ...requestPayload, telegramUserId: "***" },
         response: {
@@ -200,6 +200,10 @@ function SubscriptionPageContent() {
           envVarStatus: providerHealth.envVarStatus,
           missingEnvVars: providerHealth.missingEnvVars,
         } : null,
+        // Enhanced debug info from server response
+        dbInsertPayloadKeys: data.debug?.dbInsertPayloadKeys || null,
+        paymentRecordId: data.debug?.paymentRecordId || null,
+        dbError: data.dbError || null,
         lastError: lastErrorRef.current,
         logs: debugLogRef.current.slice(-30), // Last 30 log entries
       };
