@@ -1,137 +1,60 @@
--- Create payments table for Robokassa payment tracking
--- This table stores payment records and uses auto-incrementing ID as InvId
--- This migration is idempotent - safe to run multiple times
+-- Migration: Create payments table
+-- Execute in Supabase SQL Editor
 
--- Create table if it doesn't exist
-CREATE TABLE IF NOT EXISTS public.payments (
-    id BIGSERIAL PRIMARY KEY,
-    user_id BIGINT NOT NULL,
-    plan_code TEXT NOT NULL DEFAULT 'trial_3d_199',
-    amount NUMERIC(10,2) NOT NULL,
-    currency TEXT NOT NULL DEFAULT 'RUB',
-    status TEXT NOT NULL DEFAULT 'created',
-    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+-- Create payments table
+CREATE TABLE IF NOT EXISTS payments (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  user_id INTEGER NOT NULL,
+  telegram_user_id TEXT NOT NULL,
+  plan_code TEXT NOT NULL,
+  amount NUMERIC(12, 2) NOT NULL,
+  currency TEXT NOT NULL DEFAULT 'RUB',
+  inv_id BIGINT NOT NULL,
+  provider TEXT NOT NULL DEFAULT 'robokassa',
+  status TEXT NOT NULL DEFAULT 'created',
+  payment_url TEXT,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  
+  -- Constraints
+  CONSTRAINT payments_status_check CHECK (status IN ('created', 'pending', 'paid', 'failed', 'canceled')),
+  CONSTRAINT payments_currency_check CHECK (currency = 'RUB'),
+  CONSTRAINT payments_provider_check CHECK (provider = 'robokassa'),
+  CONSTRAINT payments_amount_check CHECK (amount > 0)
 );
 
--- Add columns if they don't exist (for existing tables)
-DO $$ 
+-- Create indexes
+CREATE INDEX IF NOT EXISTS idx_payments_user_id ON payments(user_id);
+CREATE INDEX IF NOT EXISTS idx_payments_telegram_user_id ON payments(telegram_user_id);
+CREATE INDEX IF NOT EXISTS idx_payments_inv_id ON payments(inv_id);
+CREATE INDEX IF NOT EXISTS idx_payments_status ON payments(status);
+CREATE INDEX IF NOT EXISTS idx_payments_created_at ON payments(created_at);
+
+-- Add foreign key constraint (if users table exists)
+-- ALTER TABLE payments ADD CONSTRAINT fk_payments_user_id FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE;
+
+-- Add comments
+COMMENT ON TABLE payments IS 'Payment records for subscription purchases';
+COMMENT ON COLUMN payments.user_id IS 'Reference to users.id';
+COMMENT ON COLUMN payments.telegram_user_id IS 'Telegram user ID from initData (as string)';
+COMMENT ON COLUMN payments.plan_code IS 'Subscription plan code (e.g., monthly_199)';
+COMMENT ON COLUMN payments.inv_id IS 'Invoice ID used with payment provider';
+COMMENT ON COLUMN payments.status IS 'Payment status: created|pending|paid|failed|canceled';
+COMMENT ON COLUMN payments.payment_url IS 'Provider payment URL for redirect';
+
+-- Trigger to update updated_at
+CREATE OR REPLACE FUNCTION update_payments_updated_at()
+RETURNS TRIGGER AS $$
 BEGIN
-    -- Add plan_code if missing (CRITICAL: required by insert)
-    IF NOT EXISTS (
-        SELECT 1 FROM information_schema.columns 
-        WHERE table_schema = 'public' 
-        AND table_name = 'payments' 
-        AND column_name = 'plan_code'
-    ) THEN
-        ALTER TABLE public.payments ADD COLUMN plan_code TEXT NOT NULL DEFAULT 'trial_3d_199';
-    END IF;
+  NEW.updated_at = now();
+  RETURN NEW;
+END;
+$$ LANGUAGE plpgsql;
 
-    -- Add currency if missing (CRITICAL: required by insert)
-    IF NOT EXISTS (
-        SELECT 1 FROM information_schema.columns 
-        WHERE table_schema = 'public' 
-        AND table_name = 'payments' 
-        AND column_name = 'currency'
-    ) THEN
-        ALTER TABLE public.payments ADD COLUMN currency TEXT NOT NULL DEFAULT 'RUB';
-    END IF;
+CREATE TRIGGER payments_updated_at_trigger
+  BEFORE UPDATE ON payments
+  FOR EACH ROW
+  EXECUTE FUNCTION update_payments_updated_at();
 
-    -- Add robokassa_invoice_id if missing
-    IF NOT EXISTS (
-        SELECT 1 FROM information_schema.columns 
-        WHERE table_schema = 'public' 
-        AND table_name = 'payments' 
-        AND column_name = 'robokassa_invoice_id'
-    ) THEN
-        ALTER TABLE public.payments ADD COLUMN robokassa_invoice_id BIGINT;
-    END IF;
-
-    -- Add payment_url if missing
-    IF NOT EXISTS (
-        SELECT 1 FROM information_schema.columns 
-        WHERE table_schema = 'public' 
-        AND table_name = 'payments' 
-        AND column_name = 'payment_url'
-    ) THEN
-        ALTER TABLE public.payments ADD COLUMN payment_url TEXT;
-    END IF;
-
-    -- Add signature if missing
-    IF NOT EXISTS (
-        SELECT 1 FROM information_schema.columns 
-        WHERE table_schema = 'public' 
-        AND table_name = 'payments' 
-        AND column_name = 'signature'
-    ) THEN
-        ALTER TABLE public.payments ADD COLUMN signature TEXT;
-    END IF;
-
-    -- Add inv_id if missing (used for Robokassa InvId, same as id)
-    IF NOT EXISTS (
-        SELECT 1 FROM information_schema.columns 
-        WHERE table_schema = 'public' 
-        AND table_name = 'payments' 
-        AND column_name = 'inv_id'
-    ) THEN
-        ALTER TABLE public.payments ADD COLUMN inv_id BIGINT;
-    END IF;
-
-    -- Add out_sum if missing (Robokassa OutSum, same as amount)
-    IF NOT EXISTS (
-        SELECT 1 FROM information_schema.columns 
-        WHERE table_schema = 'public' 
-        AND table_name = 'payments' 
-        AND column_name = 'out_sum'
-    ) THEN
-        ALTER TABLE public.payments ADD COLUMN out_sum NUMERIC(10,2) NOT NULL DEFAULT 0;
-    END IF;
-END $$;
-
--- Add constraint if it doesn't exist
-DO $$
-BEGIN
-    IF NOT EXISTS (
-        SELECT 1 FROM pg_constraint 
-        WHERE conname = 'payments_status_check'
-    ) THEN
-        ALTER TABLE public.payments 
-        ADD CONSTRAINT payments_status_check 
-        CHECK (status IN ('created', 'pending', 'paid', 'failed', 'canceled'));
-    END IF;
-END $$;
-
--- Create indexes for performance (IF NOT EXISTS)
-CREATE INDEX IF NOT EXISTS payments_user_id_created_at_idx ON public.payments(user_id, created_at DESC);
-CREATE INDEX IF NOT EXISTS payments_status_idx ON public.payments(status);
-CREATE INDEX IF NOT EXISTS payments_robokassa_invoice_id_idx ON public.payments(robokassa_invoice_id);
-CREATE INDEX IF NOT EXISTS payments_inv_id_idx ON public.payments(inv_id);
-
--- Add comment
-COMMENT ON TABLE public.payments IS 'Stores Robokassa payment records. id column is used as InvId for Robokassa.';
-
--- CRITICAL: Refresh PostgREST schema cache after migration
--- This ensures Supabase API immediately recognizes new columns
+-- Notify PostgREST to reload schema cache
 SELECT pg_notify('pgrst', 'reload schema');
-
--- Verify critical columns exist (required by insert)
-DO $$
-BEGIN
-    IF NOT EXISTS (
-        SELECT 1 FROM information_schema.columns 
-        WHERE table_schema = 'public' 
-        AND table_name = 'payments' 
-        AND column_name = 'plan_code'
-    ) THEN
-        RAISE EXCEPTION 'Migration failed: plan_code column not created';
-    END IF;
-    
-    IF NOT EXISTS (
-        SELECT 1 FROM information_schema.columns 
-        WHERE table_schema = 'public' 
-        AND table_name = 'payments' 
-        AND column_name = 'currency'
-    ) THEN
-        RAISE EXCEPTION 'Migration failed: currency column not created';
-    END IF;
-END $$;

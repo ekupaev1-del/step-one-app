@@ -1,444 +1,233 @@
 /**
- * Payment Start Endpoint (Rebuilt)
+ * Payment Start Endpoint
  * POST /api/payments/start
  * 
- * Creates a payment record and returns Robokassa payment URL
- * 
- * Request body:
- * {
- *   planCode?: string,  // e.g. 'trial_3d_199'
- *   userId?: number,     // internal app user id (optional)
- *   telegramUserId: number  // REQUIRED: Telegram user ID from Telegram.WebApp.initDataUnsafe.user.id
- * }
- * 
- * Response:
- * {
- *   ok: true,
- *   paymentUrl: string,
- *   invId: string,
- *   debugId: string
- * }
+ * Creates a payment record and returns payment URL for redirect
  */
 
 import { NextResponse } from "next/server";
 import { createServerSupabaseClient } from "../../../../lib/supabaseAdmin";
-import { generateRobokassaUrl } from "../../../../lib/robokassa";
+import {
+  generatePaymentUrl,
+  generateInvoiceId,
+  PaymentRequest,
+} from "../../../../lib/paymentProvider";
 
 export const dynamic = "force-dynamic";
 
-/**
- * Generate unique inv_id (number) for Robokassa
- * Format: timestamp_ms * 1000 + random(0-999)
- * This ensures uniqueness and fits within bigint range
- * Returns as number (JavaScript number can safely represent integers up to 2^53)
- */
-function generateInvId(): number {
-  const timestamp = Date.now();
-  const random = Math.floor(Math.random() * 1000);
-  return timestamp * 1000 + random;
+interface StartPaymentRequest {
+  method: "sbp" | "card";
+  planCode: string;
+  amount: number;
+  currency: string;
+  userId?: number;
+  telegramUserId?: string; // Optional: can be sent from client
 }
 
 /**
- * Retry inv_id generation if conflict occurs
+ * Extract Telegram user ID from initData or request
  */
-async function generateUniqueInvId(
-  supabase: any,
-  maxRetries: number = 5
-): Promise<number> {
-  for (let attempt = 0; attempt < maxRetries; attempt++) {
-    const invId = generateInvId();
-    
-    // Check if inv_id already exists
-    const { data, error } = await supabase
-      .from("payments")
-      .select("inv_id")
-      .eq("inv_id", invId)
-      .limit(1);
-    
-    if (error) {
-      // If error is not about missing column, throw
-      if (!error.message.includes("Could not find") && !error.message.includes("schema cache")) {
-        throw error;
+function getTelegramUserId(req: Request): string | null {
+  // Try to get from Telegram WebApp initData
+  const initDataHeader = req.headers.get("x-telegram-init-data");
+  if (initDataHeader) {
+    try {
+      const params = new URLSearchParams(initDataHeader);
+      const userParam = params.get("user");
+      if (userParam) {
+        const user = JSON.parse(decodeURIComponent(userParam));
+        return user.id?.toString() || null;
       }
-      // Schema cache issue - return generated ID anyway
-      return invId;
-    }
-    
-    if (!data || data.length === 0) {
-      // inv_id is unique, return it
-      return invId;
-    }
-    
-    // Conflict - retry with new ID
-    if (attempt < maxRetries - 1) {
-      await new Promise(resolve => setTimeout(resolve, 10)); // Small delay
+    } catch (e) {
+      console.error("[payments/start] Failed to parse initData:", e);
     }
   }
-  
-  // If all retries failed, throw error
-  throw new Error(`Failed to generate unique inv_id after ${maxRetries} attempts`);
+
+  // Try to get from client-side (if available in request body)
+  // This will be handled by reading the request body
+  return null;
 }
 
 export async function POST(req: Request) {
-  const requestId = Date.now().toString();
-  const debugId = `pay-${requestId}`;
-  const startTime = Date.now();
-  
+  const requestId = `req-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
+  console.log(`[payments/start:${requestId}] ========== PAYMENT START REQUEST ==========`);
+
   try {
     // Parse request body
-    let body: any;
+    let body: StartPaymentRequest;
     try {
       body = await req.json();
-    } catch (parseError: any) {
-      console.error(`[payments/start:${debugId}] PARSE_ERROR`, {
-        error: parseError.message,
-        requestId: debugId
-      });
+    } catch (e) {
+      console.error(`[payments/start:${requestId}] JSON parse error:`, e);
       return NextResponse.json(
-        {
-          ok: false,
-          error: "Invalid JSON body",
-          details: "Expected JSON",
-          debugId
-        },
+        { ok: false, error: "Invalid JSON in request body" },
         { status: 400 }
       );
     }
-    
-    // Log received request for debugging
-    const receivedKeys = Object.keys(body);
-    const safePreview = (obj: any) => {
-      try {
-        const preview: any = {};
-        for (const key in obj) {
-          if (typeof obj[key] === 'string' || typeof obj[key] === 'number') {
-            preview[key] = String(obj[key]).substring(0, 20);
-          } else {
-            preview[key] = typeof obj[key];
-          }
+
+    const { method, planCode, amount, currency, userId, telegramUserId: clientTelegramUserId } = body;
+
+    // Validate required fields
+    if (!method || (method !== "sbp" && method !== "card")) {
+      return NextResponse.json(
+        { ok: false, error: "method must be 'sbp' or 'card'" },
+        { status: 400 }
+      );
+    }
+
+    if (!planCode || typeof planCode !== "string") {
+      return NextResponse.json(
+        { ok: false, error: "planCode is required" },
+        { status: 400 }
+      );
+    }
+
+    if (!amount || typeof amount !== "number" || amount <= 0) {
+      return NextResponse.json(
+        { ok: false, error: "amount must be a positive number" },
+        { status: 400 }
+      );
+    }
+
+    if (!currency || currency !== "RUB") {
+      return NextResponse.json(
+        { ok: false, error: "currency must be 'RUB'" },
+        { status: 400 }
+      );
+    }
+
+    // Get user ID from request or query params
+    let finalUserId: number | null = userId || null;
+    if (!finalUserId) {
+      const url = new URL(req.url);
+      const userIdParam = url.searchParams.get("userId") || url.searchParams.get("id");
+      if (userIdParam) {
+        finalUserId = Number(userIdParam);
+        if (!Number.isFinite(finalUserId) || finalUserId <= 0) {
+          finalUserId = null;
         }
-        return preview;
-      } catch {
-        return { error: "Could not preview" };
       }
-    };
-    
-    console.log(`[payments/start:${debugId}] REQUEST_RECEIVED`, {
-      requestId: debugId,
-      receivedKeys,
-      receivedBodyPreview: safePreview(body),
-      timestamp: new Date().toISOString()
-    });
-    
-    // Extract telegram_user_id from ALL possible keys (REQUIRED)
-    const telegramUserId = body.telegramUserId || 
-                          body.telegram_user_id || 
-                          body.tgUserId || 
-                          body.tg_user_id ||
-                          null;
-    
-    // Log what we found (Vercel logs format)
-    console.log("[payments/start]", { 
-      requestId: debugId, 
-      receivedKeys, 
-      telegramUserIdType: typeof telegramUserId, 
-      telegramUserIdValue: telegramUserId ? String(telegramUserId).slice(0, 6) + "..." : null 
-    });
-    
-    // Validate telegram_user_id BEFORE any DB operations
+    }
+
+    if (!finalUserId) {
+      return NextResponse.json(
+        { ok: false, error: "userId is required" },
+        { status: 400 }
+      );
+    }
+
+    // Get Telegram user ID
+    // Priority: 1) From request body, 2) From initData header, 3) Fallback
+    let telegramUserId = clientTelegramUserId || getTelegramUserId(req);
     if (!telegramUserId) {
-      console.error(`[payments/start:${debugId}] VALIDATION_ERROR_MISSING_TELEGRAM_USER_ID`, {
-        error: "telegramUserId is required",
-        receivedKeys,
-        receivedBodyPreview: safePreview(body),
-        requestId: debugId
-      });
-      return NextResponse.json(
-        {
-          ok: false,
-          error: "telegram_user_id_missing",
-          details: "telegramUserId is required. Open inside Telegram or pass Telegram.WebApp.initDataUnsafe.user.id",
-          debug: {
-            requestId: debugId,
-            receivedKeys,
-            receivedBodyPreview: safePreview(body)
-          },
-          debugId
-        },
-        { status: 400 }
-      );
+      // Fallback: use web:<userId> format for browser access
+      telegramUserId = `web:${finalUserId}`;
+      console.log(`[payments/start:${requestId}] Using fallback telegramUserId: ${telegramUserId}`);
     }
-    
-    // Normalize to number (safe conversion for DB bigint column)
-    let numericTelegramUserId: number;
-    
-    try {
-      if (typeof telegramUserId === 'string') {
-        // Try parsing as number first
-        numericTelegramUserId = parseInt(telegramUserId, 10);
-        if (isNaN(numericTelegramUserId)) {
-          throw new Error("Invalid numeric string");
-        }
-      } else if (typeof telegramUserId === 'number') {
-        numericTelegramUserId = telegramUserId;
-      } else {
-        throw new Error(`Invalid type: ${typeof telegramUserId}`);
-      }
-    } catch (conversionError: any) {
-      console.error(`[payments/start:${debugId}] VALIDATION_ERROR_INVALID_TYPE`, {
-        error: "Invalid telegramUserId type",
-        received: telegramUserId,
-        type: typeof telegramUserId,
-        conversionError: conversionError.message
-      });
-      return NextResponse.json(
-        {
-          ok: false,
-          error: "telegram_user_id_invalid_type",
-          details: `telegramUserId must be a number or numeric string, got ${typeof telegramUserId}`,
-          debug: {
-            requestId: debugId,
-            receivedValue: String(telegramUserId),
-            receivedType: typeof telegramUserId
-          },
-          debugId
-        },
-        { status: 400 }
-      );
-    }
-    
-    // Validate it's a valid positive integer
-    if (!Number.isFinite(numericTelegramUserId) || numericTelegramUserId <= 0 || !Number.isInteger(numericTelegramUserId)) {
-      console.error(`[payments/start:${debugId}] VALIDATION_ERROR_INVALID_VALUE`, {
-        error: "Invalid telegramUserId value",
-        received: telegramUserId,
-        parsed: numericTelegramUserId
-      });
-      return NextResponse.json(
-        {
-          ok: false,
-          error: "telegram_user_id_invalid_value",
-          details: `telegramUserId must be a positive integer, got: ${telegramUserId}`,
-          debug: {
-            requestId: debugId,
-            receivedValue: String(telegramUserId),
-            parsedValue: numericTelegramUserId
-          },
-          debugId
-        },
-        { status: 400 }
-      );
-    }
-    
-    console.log(`[payments/start:${debugId}] TELEGRAM_USER_ID_VALIDATED`, {
-      requestId: debugId,
-      telegramUserId: numericTelegramUserId,
-      timestamp: new Date().toISOString()
-    });
-    
-    // Extract optional fields
-    const planCode = body.planCode || "trial_3d_199";
-    const userId = body.userId ? Number(body.userId) : null;
-    const amount = "1.00"; // 1 RUB for trial
-    const isTest = process.env.ROBOKASSA_TEST_MODE === "true" || process.env.ROBOKASSA_TEST_MODE === "1";
-    
-    // Check for debug mode
-    const url = new URL(req.url);
-    const debugMode = url.searchParams.get("debug") === "1" || req.headers.get("x-debug") === "1" || process.env.NODE_ENV !== "production";
-    
-    console.log(`[payments/start:${debugId}] CREATE_PAYMENT_START`, {
-      telegramUserId: numericTelegramUserId,
-      userId,
-      planCode,
-      amount,
-      isTest,
-      requestId: debugId,
-      timestamp: new Date().toISOString()
-    });
-    
-    // Initialize Supabase client
+
+    console.log(`[payments/start:${requestId}] userId: ${finalUserId}, telegramUserId: ${telegramUserId}, method: ${method}`);
+
+    // Initialize Supabase
     const supabase = createServerSupabaseClient();
-    
-    // Generate unique inv_id BEFORE insert
-    let invId: number;
-    try {
-      invId = await generateUniqueInvId(supabase);
-      console.log(`[payments/start:${debugId}] GENERATED_INV_ID`, {
-        invId: invId,
-        requestId: debugId
-      });
-    } catch (invIdError: any) {
-      console.error(`[payments/start:${debugId}] INV_ID_GENERATION_ERROR`, {
-        error: invIdError.message,
-        requestId: debugId
-      });
+
+    // Generate invoice ID
+    const invId = generateInvoiceId();
+    const invIdNumeric = BigInt(invId);
+
+    console.log(`[payments/start:${requestId}] Generated invId: ${invId}`);
+
+    // Get payment provider config from env
+    const merchantLogin = process.env.ROBO_MERCHANT_LOGIN;
+    const password1 = process.env.ROBO_PASSWORD1;
+    const password2 = process.env.ROBO_PASSWORD2;
+    const baseUrl = process.env.APP_BASE_URL || process.env.NEXT_PUBLIC_VERCEL_URL || "";
+    const isTest = process.env.ROBO_IS_TEST === "true";
+
+    if (!merchantLogin || !password1 || !password2) {
+      console.error(`[payments/start:${requestId}] Missing payment provider credentials`);
       return NextResponse.json(
-        {
-          ok: false,
-          error: "Failed to generate invoice ID",
-          details: invIdError.message,
-          debugId
-        },
+        { ok: false, error: "Payment provider not configured" },
         { status: 500 }
       );
     }
-    
-    // Generate Robokassa payment URL and signature
-    const description = "Пробный период 3 дня";
-    const result = generateRobokassaUrl(
-      amount,
-      invId.toString(),
-      description,
-      numericTelegramUserId.toString(),
+
+    // Generate payment URL
+    const paymentRequest: PaymentRequest = {
+      amount: amount.toFixed(2),
+      invId,
+      description: `Подписка ${planCode}`,
+      telegramUserId,
+      method,
       planCode,
-      isTest,
-      debugMode
+    };
+
+    const { paymentUrl } = generatePaymentUrl(
+      {
+        merchantLogin,
+        password1,
+        password2,
+        baseUrl,
+        isTest,
+      },
+      paymentRequest
     );
-    
-    const paymentUrl = typeof result === "string" ? result : result.paymentUrl;
-    const debug = typeof result === "string" ? undefined : result.debug;
-    
-    if (!paymentUrl || typeof paymentUrl !== "string" || !paymentUrl.startsWith("https://")) {
-      console.error(`[payments/start:${debugId}] URL_GENERATION_ERROR`, {
-        error: "Invalid payment URL generated",
-        urlType: typeof paymentUrl,
-        urlPrefix: paymentUrl?.substring(0, 20)
-      });
-      return NextResponse.json(
-        {
-          ok: false,
-          error: "Failed to generate payment URL",
-          details: "Generated URL is invalid",
-          debugId
-        },
-        { status: 500 }
-      );
-    }
-    
-    // Insert payment record with ALL required fields
+
+    console.log(`[payments/start:${requestId}] Generated payment URL: ${paymentUrl.substring(0, 100)}...`);
+
+    // Create payment record in database BEFORE returning URL
     const { data: paymentRecord, error: insertError } = await supabase
       .from("payments")
       .insert({
-        telegram_user_id: numericTelegramUserId,
-        user_id: userId,
+        user_id: finalUserId,
+        telegram_user_id: telegramUserId,
         plan_code: planCode,
-        amount: parseFloat(amount),
+        amount: amount.toFixed(2),
         currency: "RUB",
-        inv_id: invId, // number, not string
-        description: description,
+        inv_id: invId,
+        provider: "robokassa",
         status: "created",
         payment_url: paymentUrl,
-        provider: "robokassa",
-        provider_payload: debug ? { signature: debug.signatureValue?.substring(0, 6) + "..." } : {}
       })
-      .select("id, inv_id, telegram_user_id, created_at")
+      .select()
       .single();
-    
+
     if (insertError || !paymentRecord) {
-      const errorDetails = insertError?.message || "No payment record returned";
-      
-      // Extract failing column name from error if possible
-      const columnMatch = errorDetails.match(/column "(\w+)" of relation "payments"/);
-      const failingColumn = columnMatch ? columnMatch[1] : null;
-      
-      console.error(`[payments/start:${debugId}] CREATE_PAYMENT_ERROR`, {
-        errorMessage: "Failed to create payment record",
-        error: errorDetails,
-        failingColumn,
-        insertPayload: {
-          telegram_user_id: numericTelegramUserId,
-          user_id: userId,
-          plan_code: planCode,
-          amount: parseFloat(amount),
-          currency: "RUB",
-          inv_id: invId.toString(),
-          description: description,
-          status: "created",
-          payment_url: paymentUrl.substring(0, 50) + "...",
-          provider: "robokassa"
-        },
-        requestId: debugId,
-        timestamp: new Date().toISOString()
-      });
-      
+      console.error(`[payments/start:${requestId}] Failed to create payment record:`, insertError);
       return NextResponse.json(
         {
           ok: false,
           error: "Failed to create payment record",
-          details: errorDetails,
-          failingColumn,
-          hint: failingColumn 
-            ? `Column '${failingColumn}' is missing or has wrong type. Run migration rebuild_payments_table.sql in Supabase SQL Editor.`
-            : "Check database migration and ensure all columns exist.",
-          debugId,
-          debug: debugMode ? {
-            requestId: debugId,
-            timestamp: new Date().toISOString(),
-            environment: {
-              nodeEnv: process.env.NODE_ENV || "unknown",
-              vercelEnv: process.env.VERCEL_ENV || "unknown"
-            },
-            dbError: insertError ? {
-              message: insertError.message,
-              code: insertError.code,
-              details: insertError.details,
-              hint: insertError.hint
-            } : null
-          } : undefined
+          details: insertError?.message,
         },
         { status: 500 }
       );
     }
-    
-    const elapsed = Date.now() - startTime;
-    
-    console.log(`[payments/start:${debugId}] CREATE_PAYMENT_OK`, {
-      paymentId: paymentRecord.id,
-      invId: invId.toString(),
-      telegramUserId: numericTelegramUserId,
-      userId,
-      planCode,
-      amount,
-      paymentUrlLength: paymentUrl.length,
-      elapsed,
-      requestId: debugId,
-      timestamp: new Date().toISOString()
-    });
-    
+
+    console.log(`[payments/start:${requestId}] Payment record created: ${paymentRecord.id}`);
+
     // Return success response
     return NextResponse.json({
       ok: true,
+      invId,
       paymentUrl,
-      invId: invId.toString(),
-      debugId,
-      debug: debugMode ? {
-        requestId: debugId,
-        paymentId: paymentRecord.id,
-        invId: invId.toString(),
-        telegramUserId: numericTelegramUserId,
+      paymentId: paymentRecord.id,
+      debug: {
+        requestId,
+        userId: finalUserId,
+        telegramUserId,
+        method,
         planCode,
         amount,
-        signature: debug?.signatureValue?.substring(0, 6) + "...",
-        timestamp: new Date().toISOString()
-      } : undefined
+        currency,
+      },
     });
-    
   } catch (error: any) {
-    const elapsed = Date.now() - startTime;
-    console.error(`[payments/start:${debugId}] UNEXPECTED_ERROR`, {
-      error: error.message,
-      stack: error.stack,
-      elapsed,
-      requestId: debugId,
-      timestamp: new Date().toISOString()
-    });
-    
+    console.error(`[payments/start:${requestId}] Unexpected error:`, error);
     return NextResponse.json(
       {
         ok: false,
-        error: "Internal server error",
-        details: error.message,
-        debugId
+        error: error.message || "Internal server error",
+        requestId,
       },
       { status: 500 }
     );

@@ -16,8 +16,9 @@ function AppNavigation() {
   const isReportsActive = pathname === "/report" || pathname.startsWith("/report");
   const isProfileActive = pathname === "/profile" || pathname.startsWith("/profile");
   const isRecommendationsActive = pathname === "/recommendations" || pathname.startsWith("/recommendations");
+  const isSubscriptionActive = pathname === "/subscription" || pathname.startsWith("/subscription");
 
-  const handleNavigation = (path: "/report" | "/profile" | "/recommendations") => {
+  const handleNavigation = (path: "/report" | "/profile" | "/recommendations" | "/subscription") => {
     const url = `${path}${userIdParam}`;
     // Мгновенная навигация без задержек
     (router.push as (href: string) => void)(url);
@@ -119,6 +120,48 @@ function AppNavigation() {
               Рекомендации
             </span>
             {isRecommendationsActive && (
+              <div 
+                className="absolute bottom-0 left-1/2 -translate-x-1/2 rounded-full"
+                style={{
+                  width: '40px',
+                  height: '3px',
+                  background: '#8FBC8F',
+                  borderRadius: '2px'
+                }}
+              />
+            )}
+          </button>
+
+          {/* Кнопка "Подписка" */}
+          <button
+            onClick={() => handleNavigation("/subscription")}
+            className="flex-1 flex flex-col items-center justify-center h-full relative"
+            style={{
+              paddingTop: '8px',
+              paddingBottom: '8px'
+            }}
+          >
+            <span 
+              className="mb-1.5"
+              style={{
+                fontSize: '22px',
+                lineHeight: '1',
+                opacity: isSubscriptionActive ? 1.0 : 0.65
+              }}
+            >
+              💳
+            </span>
+            <span 
+              className="font-medium"
+              style={{
+                fontSize: '12px',
+                color: isSubscriptionActive ? '#8FBC8F' : '#5F5B62',
+                fontWeight: isSubscriptionActive ? 600 : 500
+              }}
+            >
+              Subscription
+            </span>
+            {isSubscriptionActive && (
               <div 
                 className="absolute bottom-0 left-1/2 -translate-x-1/2 rounded-full"
                 style={{
