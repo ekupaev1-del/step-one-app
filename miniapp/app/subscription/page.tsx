@@ -492,10 +492,17 @@ function SubscriptionPageContent() {
                               <div>ROBOKASSA_MERCHANT_LOGIN: {debugData.providerConfig.envVarStatus?.robokassaMerchantLogin ? "✅" : "❌"}</div>
                               <div>ROBOKASSA_PASSWORD1: {debugData.providerConfig.envVarStatus?.robokassaPassword1 ? "✅" : "❌"}</div>
                               <div>ROBOKASSA_PASSWORD2: {debugData.providerConfig.envVarStatus?.robokassaPassword2 ? "✅" : "❌"}</div>
-                              <div className="text-gray-500 text-[10px] mt-1">Алиасы (fallback):</div>
-                              <div className="ml-2">ROBO_MERCHANT_LOGIN: {debugData.providerConfig.envVarStatus?.roboMerchantLogin ? "✅" : "❌"}</div>
-                              <div className="ml-2">ROBO_PASSWORD1: {debugData.providerConfig.envVarStatus?.roboPassword1 ? "✅" : "❌"}</div>
-                              <div className="ml-2">ROBO_PASSWORD2: {debugData.providerConfig.envVarStatus?.roboPassword2 ? "✅" : "❌"}</div>
+                              {/* Show fallback aliases ONLY if ROBOKASSA_* variables are missing */}
+                              {(!debugData.providerConfig.envVarStatus?.robokassaMerchantLogin || 
+                                !debugData.providerConfig.envVarStatus?.robokassaPassword1 || 
+                                !debugData.providerConfig.envVarStatus?.robokassaPassword2) && (
+                                <>
+                                  <div className="text-gray-500 text-[10px] mt-1">Алиасы (fallback, опционально):</div>
+                                  <div className="ml-2">ROBO_MERCHANT_LOGIN: {debugData.providerConfig.envVarStatus?.roboMerchantLogin ? "✅" : "❌"}</div>
+                                  <div className="ml-2">ROBO_PASSWORD1: {debugData.providerConfig.envVarStatus?.roboPassword1 ? "✅" : "❌"}</div>
+                                  <div className="ml-2">ROBO_PASSWORD2: {debugData.providerConfig.envVarStatus?.roboPassword2 ? "✅" : "❌"}</div>
+                                </>
+                              )}
                             </div>
                           </div>
                           {debugData.providerConfig.missingEnvVars && debugData.providerConfig.missingEnvVars.length > 0 && (

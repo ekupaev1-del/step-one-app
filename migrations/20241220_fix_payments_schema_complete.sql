@@ -136,6 +136,41 @@ BEGIN
     ALTER TABLE payments ALTER COLUMN inv_id TYPE TEXT USING inv_id::TEXT;
   END IF;
 
+  -- CRITICAL: Convert telegram_user_id to TEXT if it's INTEGER or BIGINT
+  -- This fixes the 22P02 error: invalid input syntax for type integer: "web:253"
+  IF EXISTS (
+    SELECT 1 FROM information_schema.columns 
+    WHERE table_name = 'payments' 
+    AND column_name = 'telegram_user_id' 
+    AND data_type IN ('integer', 'bigint', 'smallint')
+  ) THEN
+    -- Drop index if exists (will recreate after conversion)
+    DROP INDEX IF EXISTS idx_payments_telegram_user_id;
+    
+    -- Convert existing numeric values to text
+    ALTER TABLE payments 
+    ALTER COLUMN telegram_user_id 
+    TYPE TEXT 
+    USING CASE 
+      WHEN telegram_user_id IS NULL THEN 'unknown'
+      ELSE telegram_user_id::TEXT
+    END;
+    
+    -- Ensure NOT NULL
+    ALTER TABLE payments 
+    ALTER COLUMN telegram_user_id 
+    SET NOT NULL;
+    
+    -- Set default
+    ALTER TABLE payments 
+    ALTER COLUMN telegram_user_id 
+    SET DEFAULT '';
+    
+    -- Recreate index
+    CREATE INDEX IF NOT EXISTS idx_payments_telegram_user_id 
+    ON payments(telegram_user_id);
+  END IF;
+
   -- Ensure telegram_user_id is NOT NULL (fix existing NULLs)
   IF EXISTS (
     SELECT 1 FROM payments WHERE telegram_user_id IS NULL LIMIT 1
