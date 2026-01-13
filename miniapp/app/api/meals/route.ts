@@ -43,7 +43,7 @@ export async function GET(req: Request) {
     .from("diary")
     .select("*")
     .eq("user_id", diaryUserId)
-    .order("created_at", ascending: false);
+    .order("created_at", { ascending: false });
 
   if (errorByDiaryUserId) {
     console.error("[/api/meals] Ошибка поиска по diaryUserId:", errorByDiaryUserId);
@@ -60,7 +60,7 @@ export async function GET(req: Request) {
       .from("diary")
       .select("*")
       .eq("user_id", user.id)
-      .order("created_at", ascending: false);
+      .order("created_at", { ascending: false });
 
     if (errorById) {
       console.error("[/api/meals] Ошибка поиска по id:", errorById);
