@@ -512,6 +512,56 @@ function SubscriptionPageContent() {
                       </div>
                     )}
 
+                    {/* DB Insert Payload Info */}
+                    {debugData.dbInsertPayloadKeys && (
+                      <div className="mb-3 p-3 bg-white rounded border border-green-200">
+                        <div className="text-xs font-semibold text-green-900 mb-2">DB Insert Payload</div>
+                        <div className="text-xs text-gray-700">
+                          <div className="font-medium">Ключи:</div>
+                          <div className="ml-2 mt-1 font-mono text-[10px]">
+                            {debugData.dbInsertPayloadKeys.join(", ")}
+                          </div>
+                          {debugData.paymentRecordId && (
+                            <div className="mt-2">
+                              <span className="font-medium">Payment Record ID:</span>{" "}
+                              <span className="font-mono">{debugData.paymentRecordId}</span>
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                    )}
+
+                    {/* DB Error Info */}
+                    {debugData.dbError && (
+                      <div className="mb-3 p-3 bg-red-50 rounded border border-red-200">
+                        <div className="text-xs font-semibold text-red-900 mb-2">Ошибка БД</div>
+                        <div className="text-xs space-y-1">
+                          <div>
+                            <span className="font-medium">Сообщение:</span>{" "}
+                            <span className="text-red-700">{debugData.dbError.message || "Unknown"}</span>
+                          </div>
+                          {debugData.dbError.code && (
+                            <div>
+                              <span className="font-medium">Код:</span>{" "}
+                              <span className="text-red-700">{debugData.dbError.code}</span>
+                            </div>
+                          )}
+                          {debugData.dbError.details && (
+                            <div>
+                              <span className="font-medium">Детали:</span>{" "}
+                              <span className="text-red-700 text-[10px]">{debugData.dbError.details}</span>
+                            </div>
+                          )}
+                          {debugData.dbError.hint && (
+                            <div>
+                              <span className="font-medium">Подсказка:</span>{" "}
+                              <span className="text-red-700 text-[10px]">{debugData.dbError.hint}</span>
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                    )}
+
                     <div className="text-xs font-semibold text-blue-900 mb-2">Запрос/Ответ</div>
                     <pre className="text-xs font-mono text-gray-700 whitespace-pre-wrap break-all max-h-40 overflow-y-auto bg-white p-2 rounded border">
                       {JSON.stringify(debugData, null, 2)}
