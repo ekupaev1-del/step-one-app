@@ -202,6 +202,7 @@ function SubscriptionPageContent() {
         } : null,
         // Enhanced debug info from server response
         dbInsertPayloadKeys: data.debug?.dbInsertPayloadKeys || null,
+        dbInsertPayload: data.debug?.dbInsertPayload || null,
         paymentRecordId: data.debug?.paymentRecordId || null,
         dbError: data.dbError || null,
         lastError: lastErrorRef.current,
