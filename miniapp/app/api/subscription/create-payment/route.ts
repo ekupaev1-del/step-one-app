@@ -55,8 +55,14 @@ export async function POST(req: NextRequest) {
 
     // Parse request body first (can only be read once)
     let body: CreatePaymentRequest = {} as CreatePaymentRequest;
+    let bodyText = "";
+    let bodyPreview = "";
     try {
-      body = await req.json();
+      bodyText = await req.text();
+      bodyPreview = bodyText.substring(0, 500);
+      if (bodyText) {
+        body = JSON.parse(bodyText);
+      }
     } catch (e) {
       // Body might be empty or not JSON - that's ok, continue without body
     }
@@ -65,18 +71,43 @@ export async function POST(req: NextRequest) {
     const userIdResolution = await resolveUserIdFromRequest(req, body);
     const userId = userIdResolution.userId;
 
+    // Collect query params for debug
+    const url = new URL(req.url);
+    const queryParams: Record<string, string> = {};
+    url.searchParams.forEach((value, key) => {
+      queryParams[key] = value;
+    });
+
+    // Collect safe headers for debug
+    const headersSubset: Record<string, string> = {};
+    const safeHeaders = ["content-type", "user-agent", "accept", "accept-language"];
+    safeHeaders.forEach((headerName) => {
+      const value = req.headers.get(headerName);
+      if (value) {
+        headersSubset[headerName] = value;
+      }
+    });
+
     if (!userId) {
       const response: any = {
         ok: false,
         error: "userId is required",
         code: "USER_ID_MISSING",
         requestId,
+        timestamp: new Date().toISOString(),
       };
 
       // Include debug info only when DEBUG_PAYMENTS=true or not production
       if (shouldIncludeDebug()) {
         response.debug = {
+          queryParams,
+          bodyPreview,
+          parsedBody: body && typeof body === "object" ? Object.keys(body) : null,
+          parsedBodyKeys: body && typeof body === "object" ? Object.keys(body) : [],
+          bodyHasUserId: body?.userId !== undefined,
+          bodyHasId: body?.id !== undefined,
           userIdResolution,
+          headersSubset,
         };
       }
 
@@ -207,12 +238,29 @@ export async function POST(req: NextRequest) {
       amount,
     });
 
-    return NextResponse.json({
+    const successResponse: any = {
       ok: true,
       invId,
       paymentUrl: paymentUrlResult.url,
       requestId,
-    });
+      timestamp: new Date().toISOString(),
+    };
+
+    // Include debug echo when debug enabled
+    if (shouldIncludeDebug()) {
+      successResponse.debug = {
+        queryParams,
+        bodyPreview,
+        parsedBodyKeys: body && typeof body === "object" ? Object.keys(body) : [],
+        bodyHasUserId: body?.userId !== undefined,
+        bodyHasId: body?.id !== undefined,
+        userIdResolution,
+        headersSubset,
+        resolvedUserId: userId,
+      };
+    }
+
+    return NextResponse.json(successResponse);
   } catch (error: any) {
     console.error(`[subscription/create-payment:${requestId}] Unexpected error:`, error);
     const response: any = {

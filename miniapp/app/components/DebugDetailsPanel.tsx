@@ -14,8 +14,11 @@ export interface DebugErrorDetails {
     endpoint: string;
     method: string;
     payloadKeys?: string[];
+    payloadHasUserId?: boolean;
+    payloadUserIdValue?: number;
     headers?: Record<string, string>;
   };
+  serverDebug?: any;
   apiResponse?: {
     status: number;
     statusText?: string;

@@ -23,6 +23,23 @@ export async function GET(req: NextRequest) {
   const requestId = `subscription-status-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
   
   try {
+    // Collect query params for debug
+    const url = new URL(req.url);
+    const queryParams: Record<string, string> = {};
+    url.searchParams.forEach((value, key) => {
+      queryParams[key] = value;
+    });
+
+    // Collect safe headers for debug
+    const headersSubset: Record<string, string> = {};
+    const safeHeaders = ["content-type", "user-agent", "accept", "accept-language"];
+    safeHeaders.forEach((headerName) => {
+      const value = req.headers.get(headerName);
+      if (value) {
+        headersSubset[headerName] = value;
+      }
+    });
+
     // Resolve userId with full diagnostics
     const userIdResolution = await resolveUserIdFromRequest(req);
     const userId = userIdResolution.userId;
@@ -33,12 +50,15 @@ export async function GET(req: NextRequest) {
         error: "userId is required",
         code: "USER_ID_MISSING",
         requestId,
+        timestamp: new Date().toISOString(),
       };
 
       // Include debug info only when DEBUG_PAYMENTS=true or not production
       if (shouldIncludeDebug()) {
         response.debug = {
+          queryParams,
           userIdResolution,
+          headersSubset,
         };
       }
 
@@ -77,7 +97,7 @@ export async function GET(req: NextRequest) {
     }
 
     // Format response
-    const result = {
+    const result: any = {
       ok: true,
       hasSubscription: !!subscription,
       active: subscription?.status === "active" || subscription?.status === "trialing",
@@ -88,6 +108,16 @@ export async function GET(req: NextRequest) {
       requestId,
       timestamp: new Date().toISOString(),
     };
+
+    // Include debug echo when debug enabled
+    if (shouldIncludeDebug()) {
+      result.debug = {
+        queryParams,
+        userIdResolution,
+        headersSubset,
+        resolvedUserId: userId,
+      };
+    }
 
     return NextResponse.json(result);
   } catch (error: any) {

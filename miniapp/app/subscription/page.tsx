@@ -137,9 +137,26 @@ function SubscriptionPageContent() {
     // Collect client debug context
     const clientContext = collectClientDebugContext();
 
-    // Validate userId before making API call
+    // CRITICAL: Resolve userId DIRECTLY from searchParams (not from state)
+    // This ensures we get the value even if state hasn't updated yet
     const trace = resolveUserIdWithTrace(searchParams);
-    if (!userId) {
+    const resolvedUserId = trace.userId;
+
+    // Also try to get from window.location as fallback
+    let finalUserId = resolvedUserId;
+    if (!finalUserId && typeof window !== "undefined") {
+      const urlParams = new URLSearchParams(window.location.search);
+      const urlUserId = urlParams.get("userId") || urlParams.get("id");
+      if (urlUserId) {
+        const n = Number(urlUserId);
+        if (Number.isFinite(n) && n > 0) {
+          finalUserId = n;
+          trace.notes.push(`Fallback: Found userId=${n} from window.location.search`);
+        }
+      }
+    }
+
+    if (!finalUserId) {
       const debugDetails: DebugErrorDetails = {
         errorType: "USER_ID_MISSING",
         message: "userId обязателен",
@@ -164,14 +181,20 @@ function SubscriptionPageContent() {
       return;
     }
 
+    // Build payload with userId in BOTH places
     const payload = {
+      userId: finalUserId,  // Include in body
+      id: finalUserId,       // Also include as 'id' for compatibility
       method: selectedMethod,
       planCode: "trial_3d_then_199",
-      returnPath: `/subscription?id=${userId}`,
+      returnPath: `/subscription?id=${finalUserId}`,
     };
 
+    // Build URL with userId in query string
+    const apiUrl = `/api/subscription/create-payment?userId=${finalUserId}`;
+
     try {
-      const response = await fetch("/api/subscription/create-payment", {
+      const response = await fetch(apiUrl, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
@@ -183,8 +206,7 @@ function SubscriptionPageContent() {
       const duration = Date.now() - startTime;
 
       if (!response.ok || !data.ok) {
-        // Build debug error details
-        const trace = resolveUserIdWithTrace(searchParams);
+        // Build debug error details with full request/response info
         const debugDetails: DebugErrorDetails = {
           errorType: "API_ERROR",
           message: data.error || "Ошибка создания платежа",
@@ -193,9 +215,11 @@ function SubscriptionPageContent() {
           duration,
           clientContext,
           apiRequest: {
-            endpoint: "/api/subscription/create-payment",
+            endpoint: apiUrl,  // Full URL with query params
             method: "POST",
             payloadKeys: Object.keys(payload),
+            payloadHasUserId: payload.userId !== undefined,
+            payloadUserIdValue: payload.userId,
             headers: {
               "Content-Type": "application/json",
             },
@@ -205,15 +229,14 @@ function SubscriptionPageContent() {
             statusText: response.statusText,
             body: data,
           },
-          serverError: data.errorDetails || (data.error
-            ? {
-                code: data.code || undefined,
-                message: data.error,
-                details: data.details || undefined,
-              }
-            : undefined),
+          serverError: data.code ? {
+            code: data.code,
+            message: data.error,
+            details: data.debug || data.details,
+          } : undefined,
+          serverDebug: data.debug,  // Include server debug if available
           userId: {
-            value: userId,
+            value: finalUserId,
             source: trace.source,
             derivation: JSON.stringify(trace, null, 2),
           },
@@ -253,7 +276,6 @@ function SubscriptionPageContent() {
       console.error("[SubscriptionPage] Ошибка создания платежа:", err);
 
       // Build debug error details for network/client errors
-      const trace = resolveUserIdWithTrace(searchParams);
       const debugDetails: DebugErrorDetails = {
         errorType: "CLIENT_ERROR",
         message: err.message || "Ошибка создания платежа",
@@ -261,15 +283,17 @@ function SubscriptionPageContent() {
         duration,
         clientContext,
         apiRequest: {
-          endpoint: "/api/subscription/create-payment",
+          endpoint: apiUrl,  // Full URL with query params
           method: "POST",
           payloadKeys: Object.keys(payload),
+          payloadHasUserId: payload.userId !== undefined,
+          payloadUserIdValue: payload.userId,
           headers: {
             "Content-Type": "application/json",
           },
         },
         userId: {
-          value: userId,
+          value: finalUserId,
           source: trace.source,
           derivation: JSON.stringify(trace, null, 2),
         },
