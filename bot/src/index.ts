@@ -246,9 +246,18 @@ bot.start(async (ctx) => {
       console.log(`[bot:${requestId}] Создание новой записи для telegram_id: ${telegram_id}`);
       console.log(`[bot:${requestId}] Insert payload keys: ["telegram_id"]`); // Sanitized payload keys
       
-      const upsertPayload = { telegram_id };
+      // Ensure telegram_id is a number (telegram IDs are always numeric)
+      const upsertPayload: { telegram_id: number } = { telegram_id: Number(telegram_id) };
+      
+      // Validate telegram_id is a valid number
+      if (!Number.isFinite(upsertPayload.telegram_id) || upsertPayload.telegram_id <= 0) {
+        console.error(`[bot:${requestId}] Invalid telegram_id: ${telegram_id}`);
+        return ctx.reply(`Ошибка: некорректный Telegram ID. Код: ${requestId}`);
+      }
       
       try {
+        // Idempotent upsert: ON CONFLICT DO UPDATE (or nothing if ignoreDuplicates: false)
+        // This ensures user is created or updated if exists
         const { data: upserted, error: upsertError } = await supabase
           .from("users")
           .upsert(upsertPayload, { onConflict: "telegram_id", ignoreDuplicates: false })
@@ -260,53 +269,40 @@ bot.start(async (ctx) => {
           const dbErrorDetails = {
             message: upsertError.message,
             code: upsertError.code,
-            details: upsertError.details,
+            detail: upsertError.details,
             hint: upsertError.hint,
             constraint: (upsertError as any).constraint,
             table: (upsertError as any).table,
             column: (upsertError as any).column,
-            schema: (upsertError as any).schema,
-            internal: (upsertError as any).internal,
-            internalQuery: (upsertError as any).internalQuery,
-            internalPosition: (upsertError as any).internalPosition,
-            where: (upsertError as any).where,
-            file: (upsertError as any).file,
-            line: (upsertError as any).line,
-            routine: (upsertError as any).routine,
-            stack: upsertError.stack,
           };
           
-          // DB failure snapshot for debugging (no secrets)
-          const dbFailureSnapshot = {
+          // Create structured error log entry
+          const errorLogEntry = {
+            code: requestId,
+            route: "/start",
             requestId,
-            operation: operationName,
-            telegramUserId: telegram_id,
-            userId: undefined, // Not created yet
-            env: process.env.NODE_ENV || "unknown",
-            vercelEnv: process.env.VERCEL_ENV || "unknown",
-            hasDbUrl: hasSupabaseUrl,
-            hasDbKey: hasSupabaseKey,
-            isProduction,
+            telegram: {
+              chatId: ctx.chat?.id,
+              userId: telegram_id,
+            },
+            db: dbErrorDetails,
             payloadKeys: Object.keys(upsertPayload),
-            payloadValues: Object.keys(upsertPayload).reduce((acc, key) => {
+            payloadPreview: Object.keys(upsertPayload).reduce((acc, key) => {
               const value = (upsertPayload as any)[key];
-              // Only log non-sensitive values, mask sensitive ones
-              if (typeof value === "number" || typeof value === "string") {
-                acc[key] = typeof value === "number" ? value : `${typeof value}(${value.length})`;
+              // Only log non-sensitive preview values
+              if (typeof value === "number") {
+                acc[key] = value;
+              } else if (typeof value === "string") {
+                acc[key] = `string(${value.length})`;
               }
               return acc;
             }, {} as Record<string, any>),
+            timestamp: new Date().toISOString(),
+            operation: operationName,
           };
           
-          console.error(`[bot:${requestId}] Ошибка upsert (createUserOnStart):`, {
-            operation: operationName,
-            telegram_id,
-            payloadKeys: Object.keys(upsertPayload), // Sanitized payload keys
-            dbError: dbErrorDetails,
-          });
-          
-          // Separate log entry for DB failure snapshot (easy to find in logs)
-          console.error(`[bot:${requestId}] DB_FAILURE_SNAPSHOT:`, JSON.stringify(dbFailureSnapshot, null, 2));
+          // Log as single structured JSON line for easy parsing
+          console.error(`[bot:${requestId}] ERROR:`, JSON.stringify(errorLogEntry));
           
           return ctx.reply(`Ошибка создания записи в базе. Попробуйте позже. Код: ${requestId}`);
         }
