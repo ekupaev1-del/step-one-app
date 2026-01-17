@@ -187,20 +187,50 @@ bot.start(async (ctx) => {
       .maybeSingle();
 
     if (selectError) {
-      // Detailed Postgres error logging
+      // Extract all possible Postgres error fields
       const dbErrorDetails = {
         message: selectError.message,
         code: selectError.code,
         details: selectError.details,
         hint: selectError.hint,
+        constraint: (selectError as any).constraint,
+        table: (selectError as any).table,
+        column: (selectError as any).column,
+        schema: (selectError as any).schema,
+        internal: (selectError as any).internal,
+        internalQuery: (selectError as any).internalQuery,
+        internalPosition: (selectError as any).internalPosition,
+        where: (selectError as any).where,
+        file: (selectError as any).file,
+        line: (selectError as any).line,
+        routine: (selectError as any).routine,
         stack: selectError.stack,
       };
+      
+      // DB failure snapshot for debugging (no secrets)
+      const dbFailureSnapshot = {
+        requestId,
+        operation: operationName,
+        telegramUserId: telegram_id,
+        userId: undefined,
+        env: process.env.NODE_ENV || "unknown",
+        vercelEnv: process.env.VERCEL_ENV || "unknown",
+        hasDbUrl: hasSupabaseUrl,
+        hasDbKey: hasSupabaseKey,
+        isProduction,
+        payloadKeys: ["telegram_id"],
+      };
+      
       console.error(`[bot:${requestId}] Ошибка проверки пользователя (select):`, {
         operation: operationName,
         telegram_id,
         dbError: dbErrorDetails,
         payloadKeys: ["telegram_id"], // Sanitized payload keys
       });
+      
+      // Separate log entry for DB failure snapshot
+      console.error(`[bot:${requestId}] DB_FAILURE_SNAPSHOT:`, JSON.stringify(dbFailureSnapshot, null, 2));
+      
       return ctx.reply(`Ошибка базы данных. Попробуйте позже. Код: ${requestId}`);
     }
 
@@ -226,20 +256,58 @@ bot.start(async (ctx) => {
           .single();
 
         if (upsertError) {
-          // Detailed Postgres error logging with all fields
+          // Extract all possible Postgres error fields
           const dbErrorDetails = {
             message: upsertError.message,
             code: upsertError.code,
             details: upsertError.details,
             hint: upsertError.hint,
+            constraint: (upsertError as any).constraint,
+            table: (upsertError as any).table,
+            column: (upsertError as any).column,
+            schema: (upsertError as any).schema,
+            internal: (upsertError as any).internal,
+            internalQuery: (upsertError as any).internalQuery,
+            internalPosition: (upsertError as any).internalPosition,
+            where: (upsertError as any).where,
+            file: (upsertError as any).file,
+            line: (upsertError as any).line,
+            routine: (upsertError as any).routine,
             stack: upsertError.stack,
           };
+          
+          // DB failure snapshot for debugging (no secrets)
+          const dbFailureSnapshot = {
+            requestId,
+            operation: operationName,
+            telegramUserId: telegram_id,
+            userId: undefined, // Not created yet
+            env: process.env.NODE_ENV || "unknown",
+            vercelEnv: process.env.VERCEL_ENV || "unknown",
+            hasDbUrl: hasSupabaseUrl,
+            hasDbKey: hasSupabaseKey,
+            isProduction,
+            payloadKeys: Object.keys(upsertPayload),
+            payloadValues: Object.keys(upsertPayload).reduce((acc, key) => {
+              const value = (upsertPayload as any)[key];
+              // Only log non-sensitive values, mask sensitive ones
+              if (typeof value === "number" || typeof value === "string") {
+                acc[key] = typeof value === "number" ? value : `${typeof value}(${value.length})`;
+              }
+              return acc;
+            }, {} as Record<string, any>),
+          };
+          
           console.error(`[bot:${requestId}] Ошибка upsert (createUserOnStart):`, {
             operation: operationName,
             telegram_id,
             payloadKeys: Object.keys(upsertPayload), // Sanitized payload keys
             dbError: dbErrorDetails,
           });
+          
+          // Separate log entry for DB failure snapshot (easy to find in logs)
+          console.error(`[bot:${requestId}] DB_FAILURE_SNAPSHOT:`, JSON.stringify(dbFailureSnapshot, null, 2));
+          
           return ctx.reply(`Ошибка создания записи в базе. Попробуйте позже. Код: ${requestId}`);
         }
 
