@@ -259,50 +259,56 @@ function SubscriptionPageContent() {
         return;
       }
 
-      // Success - include payment URL in debug for copy button
+      // Success - ALWAYS include payment URL in debug (even if not error)
       const paymentUrl = data.paymentUrl;
       
-      // Update debug with success info (for copy button)
+      // Check if debug should be shown (check URL for debugKey too)
+      const urlParams = typeof window !== "undefined" ? new URLSearchParams(window.location.search) : null;
+      const debugKey = urlParams?.get("debugKey");
       const clientDebugEnabled = 
         (typeof process !== "undefined" && process.env.NEXT_PUBLIC_DEBUG_PAYMENTS === "true") ||
-        (typeof process !== "undefined" && process.env.NODE_ENV !== "production");
+        (typeof process !== "undefined" && process.env.NODE_ENV !== "production") ||
+        !!debugKey; // Allow debug via query param
       
+      // ALWAYS create debug info for success (for copy button and inspection)
+      const successDebug: DebugErrorDetails = {
+        errorType: "UNKNOWN",
+        message: "Payment URL generated successfully",
+        requestId: data.requestId,
+        timestamp: new Date().toISOString(),
+        duration: Date.now() - startTime,
+        clientContext,
+        apiRequest: {
+          endpoint: apiUrl,
+          method: "POST",
+          payloadKeys: Object.keys(payload),
+          payloadHasUserId: payload.userId !== undefined,
+          payloadUserIdValue: payload.userId,
+          headers: {
+            "Content-Type": "application/json",
+          },
+        },
+        apiResponse: {
+          status: response.status,
+          statusText: response.statusText,
+          body: data,
+        },
+        serverDebug: data.debug,
+        userId: {
+          value: finalUserId,
+          source: trace.source,
+          derivation: JSON.stringify(trace, null, 2),
+        },
+        userIdResolution: trace,
+        paymentState: {
+          selectedMethod,
+          processingPayment,
+          showPaymentMethod,
+        },
+      };
+      
+      // Store debug info (will be shown if debug enabled)
       if (clientDebugEnabled) {
-        const successDebug: DebugErrorDetails = {
-          errorType: "UNKNOWN",
-          message: "Payment URL generated successfully",
-          requestId: data.requestId,
-          timestamp: new Date().toISOString(),
-          duration: Date.now() - startTime,
-          clientContext,
-          apiRequest: {
-            endpoint: apiUrl,
-            method: "POST",
-            payloadKeys: Object.keys(payload),
-            payloadHasUserId: payload.userId !== undefined,
-            payloadUserIdValue: payload.userId,
-            headers: {
-              "Content-Type": "application/json",
-            },
-          },
-          apiResponse: {
-            status: response.status,
-            statusText: response.statusText,
-            body: data,
-          },
-          serverDebug: data.debug,
-          userId: {
-            value: finalUserId,
-            source: trace.source,
-            derivation: JSON.stringify(trace, null, 2),
-          },
-          userIdResolution: trace,
-          paymentState: {
-            selectedMethod,
-            processingPayment,
-            showPaymentMethod,
-          },
-        };
         setDebugError(successDebug);
       }
       
@@ -493,11 +499,18 @@ function SubscriptionPageContent() {
                   </button>
                 </div>
 
-                {error && (
+                {(error || debugError) && (
                   <div className="mb-4">
-                    <div className="p-3 bg-red-50 border border-red-200 rounded-lg text-red-600 text-sm">
-                      {error}
-                    </div>
+                    {error && (
+                      <div className="p-3 bg-red-50 border border-red-200 rounded-lg text-red-600 text-sm mb-2">
+                        {error}
+                      </div>
+                    )}
+                    {!error && debugError && (
+                      <div className="p-3 bg-green-50 border border-green-200 rounded-lg text-green-700 text-sm mb-2">
+                        ✓ Payment URL generated successfully (debug mode enabled)
+                      </div>
+                    )}
                     <DebugDetailsPanel error={debugError} />
                   </div>
                 )}

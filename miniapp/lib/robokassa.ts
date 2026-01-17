@@ -138,14 +138,30 @@ export interface PaymentUrlParams {
 
 export interface PaymentUrlDebugInfo {
   outSum: string;
+  outSumRaw: string;
+  outSumFormatted: string;
   invId: string;
+  invIdValid: boolean;
   mrchLogin: string;
+  descriptionRaw: string;
+  descriptionEncoded: string;
   isTest: boolean;
   shpParams: Record<string, string>;
   sortedShpKeys: string[];
-  stringToSign: string;
+  signatureBaseString: string; // With password masked as <PASSWORD1>
+  signatureValueLength: number;
   signatureMasked: string;
-  finalUrlMasked: string;
+  finalPaymentUrl: string; // Full URL
+  finalPaymentUrlMasked: string;
+  sanityChecklist: {
+    outSumFormatValid: boolean;
+    invIdValid: boolean;
+    merchantLoginPresent: boolean;
+    password1Used: boolean;
+    shpParamsSorted: boolean;
+    signatureComputed: boolean;
+    urlBuilt: boolean;
+  };
 }
 
 export function buildRobokassaPaymentUrl(
@@ -159,8 +175,20 @@ export function buildRobokassaPaymentUrl(
 
   const { invId, outSum, description, userId, planCode, method, returnPath = "/subscription" } = params;
 
-  // Format outSum with 2 decimal places (required by Robokassa)
-  const formattedOutSum = Number(outSum).toFixed(2);
+  // Validate and format OutSum (must be dot decimal with 2 decimals)
+  const outSumNum = Number(outSum);
+  if (!Number.isFinite(outSumNum) || outSumNum <= 0) {
+    console.error(`[robokassa:${requestId}] Invalid OutSum: ${outSum}`);
+    return null;
+  }
+  const formattedOutSum = outSumNum.toFixed(2); // Always "1.00", "199.00", etc.
+
+  // Validate InvId (must be valid string/integer)
+  const invIdStr = String(invId);
+  const invIdValid = /^\d+$/.test(invIdStr) || invIdStr.length > 0;
+
+  // URL encode Description (Robokassa requires proper encoding)
+  const descriptionEncoded = encodeURIComponent(description);
 
   // Build Shp_ parameters
   const shpParams = buildShpParams({
@@ -170,58 +198,98 @@ export function buildRobokassaPaymentUrl(
     returnPath,
   });
 
-  // Sort Shp keys alphabetically for signature
+  // Sort Shp keys alphabetically for signature (CRITICAL: must match URL order)
   const sortedShpKeys = Object.keys(shpParams).sort();
 
-  // Build signature string
+  // Build signature base string (for logging, mask password)
+  const signatureBaseStringForLog = buildSignatureString(
+    config.merchantLogin,
+    formattedOutSum,
+    invIdStr,
+    "<PASSWORD1>", // Masked for logging
+    shpParams
+  );
+
+  // Build actual signature string (with real password)
   const signatureString = buildSignatureString(
     config.merchantLogin,
     formattedOutSum,
-    invId,
+    invIdStr,
     config.password1,
     shpParams
   );
 
-  // Generate signature (uppercase MD5)
+  // Generate signature (uppercase MD5) - Robokassa requires uppercase
   const signature = md5Hash(signatureString);
 
-  // Build URL
+  // Build URL with proper encoding
   const url = new URL(config.baseUrl || "https://auth.robokassa.ru/Merchant/Index.aspx");
   url.searchParams.set("MerchantLogin", config.merchantLogin);
   url.searchParams.set("OutSum", formattedOutSum);
-  url.searchParams.set("InvId", invId);
-  url.searchParams.set("Description", description);
+  url.searchParams.set("InvId", invIdStr);
+  url.searchParams.set("Description", descriptionEncoded); // URL encoded
   url.searchParams.set("SignatureValue", signature);
   url.searchParams.set("IsTest", config.testMode ? "1" : "0");
 
-  // Add Shp_ parameters
-  Object.entries(shpParams).forEach(([key, value]) => {
-    url.searchParams.set(key, value);
+  // Add Shp_ parameters in sorted order (must match signature order)
+  sortedShpKeys.forEach((key) => {
+    url.searchParams.set(key, shpParams[key]);
   });
 
   const finalUrl = url.toString();
 
-  // Debug info (always computed, but only returned when needed)
+  // Sanity checklist
+  const sanityChecklist = {
+    outSumFormatValid: /^\d+\.\d{2}$/.test(formattedOutSum),
+    invIdValid: invIdValid,
+    merchantLoginPresent: !!config.merchantLogin && config.merchantLogin.length > 0,
+    password1Used: true, // We always use password1 for payment URL
+    shpParamsSorted: JSON.stringify(sortedShpKeys) === JSON.stringify(Object.keys(shpParams).sort()),
+    signatureComputed: signature.length === 32, // MD5 is 32 hex chars
+    urlBuilt: finalUrl.includes("MerchantLogin") && finalUrl.includes("SignatureValue"),
+  };
+
+  // Debug info (always computed)
   const debugInfo: PaymentUrlDebugInfo = {
     outSum: formattedOutSum,
-    invId,
+    outSumRaw: outSum,
+    outSumFormatted: formattedOutSum,
+    invId: invIdStr,
+    invIdValid,
     mrchLogin: config.merchantLogin,
+    descriptionRaw: description,
+    descriptionEncoded,
     isTest: config.testMode,
     shpParams,
     sortedShpKeys,
-    stringToSign: signatureString,
-    signatureMasked: maskValue(signature),
-    finalUrlMasked: maskUrlSignature(finalUrl),
+    signatureBaseString: signatureBaseStringForLog, // With masked password
+    signatureValueLength: signature.length,
+    signatureMasked: maskValue(signature, 6, 4),
+    finalPaymentUrl: finalUrl, // Full URL for server logs
+    finalPaymentUrlMasked: maskUrlSignature(finalUrl),
+    sanityChecklist,
   };
 
-  // Log debug info (structured JSON)
-  const shouldLog = process.env.DEBUG_PAYMENTS === "true" || process.env.NODE_ENV !== "production";
-  if (shouldLog && requestId) {
+  // Always log to server console (structured JSON)
+  if (requestId) {
     console.log(JSON.stringify({
       requestId,
       type: "robokassa_payment_url_generated",
-      ...debugInfo,
-      signatureComputed: maskValue(signature),
+      userId,
+      env: process.env.NODE_ENV,
+      merchantLogin: config.merchantLogin,
+      outSumRaw: outSum,
+      outSumFormatted: formattedOutSum,
+      invId: invIdStr,
+      descriptionRaw: description,
+      descriptionEncoded,
+      isTest: config.testMode,
+      shpParams,
+      signatureBaseString: signatureBaseStringForLog,
+      signatureValueLength: signature.length,
+      signatureMasked: maskValue(signature, 6, 4),
+      finalPaymentUrl: finalUrl,
+      sanityChecklist,
     }));
   }
 

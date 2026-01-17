@@ -21,11 +21,22 @@ interface CreatePaymentRequest {
 }
 
 // Helper to check if debug should be included
-function shouldIncludeDebug(): boolean {
-  return (
-    process.env.DEBUG_PAYMENTS === "true" ||
-    process.env.NODE_ENV !== "production"
-  );
+function shouldIncludeDebug(req: NextRequest): boolean {
+  // Check env flag
+  if (process.env.DEBUG_PAYMENTS === "true" || process.env.NODE_ENV !== "production") {
+    return true;
+  }
+  
+  // Check DEBUG_KEY query param (for production debugging)
+  const url = new URL(req.url);
+  const debugKey = url.searchParams.get("debugKey");
+  const expectedKey = process.env.DEBUG_KEY;
+  
+  if (debugKey && expectedKey && debugKey === expectedKey) {
+    return true;
+  }
+  
+  return false;
 }
 
 export async function POST(req: NextRequest) {
@@ -50,7 +61,7 @@ export async function POST(req: NextRequest) {
         requestId,
       };
 
-      if (shouldIncludeDebug()) {
+      if (shouldIncludeDebug(req)) {
         response.debug = {
           missingEnvVars: missingVars,
           hasRobokassaMerchantLogin: !!process.env.ROBOKASSA_MERCHANT_LOGIN,
@@ -112,7 +123,7 @@ export async function POST(req: NextRequest) {
       };
 
       // Include debug info only when DEBUG_PAYMENTS=true or not production
-      if (shouldIncludeDebug()) {
+      if (shouldIncludeDebug(req)) {
         response.debug = {
           queryParams,
           bodyPreview,
@@ -196,7 +207,7 @@ export async function POST(req: NextRequest) {
         requestId,
       };
 
-      if (shouldIncludeDebug()) {
+      if (shouldIncludeDebug(req)) {
         response.debug = {
           databaseError: {
             message: insertError.message,
@@ -229,9 +240,10 @@ export async function POST(req: NextRequest) {
         requestId,
       };
 
-      if (shouldIncludeDebug()) {
+      if (shouldIncludeDebug(req)) {
         response.debug = {
           message: "Failed to build payment URL",
+          configPresent: !!config,
         };
       }
 
@@ -260,8 +272,8 @@ export async function POST(req: NextRequest) {
       timestamp: new Date().toISOString(),
     };
 
-    // Include debug echo when debug enabled
-    if (shouldIncludeDebug()) {
+    // Include comprehensive debug echo when debug enabled
+    if (shouldIncludeDebug(req)) {
       successResponse.debug = {
         queryParams,
         bodyPreview,
@@ -271,16 +283,27 @@ export async function POST(req: NextRequest) {
         userIdResolution,
         headersSubset,
         resolvedUserId: userId,
+        env: {
+          nodeEnv: process.env.NODE_ENV,
+          debugPayments: process.env.DEBUG_PAYMENTS === "true",
+        },
         robokassa: paymentUrlResult.debug ? {
           outSum: paymentUrlResult.debug.outSum,
+          outSumRaw: paymentUrlResult.debug.outSumRaw,
+          outSumFormatted: paymentUrlResult.debug.outSumFormatted,
           invId: paymentUrlResult.debug.invId,
+          invIdValid: paymentUrlResult.debug.invIdValid,
           mrchLogin: paymentUrlResult.debug.mrchLogin,
+          descriptionRaw: paymentUrlResult.debug.descriptionRaw,
+          descriptionEncoded: paymentUrlResult.debug.descriptionEncoded,
           isTest: paymentUrlResult.debug.isTest,
           shpParams: paymentUrlResult.debug.shpParams,
           sortedShpKeys: paymentUrlResult.debug.sortedShpKeys,
-          stringToSign: paymentUrlResult.debug.stringToSign,
+          signatureBaseString: paymentUrlResult.debug.signatureBaseString,
+          signatureValueLength: paymentUrlResult.debug.signatureValueLength,
           signatureMasked: paymentUrlResult.debug.signatureMasked,
-          finalUrlMasked: paymentUrlResult.debug.finalUrlMasked,
+          finalPaymentUrlMasked: paymentUrlResult.debug.finalPaymentUrlMasked,
+          sanityChecklist: paymentUrlResult.debug.sanityChecklist,
         } : undefined,
         debugWarnings: debugWarnings.length > 0 ? debugWarnings : undefined,
       };
@@ -296,7 +319,7 @@ export async function POST(req: NextRequest) {
       requestId,
     };
 
-    if (shouldIncludeDebug()) {
+    if (shouldIncludeDebug(req)) {
       response.debug = {
         message: error?.message || "Internal server error",
         stack: error?.stack ? error.stack.substring(0, 500) : undefined,

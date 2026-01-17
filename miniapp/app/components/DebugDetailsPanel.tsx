@@ -63,9 +63,22 @@ interface DebugDetailsPanelProps {
 export function DebugDetailsPanel({ error }: DebugDetailsPanelProps) {
   const [copySuccess, setCopySuccess] = useState<string | null>(null);
 
-  // TEMPORARY: Force show debug panel always when error exists
-  if (!error) {
+  // Check if debug should be shown
+  const urlParams = typeof window !== "undefined" ? new URLSearchParams(window.location.search) : null;
+  const debugKey = urlParams?.get("debugKey");
+  const debugEnabled = 
+    (typeof process !== "undefined" && process.env.NEXT_PUBLIC_DEBUG_PAYMENTS === "true") ||
+    (typeof process !== "undefined" && process.env.NODE_ENV !== "production") ||
+    !!debugKey;
+
+  // Show panel if error exists OR if debug is enabled and we have payment info
+  if (!error && !debugEnabled) {
     return null;
+  }
+
+  // If no error but debug enabled, show minimal info
+  if (!error) {
+    return null; // Will be handled by success case in subscription page
   }
 
   // Mask secrets in the error object
@@ -123,6 +136,13 @@ export function DebugDetailsPanel({ error }: DebugDetailsPanelProps) {
         <div>Time: {currentTime}</div>
         <div>Env: {typeof process !== "undefined" ? (process.env.NEXT_PUBLIC_VERCEL_ENV || process.env.NODE_ENV || "unknown") : "unknown"}</div>
       </div>
+
+      {/* Telegram Warning */}
+      {telegramInfo && !telegramInfo.initDataPresent && (
+        <div className="mb-2 px-3 py-2 bg-yellow-50 border border-yellow-300 rounded text-yellow-700 text-xs">
+          ⚠️ <strong>Warning:</strong> Telegram.WebApp.initData is missing. This may happen if opened outside Telegram (desktop browser). Payments will still work using URL userId parameter.
+        </div>
+      )}
 
       {/* Quick Info Summary */}
       <div className="mb-2 px-3 py-2 bg-blue-50 border border-blue-200 rounded text-xs">
