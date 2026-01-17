@@ -33,9 +33,9 @@ export async function POST(req: Request) {
     // This is a workaround - the actual reload should be done via SQL Editor
     // But we can verify the connection works
 
-    // Verify connection
+    // Verify connection (test with a standard table)
     const { error: testError } = await supabase
-      .from("payments")
+      .from("users")
       .select("id")
       .limit(1);
 

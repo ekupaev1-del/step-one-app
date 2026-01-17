@@ -17,19 +17,11 @@
 NEXT_PUBLIC_SUPABASE_URL=https://your-project.supabase.co
 SUPABASE_SERVICE_ROLE_KEY=your-service-role-key
 NEXT_PUBLIC_SUPABASE_ANON_KEY=your-anon-key (если используется на клиенте)
-ROBOKASSA_MERCHANT_LOGIN=your-merchant-login
-ROBOKASSA_PASSWORD1=your-password1
-ROBOKASSA_PASSWORD2=your-password2
-ROBOKASSA_TEST_MODE=false
 ```
 
 ### Для Preview (dev branch)
 
-Добавьте те же переменные для **Preview** окружения, но с тестовыми значениями:
-
-```
-ROBOKASSA_TEST_MODE=true
-```
+Добавьте те же переменные для **Preview** окружения.
 
 ## Как получить значения
 
@@ -41,15 +33,6 @@ ROBOKASSA_TEST_MODE=true
    - **Project URL** → `NEXT_PUBLIC_SUPABASE_URL`
    - **anon public** key → `NEXT_PUBLIC_SUPABASE_ANON_KEY` (если используется)
    - **service_role** key → `SUPABASE_SERVICE_ROLE_KEY` (⚠️ секретный ключ!)
-
-### Robokassa
-
-1. Откройте личный кабинет Robokassa
-2. Перейдите в **Настройки** → **Технические настройки**
-3. Скопируйте:
-   - **Идентификатор магазина** → `ROBOKASSA_MERCHANT_LOGIN`
-   - **Пароль #1** → `ROBOKASSA_PASSWORD1`
-   - **Пароль #2** → `ROBOKASSA_PASSWORD2`
 
 ## После добавления переменных
 

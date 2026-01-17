@@ -3,13 +3,7 @@
   "outputDirectory": "miniapp/.next",
   "framework": "nextjs",
   "installCommand": "cd miniapp && npm install",
-  "devCommand": "cd miniapp && npm run dev",
-  "crons": [
-    {
-      "path": "/api/cron/recurring-charges",
-      "schedule": "0 */6 * * *"
-    }
-  ]
+  "devCommand": "cd miniapp && npm run dev"
 }
 
 

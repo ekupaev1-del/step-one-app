@@ -16,9 +16,8 @@ function AppNavigation() {
   const isReportsActive = pathname === "/report" || pathname.startsWith("/report");
   const isProfileActive = pathname === "/profile" || pathname.startsWith("/profile");
   const isRecommendationsActive = pathname === "/recommendations" || pathname.startsWith("/recommendations");
-  const isSubscriptionActive = pathname === "/subscription" || pathname.startsWith("/subscription");
 
-  const handleNavigation = (path: "/report" | "/profile" | "/recommendations" | "/subscription") => {
+  const handleNavigation = (path: "/report" | "/profile" | "/recommendations") => {
     const url = `${path}${userIdParam}`;
     // Мгновенная навигация без задержек
     (router.push as (href: string) => void)(url);
