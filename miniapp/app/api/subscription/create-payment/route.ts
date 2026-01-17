@@ -34,23 +34,37 @@ export async function POST(req: NextRequest) {
   try {
     // Check Robokassa config
     const config = getRobokassaConfig();
+    const debugWarnings: string[] = [];
+    
     if (!config) {
       console.error(`[subscription/create-payment:${requestId}] Robokassa not configured`);
-      return NextResponse.json(
-        { 
-          ok: false, 
-          error: "Платежный провайдер не настроен",
-          requestId,
-          ...(shouldIncludeDebug() && {
-            debug: {
-              hasRobokassaMerchantLogin: !!process.env.ROBOKASSA_MERCHANT_LOGIN,
-              hasRobokassaPassword1: !!process.env.ROBOKASSA_PASSWORD1,
-              hasRobokassaPassword2: !!process.env.ROBOKASSA_PASSWORD2,
-            }
-          })
-        },
-        { status: 500 }
-      );
+      const missingVars: string[] = [];
+      if (!process.env.ROBOKASSA_MERCHANT_LOGIN) missingVars.push("ROBOKASSA_MERCHANT_LOGIN");
+      if (!process.env.ROBOKASSA_PASSWORD1) missingVars.push("ROBOKASSA_PASSWORD1");
+      if (!process.env.ROBOKASSA_PASSWORD2) missingVars.push("ROBOKASSA_PASSWORD2");
+      
+      const response: any = {
+        ok: false,
+        error: "Платежный провайдер не настроен",
+        code: "ROBOKASSA_CONFIG_MISSING",
+        requestId,
+      };
+
+      if (shouldIncludeDebug()) {
+        response.debug = {
+          missingEnvVars: missingVars,
+          hasRobokassaMerchantLogin: !!process.env.ROBOKASSA_MERCHANT_LOGIN,
+          hasRobokassaPassword1: !!process.env.ROBOKASSA_PASSWORD1,
+          hasRobokassaPassword2: !!process.env.ROBOKASSA_PASSWORD2,
+        };
+      }
+
+      return NextResponse.json(response, { status: 500 });
+    }
+
+    // Test/prod mismatch detection
+    if (process.env.NODE_ENV === "production" && config.testMode) {
+      debugWarnings.push("WARNING: NODE_ENV=production but ROBOKASSA_TEST_MODE=true - payment will use test mode");
     }
 
     // Parse request body first (can only be read once)
@@ -195,7 +209,7 @@ export async function POST(req: NextRequest) {
       return NextResponse.json(response, { status: 500 });
     }
 
-    // Build Robokassa payment URL
+    // Build Robokassa payment URL (pass requestId for debug logging)
     const paymentUrlResult = buildRobokassaPaymentUrl({
       invId,
       outSum: amount,
@@ -204,7 +218,7 @@ export async function POST(req: NextRequest) {
       planCode,
       method,
       returnPath,
-    });
+    }, requestId);
 
     if (!paymentUrlResult) {
       console.error(`[subscription/create-payment:${requestId}] Failed to build payment URL`);
@@ -257,6 +271,18 @@ export async function POST(req: NextRequest) {
         userIdResolution,
         headersSubset,
         resolvedUserId: userId,
+        robokassa: paymentUrlResult.debug ? {
+          outSum: paymentUrlResult.debug.outSum,
+          invId: paymentUrlResult.debug.invId,
+          mrchLogin: paymentUrlResult.debug.mrchLogin,
+          isTest: paymentUrlResult.debug.isTest,
+          shpParams: paymentUrlResult.debug.shpParams,
+          sortedShpKeys: paymentUrlResult.debug.sortedShpKeys,
+          stringToSign: paymentUrlResult.debug.stringToSign,
+          signatureMasked: paymentUrlResult.debug.signatureMasked,
+          finalUrlMasked: paymentUrlResult.debug.finalUrlMasked,
+        } : undefined,
+        debugWarnings: debugWarnings.length > 0 ? debugWarnings : undefined,
       };
     }
 

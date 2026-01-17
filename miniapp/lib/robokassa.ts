@@ -91,10 +91,36 @@ function buildSignatureString(
 }
 
 /**
- * Generate MD5 hash (lowercase hex)
+ * Generate MD5 hash (uppercase hex for Robokassa signature)
  */
 function md5Hash(input: string): string {
-  return crypto.createHash("md5").update(input, "utf8").digest("hex").toLowerCase();
+  return crypto.createHash("md5").update(input, "utf8").digest("hex").toUpperCase();
+}
+
+/**
+ * Mask sensitive value (show first N and last M chars)
+ */
+function maskValue(value: string, first: number = 6, last: number = 4): string {
+  if (!value || value.length <= first + last) {
+    return "***";
+  }
+  return `${value.substring(0, first)}...${value.substring(value.length - last)}`;
+}
+
+/**
+ * Mask URL signature parameter
+ */
+function maskUrlSignature(url: string): string {
+  try {
+    const urlObj = new URL(url);
+    const signature = urlObj.searchParams.get("SignatureValue");
+    if (signature) {
+      urlObj.searchParams.set("SignatureValue", maskValue(signature));
+    }
+    return urlObj.toString();
+  } catch {
+    return url.replace(/SignatureValue=[^&]+/g, `SignatureValue=${maskValue("signature")}`);
+  }
 }
 
 /**
@@ -110,7 +136,22 @@ export interface PaymentUrlParams {
   returnPath?: string;
 }
 
-export function buildRobokassaPaymentUrl(params: PaymentUrlParams): { url: string; signature: string } | null {
+export interface PaymentUrlDebugInfo {
+  outSum: string;
+  invId: string;
+  mrchLogin: string;
+  isTest: boolean;
+  shpParams: Record<string, string>;
+  sortedShpKeys: string[];
+  stringToSign: string;
+  signatureMasked: string;
+  finalUrlMasked: string;
+}
+
+export function buildRobokassaPaymentUrl(
+  params: PaymentUrlParams,
+  requestId?: string
+): { url: string; signature: string; debug?: PaymentUrlDebugInfo } | null {
   const config = getRobokassaConfig();
   if (!config) {
     return null;
@@ -129,6 +170,9 @@ export function buildRobokassaPaymentUrl(params: PaymentUrlParams): { url: strin
     returnPath,
   });
 
+  // Sort Shp keys alphabetically for signature
+  const sortedShpKeys = Object.keys(shpParams).sort();
+
   // Build signature string
   const signatureString = buildSignatureString(
     config.merchantLogin,
@@ -138,7 +182,7 @@ export function buildRobokassaPaymentUrl(params: PaymentUrlParams): { url: strin
     shpParams
   );
 
-  // Generate signature
+  // Generate signature (uppercase MD5)
   const signature = md5Hash(signatureString);
 
   // Build URL
@@ -155,7 +199,33 @@ export function buildRobokassaPaymentUrl(params: PaymentUrlParams): { url: strin
     url.searchParams.set(key, value);
   });
 
-  return { url: url.toString(), signature };
+  const finalUrl = url.toString();
+
+  // Debug info (always computed, but only returned when needed)
+  const debugInfo: PaymentUrlDebugInfo = {
+    outSum: formattedOutSum,
+    invId,
+    mrchLogin: config.merchantLogin,
+    isTest: config.testMode,
+    shpParams,
+    sortedShpKeys,
+    stringToSign: signatureString,
+    signatureMasked: maskValue(signature),
+    finalUrlMasked: maskUrlSignature(finalUrl),
+  };
+
+  // Log debug info (structured JSON)
+  const shouldLog = process.env.DEBUG_PAYMENTS === "true" || process.env.NODE_ENV !== "production";
+  if (shouldLog && requestId) {
+    console.log(JSON.stringify({
+      requestId,
+      type: "robokassa_payment_url_generated",
+      ...debugInfo,
+      signatureComputed: maskValue(signature),
+    }));
+  }
+
+  return { url: finalUrl, signature, debug: debugInfo };
 }
 
 /**
@@ -190,9 +260,9 @@ export function verifyRobokassaResultSignature(params: {
     signatureString = `${formattedOutSum}:${invId}:${config.password2}`;
   }
 
-  const expectedSignature = md5Hash(signatureString).toLowerCase();
+  const expectedSignature = md5Hash(signatureString).toUpperCase();
 
-  return receivedSignature.toLowerCase() === expectedSignature;
+  return receivedSignature.toUpperCase() === expectedSignature;
 }
 
 /**

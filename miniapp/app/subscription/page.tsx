@@ -259,8 +259,52 @@ function SubscriptionPageContent() {
         return;
       }
 
-      // Open payment URL
+      // Success - include payment URL in debug for copy button
       const paymentUrl = data.paymentUrl;
+      
+      // Update debug with success info (for copy button)
+      const clientDebugEnabled = 
+        (typeof process !== "undefined" && process.env.NEXT_PUBLIC_DEBUG_PAYMENTS === "true") ||
+        (typeof process !== "undefined" && process.env.NODE_ENV !== "production");
+      
+      if (clientDebugEnabled) {
+        const successDebug: DebugErrorDetails = {
+          errorType: "UNKNOWN",
+          message: "Payment URL generated successfully",
+          requestId: data.requestId,
+          timestamp: new Date().toISOString(),
+          duration: Date.now() - startTime,
+          clientContext,
+          apiRequest: {
+            endpoint: apiUrl,
+            method: "POST",
+            payloadKeys: Object.keys(payload),
+            payloadHasUserId: payload.userId !== undefined,
+            payloadUserIdValue: payload.userId,
+            headers: {
+              "Content-Type": "application/json",
+            },
+          },
+          apiResponse: {
+            status: response.status,
+            statusText: response.statusText,
+            body: data,
+          },
+          serverDebug: data.debug,
+          userId: {
+            value: finalUserId,
+            source: trace.source,
+            derivation: JSON.stringify(trace, null, 2),
+          },
+          userIdResolution: trace,
+          paymentState: {
+            selectedMethod,
+            processingPayment,
+            showPaymentMethod,
+          },
+        };
+        setDebugError(successDebug);
+      }
       
       // Use Telegram.WebApp.openLink if available, otherwise window.location
       if (typeof window !== "undefined" && (window as any).Telegram?.WebApp?.openLink) {
