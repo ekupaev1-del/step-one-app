@@ -93,7 +93,7 @@ export function QuestionnaireFormContent({ initialUserId }: { initialUserId?: st
     });
   }, []);
 
-  // Проверяем согласие при загрузке
+  // Unified onboarding check (consent + profile completion)
   useEffect(() => {
     if (!userId) {
       // Если userId еще не получен, остаемся на экране согласия
@@ -101,25 +101,31 @@ export function QuestionnaireFormContent({ initialUserId }: { initialUserId?: st
       return;
     }
 
-    const checkConsent = async () => {
+    const checkOnboarding = async () => {
       try {
-        const response = await fetch(`/api/privacy/check?userId=${userId}`);
+        const response = await fetch(`/api/onboarding/status?userId=${userId}`);
         const data = await response.json();
 
         if (response.ok && data.ok) {
-          if (!data.all_accepted) {
+          if (!data.hasConsent) {
             // Согласие не дано - показываем экран согласия
             setStep(-1);
+          } else if (data.profileComplete) {
+            // Профиль уже заполнен - можно показать сообщение или закрыть
+            // Но обычно если профиль заполнен, пользователь не должен попасть сюда
+            // Переходим к первому шагу для просмотра/редактирования
+            setStep(0.5);
           } else {
-            // Согласие дано - переходим к вводу данных (первый шаг)
+            // Согласие дано, профиль не заполнен - переходим к вводу данных (первый шаг)
             setStep(0.5);
           }
         } else {
           // При ошибке показываем экран согласия для безопасности
+          console.warn("[QuestionnaireFormContent] Ошибка проверки онбординга:", data.error);
           setStep(-1);
         }
       } catch (err) {
-        console.error("[QuestionnaireFormContent] Ошибка проверки согласия:", err);
+        console.error("[QuestionnaireFormContent] Ошибка проверки онбординга:", err);
         // При ошибке показываем экран согласия для безопасности
         setStep(-1);
       } finally {
@@ -127,7 +133,7 @@ export function QuestionnaireFormContent({ initialUserId }: { initialUserId?: st
       }
     };
 
-    checkConsent();
+    checkOnboarding();
   }, [userId]);
 
   // Проверяем id при монтировании

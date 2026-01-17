@@ -50,35 +50,44 @@ function RecommendationsPageContent(): ReactElement {
     }
   }, [userIdParam]);
 
-  // Проверка согласия с политикой конфиденциальности
+  // Unified onboarding check (consent + profile completion)
   useEffect(() => {
     if (!userId) return;
 
-    const checkPrivacy = async () => {
+    const checkOnboarding = async () => {
       setCheckingPrivacy(true);
       try {
-        const response = await fetch(`/api/privacy/check?userId=${userId}`);
+        const response = await fetch(`/api/onboarding/status?userId=${userId}`);
         const data = await response.json();
 
         if (response.ok && data.ok) {
-          if (!data.all_accepted) {
-            // Пользователь не дал согласие (хотя бы одно из двух) - редирект на экран согласия
+          // Only redirect if consent is missing OR profile is incomplete
+          if (!data.hasConsent) {
+            // Consent missing -> redirect to consent page
             window.location.href = `/privacy/consent?id=${userId}`;
             return;
           }
+          
+          if (!data.profileComplete) {
+            // Profile incomplete -> redirect to registration
+            window.location.href = `/registration?id=${userId}`;
+            return;
+          }
+          
+          // Both consent and profile are complete - allow access
         } else {
-          // Если ошибка, разрешаем продолжить (на случай проблем с API)
-          console.warn("[RecommendationsPage] Ошибка проверки согласия:", data.error);
+          // If error, log but allow continue (graceful degradation)
+          console.warn("[RecommendationsPage] Ошибка проверки онбординга:", data.error);
         }
       } catch (err) {
-        console.error("[RecommendationsPage] Ошибка проверки согласия:", err);
+        console.error("[RecommendationsPage] Ошибка проверки онбординга:", err);
         // При ошибке разрешаем продолжить
       } finally {
         setCheckingPrivacy(false);
       }
     };
 
-    checkPrivacy();
+    checkOnboarding();
   }, [userId]);
 
   useEffect(() => {

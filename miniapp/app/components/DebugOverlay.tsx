@@ -249,6 +249,23 @@ export default function DebugOverlay() {
   const latestError = errors[errors.length - 1];
   const rawJson = safeStringify(errors, 2);
   
+  // Fetch onboarding state for debug mode
+  const [onboardingState, setOnboardingState] = useState<any>(null);
+  
+  useEffect(() => {
+    if (!showDiagnostics || typeof window === "undefined") return;
+    
+    const urlParams = new URLSearchParams(window.location.search);
+    const userId = urlParams.get("id") || urlParams.get("userId");
+    
+    if (userId) {
+      fetch(`/api/onboarding/status?userId=${userId}`)
+        .then(res => res.json())
+        .then(data => setOnboardingState(data))
+        .catch(err => console.error("[DebugOverlay] Failed to fetch onboarding state:", err));
+    }
+  }, [showDiagnostics]);
+
   // Generate diagnostics report if no errors but debug mode is on
   const diagnosticsReport = showDiagnostics && errors.length === 0 ? {
     diagnostics: {
@@ -268,6 +285,7 @@ export default function DebugOverlay() {
       } : {
         available: false,
       },
+      onboarding: onboardingState || { loading: true },
     },
   } : null;
 
@@ -350,6 +368,25 @@ export default function DebugOverlay() {
                 <div>
                   <span className="font-semibold">Telegram:</span> {diagnosticsReport.diagnostics.telegram.available ? `Available (${diagnosticsReport.diagnostics.telegram.platform}, v${diagnosticsReport.diagnostics.telegram.version})` : "Not available"}
                 </div>
+                {diagnosticsReport.diagnostics.onboarding && (
+                  <>
+                    <div className="mt-2 pt-2 border-t border-red-200">
+                      <span className="font-semibold">Onboarding State:</span>
+                    </div>
+                    {diagnosticsReport.diagnostics.onboarding.loading ? (
+                      <div className="text-xs">Loading...</div>
+                    ) : diagnosticsReport.diagnostics.onboarding.ok ? (
+                      <>
+                        <div>hasUser: {diagnosticsReport.diagnostics.onboarding.hasUser ? "✅" : "❌"}</div>
+                        <div>hasConsent: {diagnosticsReport.diagnostics.onboarding.hasConsent ? "✅" : "❌"}</div>
+                        <div>profileComplete: {diagnosticsReport.diagnostics.onboarding.profileComplete ? "✅" : "❌"}</div>
+                        <div className="text-xs text-gray-600">userId: {diagnosticsReport.diagnostics.onboarding.userId || "N/A"}</div>
+                      </>
+                    ) : (
+                      <div className="text-xs text-red-600">Error: {diagnosticsReport.diagnostics.onboarding.error || "Unknown"}</div>
+                    )}
+                  </>
+                )}
                 <div>
                   <span className="font-semibold">Timestamp:</span> {diagnosticsReport.diagnostics.timestamp}
                 </div>

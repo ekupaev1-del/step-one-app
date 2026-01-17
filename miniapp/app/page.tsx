@@ -1,5 +1,6 @@
 import { redirect } from "next/navigation";
 import { isDebugBypassEnabled } from "./lib/debugBypass";
+import { createServerSupabaseClient } from "../lib/supabaseAdmin";
 
 export const dynamic = "force-dynamic";
 
@@ -18,8 +19,49 @@ export default async function Page({
   
   const debugEnabled = isDebugBypassEnabled(urlParams);
   
-  // If id is passed and debug is enabled, allow access
+  // If id is passed, check onboarding status and redirect appropriately
   if (typeof idValue === "string" && idValue.length > 0) {
+    const numericId = Number(idValue);
+    
+    // Only check onboarding if id is valid number
+    if (Number.isFinite(numericId) && numericId > 0) {
+      try {
+        const supabase = createServerSupabaseClient();
+        const { data: user } = await supabase
+          .from("users")
+          .select("privacy_accepted, terms_accepted, calories")
+          .eq("id", numericId)
+          .maybeSingle();
+
+        if (user) {
+          const hasConsent = user.privacy_accepted === true && user.terms_accepted === true;
+          const profileComplete = user.calories !== null && user.calories !== undefined && Number(user.calories) > 0;
+
+          // If user is fully onboarded, redirect to main app (profile)
+          if (hasConsent && profileComplete) {
+            const debugParams = debugEnabled && urlParams.toString() ? `&${urlParams.toString()}` : '';
+            redirect(`/profile?id=${idValue}${debugParams}` as any);
+          }
+          
+          // If consent missing, redirect to consent
+          if (!hasConsent) {
+            const debugParams = debugEnabled && urlParams.toString() ? `&${urlParams.toString()}` : '';
+            redirect(`/privacy/consent?id=${idValue}${debugParams}` as any);
+          }
+          
+          // If profile incomplete, redirect to registration
+          if (!profileComplete) {
+            const debugParams = debugEnabled && urlParams.toString() ? `&${urlParams.toString()}` : '';
+            redirect(`/registration?id=${idValue}${debugParams}` as any);
+          }
+        }
+      } catch (error) {
+        // On error, fall through to default registration redirect
+        console.error("[page.tsx] Error checking onboarding:", error);
+      }
+    }
+    
+    // Fallback: redirect to registration if id is invalid or check failed
     if (debugEnabled) {
       redirect(`/registration?id=${idValue}${urlParams.toString() ? `&${urlParams.toString()}` : ''}` as any);
     } else {
