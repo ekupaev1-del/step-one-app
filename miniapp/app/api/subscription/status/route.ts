@@ -5,38 +5,44 @@
  * Returns current subscription status for user
  */
 
-import { NextResponse } from "next/server";
+import { NextRequest, NextResponse } from "next/server";
 import { createServerSupabaseClient } from "@/lib/supabaseAdmin";
-import { getUserIdFromRequest } from "@/lib/getUserId";
+import { resolveUserIdFromRequest } from "@/lib/resolveUserIdFromRequest";
 
 export const dynamic = "force-dynamic";
 
-export async function GET(req: Request) {
+// Helper to check if debug should be included
+function shouldIncludeDebug(): boolean {
+  return (
+    process.env.DEBUG_PAYMENTS === "true" ||
+    process.env.NODE_ENV !== "production"
+  );
+}
+
+export async function GET(req: NextRequest) {
   const requestId = `subscription-status-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
   
   try {
-    const url = new URL(req.url);
-    const userId = await getUserIdFromRequest(req);
+    // Resolve userId with full diagnostics
+    const userIdResolution = await resolveUserIdFromRequest(req);
+    const userId = userIdResolution.userId;
     
     if (!userId) {
-      return NextResponse.json(
-        { 
-          ok: false, 
-          error: "userId обязателен (используйте ?userId=123 или ?id=123)",
-          requestId,
-          errorDetails: {
-            code: "USER_ID_MISSING",
-            message: "userId обязателен (используйте ?userId=123 или ?id=123)",
-            details: {
-              queryParams: {
-                userId: url.searchParams.get("userId"),
-                id: url.searchParams.get("id"),
-              },
-            },
-          },
-        },
-        { status: 400 }
-      );
+      const response: any = {
+        ok: false,
+        error: "userId is required",
+        code: "USER_ID_MISSING",
+        requestId,
+      };
+
+      // Include debug info only when DEBUG_PAYMENTS=true or not production
+      if (shouldIncludeDebug()) {
+        response.debug = {
+          userIdResolution,
+        };
+      }
+
+      return NextResponse.json(response, { status: 400 });
     }
 
     const supabase = createServerSupabaseClient();
@@ -50,22 +56,24 @@ export async function GET(req: Request) {
 
     if (error) {
       console.error(`[subscription/status:${requestId}] DB error:`, error);
-      return NextResponse.json(
-        { 
-          ok: false, 
-          error: error.message || "Database error",
-          requestId,
-          errorDetails: {
-            code: "DATABASE_ERROR",
+      const response: any = {
+        ok: false,
+        error: error.message || "Database error",
+        code: "DATABASE_ERROR",
+        requestId,
+      };
+
+      if (shouldIncludeDebug()) {
+        response.debug = {
+          databaseError: {
             message: error.message || "Database error",
-            details: {
-              code: error.code,
-              hint: error.hint,
-            },
+            code: error.code,
+            hint: error.hint,
           },
-        },
-        { status: 500 }
-      );
+        };
+      }
+
+      return NextResponse.json(response, { status: 500 });
     }
 
     // Format response
@@ -84,18 +92,20 @@ export async function GET(req: Request) {
     return NextResponse.json(result);
   } catch (error: any) {
     console.error(`[subscription/status:${requestId}] Unexpected error:`, error);
-    return NextResponse.json(
-      { 
-        ok: false, 
-        error: error?.message || "Internal server error",
-        requestId,
-        errorDetails: {
-          code: "INTERNAL_ERROR",
-          message: error?.message || "Internal server error",
-          details: error?.stack ? { stack: error.stack.substring(0, 500) } : undefined,
-        },
-      },
-      { status: 500 }
-    );
+    const response: any = {
+      ok: false,
+      error: error?.message || "Internal server error",
+      code: "INTERNAL_ERROR",
+      requestId,
+    };
+
+    if (shouldIncludeDebug()) {
+      response.debug = {
+        message: error?.message || "Internal server error",
+        stack: error?.stack ? error.stack.substring(0, 500) : undefined,
+      };
+    }
+
+    return NextResponse.json(response, { status: 500 });
   }
 }

@@ -5,9 +5,9 @@
  * Creates payment record and returns Robokassa payment URL
  */
 
-import { NextResponse } from "next/server";
+import { NextRequest, NextResponse } from "next/server";
 import { createServerSupabaseClient } from "@/lib/supabaseAdmin";
-import { getUserIdFromRequest } from "@/lib/getUserId";
+import { resolveUserIdFromRequest } from "@/lib/resolveUserIdFromRequest";
 import { buildRobokassaPaymentUrl, getRobokassaConfig } from "@/lib/robokassa";
 
 export const dynamic = "force-dynamic";
@@ -16,9 +16,19 @@ interface CreatePaymentRequest {
   method: "card" | "sbp";
   planCode: string;
   returnPath?: string;
+  userId?: number;
+  id?: number;
 }
 
-export async function POST(req: Request) {
+// Helper to check if debug should be included
+function shouldIncludeDebug(): boolean {
+  return (
+    process.env.DEBUG_PAYMENTS === "true" ||
+    process.env.NODE_ENV !== "production"
+  );
+}
+
+export async function POST(req: NextRequest) {
   const requestId = `create-payment-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
   
   try {
@@ -31,52 +41,46 @@ export async function POST(req: Request) {
           ok: false, 
           error: "Платежный провайдер не настроен",
           requestId,
-          details: {
-            hasRobokassaMerchantLogin: !!process.env.ROBOKASSA_MERCHANT_LOGIN,
-            hasRobokassaPassword1: !!process.env.ROBOKASSA_PASSWORD1,
-            hasRobokassaPassword2: !!process.env.ROBOKASSA_PASSWORD2,
-          }
+          ...(shouldIncludeDebug() && {
+            debug: {
+              hasRobokassaMerchantLogin: !!process.env.ROBOKASSA_MERCHANT_LOGIN,
+              hasRobokassaPassword1: !!process.env.ROBOKASSA_PASSWORD1,
+              hasRobokassaPassword2: !!process.env.ROBOKASSA_PASSWORD2,
+            }
+          })
         },
         { status: 500 }
       );
     }
 
-    // Get user ID
-    const userId = await getUserIdFromRequest(req);
-    if (!userId) {
-      return NextResponse.json(
-        { 
-          ok: false, 
-          error: "userId обязателен",
-          requestId,
-          errorDetails: {
-            code: "USER_ID_MISSING",
-            message: "userId обязателен",
-            details: {
-              queryParams: {
-                userId: new URL(req.url).searchParams.get("userId"),
-                id: new URL(req.url).searchParams.get("id"),
-              },
-            },
-          },
-        },
-        { status: 400 }
-      );
-    }
-
-    // Parse request body
-    let body: CreatePaymentRequest;
+    // Parse request body first (can only be read once)
+    let body: CreatePaymentRequest = {} as CreatePaymentRequest;
     try {
       body = await req.json();
     } catch (e) {
-      return NextResponse.json(
-        { 
-          ok: false, 
-          error: "Invalid JSON body",
-          requestId 
-        },
-        { status: 400 }
-      );
+      // Body might be empty or not JSON - that's ok, continue without body
+    }
+
+    // Resolve userId with full diagnostics (pass parsed body to avoid double reading)
+    const userIdResolution = await resolveUserIdFromRequest(req, body);
+    const userId = userIdResolution.userId;
+
+    if (!userId) {
+      const response: any = {
+        ok: false,
+        error: "userId is required",
+        code: "USER_ID_MISSING",
+        requestId,
+      };
+
+      // Include debug info only when DEBUG_PAYMENTS=true or not production
+      if (shouldIncludeDebug()) {
+        response.debug = {
+          userIdResolution,
+        };
+      }
+
+      return NextResponse.json(response, { status: 400 });
     }
 
     const { method, planCode, returnPath = "/subscription" } = body;
@@ -140,22 +144,24 @@ export async function POST(req: Request) {
 
     if (insertError) {
       console.error(`[subscription/create-payment:${requestId}] DB insert error:`, insertError);
-      return NextResponse.json(
-        { 
-          ok: false, 
-          error: "Ошибка создания платежа",
-          requestId,
-          errorDetails: {
-            code: "DATABASE_ERROR",
+      const response: any = {
+        ok: false,
+        error: "Ошибка создания платежа",
+        code: "DATABASE_ERROR",
+        requestId,
+      };
+
+      if (shouldIncludeDebug()) {
+        response.debug = {
+          databaseError: {
             message: insertError.message,
-            details: {
-              code: insertError.code,
-              hint: insertError.hint,
-            },
+            code: insertError.code,
+            hint: insertError.hint,
           },
-        },
-        { status: 500 }
-      );
+        };
+      }
+
+      return NextResponse.json(response, { status: 500 });
     }
 
     // Build Robokassa payment URL
@@ -171,18 +177,20 @@ export async function POST(req: Request) {
 
     if (!paymentUrlResult) {
       console.error(`[subscription/create-payment:${requestId}] Failed to build payment URL`);
-      return NextResponse.json(
-        { 
-          ok: false, 
-          error: "Ошибка создания платежной ссылки",
-          requestId,
-          errorDetails: {
-            code: "PAYMENT_URL_BUILD_ERROR",
-            message: "Failed to build payment URL",
-          },
-        },
-        { status: 500 }
-      );
+      const response: any = {
+        ok: false,
+        error: "Ошибка создания платежной ссылки",
+        code: "PAYMENT_URL_BUILD_ERROR",
+        requestId,
+      };
+
+      if (shouldIncludeDebug()) {
+        response.debug = {
+          message: "Failed to build payment URL",
+        };
+      }
+
+      return NextResponse.json(response, { status: 500 });
     }
 
     // Update payment record with payment_url
@@ -207,18 +215,20 @@ export async function POST(req: Request) {
     });
   } catch (error: any) {
     console.error(`[subscription/create-payment:${requestId}] Unexpected error:`, error);
-    return NextResponse.json(
-      { 
-        ok: false, 
-        error: error?.message || "Internal server error",
-        requestId,
-        errorDetails: {
-          code: "INTERNAL_ERROR",
-          message: error?.message || "Internal server error",
-          details: error?.stack ? { stack: error.stack.substring(0, 500) } : undefined,
-        },
-      },
-      { status: 500 }
-    );
+    const response: any = {
+      ok: false,
+      error: error?.message || "Internal server error",
+      code: "INTERNAL_ERROR",
+      requestId,
+    };
+
+    if (shouldIncludeDebug()) {
+      response.debug = {
+        message: error?.message || "Internal server error",
+        stack: error?.stack ? error.stack.substring(0, 500) : undefined,
+      };
+    }
+
+    return NextResponse.json(response, { status: 500 });
   }
 }
