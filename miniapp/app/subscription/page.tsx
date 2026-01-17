@@ -7,6 +7,7 @@ import "../globals.css";
 import AppLayout from "../components/AppLayout";
 import { DebugDetailsPanel, DebugErrorDetails } from "../components/DebugDetailsPanel";
 import { collectClientDebugContext } from "@/lib/debugContext";
+import { resolveUserIdWithTrace } from "@/lib/resolveUserId";
 
 function SubscriptionPageContent() {
   const searchParams = useSearchParams();
@@ -18,28 +19,43 @@ function SubscriptionPageContent() {
   const [error, setError] = useState<string | null>(null);
   const [subscription, setSubscription] = useState<any>(null);
   const [debugError, setDebugError] = useState<DebugErrorDetails | null>(null);
+  const [lastApiRequestId, setLastApiRequestId] = useState<string | null>(null);
+  const [lastApiResponse, setLastApiResponse] = useState<any>(null);
   
   // Payment method selection state
   const [showPaymentMethod, setShowPaymentMethod] = useState(false);
   const [selectedMethod, setSelectedMethod] = useState<"card" | "sbp" | null>(null);
   const [processingPayment, setProcessingPayment] = useState(false);
 
-  // Initialize userId
+  // Initialize userId with tracing
   useEffect(() => {
-    if (userIdParam) {
-      const n = Number(userIdParam);
-      if (Number.isFinite(n) && n > 0) {
-        setUserId(n);
-        setError(null);
-      } else {
-        setError("Некорректный id пользователя");
-        setLoading(false);
-      }
+    const trace = resolveUserIdWithTrace(searchParams);
+    
+    if (trace.userId) {
+      setUserId(trace.userId);
+      setError(null);
+      setDebugError(null);
     } else {
+      // Build debug error for missing userId
+      const clientContext = collectClientDebugContext();
+      const debugDetails: DebugErrorDetails = {
+        errorType: "USER_ID_MISSING",
+        message: "ID не передан",
+        timestamp: new Date().toISOString(),
+        clientContext,
+        userId: {
+          value: null,
+          source: trace.source,
+          derivation: JSON.stringify(trace, null, 2),
+        },
+        userIdResolution: trace,
+      };
+      
       setError("ID не передан");
+      setDebugError(debugDetails);
       setLoading(false);
     }
-  }, [userIdParam]);
+  }, [userIdParam, searchParams]);
 
   // Load subscription status
   useEffect(() => {
@@ -53,14 +69,51 @@ function SubscriptionPageContent() {
         const response = await fetch(`/api/subscription/status?userId=${userId}`);
         const data = await response.json();
 
+        setLastApiRequestId(data.requestId || null);
+        setLastApiResponse({ status: response.status, body: data });
+
         if (!response.ok || !data.ok) {
+          // Build debug error
+          const clientContext = collectClientDebugContext();
+          const trace = resolveUserIdWithTrace(searchParams);
+          const debugDetails: DebugErrorDetails = {
+            errorType: "API_ERROR",
+            message: data.error || "Ошибка загрузки подписки",
+            requestId: data.requestId,
+            timestamp: new Date().toISOString(),
+            clientContext,
+            apiRequest: {
+              endpoint: `/api/subscription/status?userId=${userId}`,
+              method: "GET",
+            },
+            apiResponse: {
+              status: response.status,
+              statusText: response.statusText,
+              body: data,
+            },
+            serverError: data.errorDetails,
+            userId: {
+              value: userId,
+              source: trace.source,
+              derivation: JSON.stringify(trace, null, 2),
+            },
+            userIdResolution: trace,
+          };
+          
+          setError(data.error || "Ошибка загрузки подписки");
+          setDebugError(debugDetails);
           throw new Error(data.error || "Ошибка загрузки подписки");
         }
 
         setSubscription(data);
+        setError(null);
+        setDebugError(null);
       } catch (err: any) {
         console.error("[SubscriptionPage] Ошибка загрузки подписки:", err);
-        setError(err.message || "Ошибка загрузки подписки");
+        if (!debugError) {
+          // Only set if not already set above
+          setError(err.message || "Ошибка загрузки подписки");
+        }
       } finally {
         setLoading(false);
       }
@@ -85,6 +138,7 @@ function SubscriptionPageContent() {
     const clientContext = collectClientDebugContext();
 
     // Validate userId before making API call
+    const trace = resolveUserIdWithTrace(searchParams);
     if (!userId) {
       const debugDetails: DebugErrorDetails = {
         errorType: "USER_ID_MISSING",
@@ -94,8 +148,14 @@ function SubscriptionPageContent() {
         clientContext,
         userId: {
           value: null,
-          source: "state",
-          derivation: `userIdParam from URL: "${userIdParam}", parsed: ${userIdParam ? Number(userIdParam) : "null"}`,
+          source: trace.source,
+          derivation: JSON.stringify(trace, null, 2),
+        },
+        userIdResolution: trace,
+        paymentState: {
+          selectedMethod,
+          processingPayment,
+          showPaymentMethod,
         },
       };
       setError("userId обязателен");
@@ -124,6 +184,7 @@ function SubscriptionPageContent() {
 
       if (!response.ok || !data.ok) {
         // Build debug error details
+        const trace = resolveUserIdWithTrace(searchParams);
         const debugDetails: DebugErrorDetails = {
           errorType: "API_ERROR",
           message: data.error || "Ошибка создания платежа",
@@ -153,10 +214,21 @@ function SubscriptionPageContent() {
             : undefined),
           userId: {
             value: userId,
-            source: "state",
-            derivation: `userIdParam from URL: "${userIdParam}", parsed: ${userId}`,
+            source: trace.source,
+            derivation: JSON.stringify(trace, null, 2),
           },
+          userIdResolution: trace,
+          paymentState: {
+            selectedMethod,
+            processingPayment,
+            showPaymentMethod,
+          },
+          lastApiRequestId,
+          lastApiResponse,
         };
+        
+        setLastApiRequestId(data.requestId || null);
+        setLastApiResponse({ status: response.status, body: data });
 
         setError(data.error || "Ошибка создания платежа");
         setDebugError(debugDetails);
@@ -181,6 +253,7 @@ function SubscriptionPageContent() {
       console.error("[SubscriptionPage] Ошибка создания платежа:", err);
 
       // Build debug error details for network/client errors
+      const trace = resolveUserIdWithTrace(searchParams);
       const debugDetails: DebugErrorDetails = {
         errorType: "CLIENT_ERROR",
         message: err.message || "Ошибка создания платежа",
@@ -197,9 +270,17 @@ function SubscriptionPageContent() {
         },
         userId: {
           value: userId,
-          source: "state",
-          derivation: `userIdParam from URL: "${userIdParam}", parsed: ${userId}`,
+          source: trace.source,
+          derivation: JSON.stringify(trace, null, 2),
         },
+        userIdResolution: trace,
+        paymentState: {
+          selectedMethod,
+          processingPayment,
+          showPaymentMethod,
+        },
+        lastApiRequestId,
+        lastApiResponse,
       };
 
       setError(err.message || "Ошибка создания платежа");
@@ -236,7 +317,12 @@ function SubscriptionPageContent() {
     return (
       <AppLayout>
         <div className="min-h-screen flex items-center justify-center bg-background px-4">
-          <div className="text-red-600 text-center">{error}</div>
+          <div className="w-full max-w-md">
+            <div className="p-3 bg-red-50 border border-red-200 rounded-lg text-red-600 text-sm mb-4">
+              {error}
+            </div>
+            <DebugDetailsPanel error={debugError} />
+          </div>
         </div>
       </AppLayout>
     );

@@ -96,14 +96,10 @@ export function collectClientDebugContext(): ClientDebugContext {
     context.telegram.platform = webApp.platform;
     context.telegram.version = webApp.version;
 
-    // Try to get user ID from initDataUnsafe
-    if (webApp.initDataUnsafe?.user?.id) {
-      context.telegram.userId = webApp.initDataUnsafe.user.id;
-    }
-
-    // Try to get chat ID
-    if (webApp.initDataUnsafe?.chat?.id) {
-      context.telegram.chatId = webApp.initDataUnsafe.chat.id;
+    // Get detailed initDataUnsafe info
+    if (webApp.initDataUnsafe) {
+      context.telegram.userId = webApp.initDataUnsafe.user?.id;
+      context.telegram.chatId = webApp.initDataUnsafe.chat?.id;
     }
   }
 
