@@ -63,7 +63,8 @@ export default function OnboardingGuard({ userId, children, showDebug = false }:
           });
           
           // Use router.push for client-side navigation (faster)
-          router.push(path);
+          // Type assertion needed for Next.js App Router strict typing
+          router.push(path as any);
         }
       } catch (error: any) {
         console.error("[OnboardingGuard] Error checking onboarding:", error);
