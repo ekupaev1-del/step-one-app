@@ -158,14 +158,26 @@ async function sendMainMenu(
 // ░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░
 
 bot.start(async (ctx) => {
+  // Generate unique request ID for tracking this operation
+  const requestId = `start-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
+  const operationName = "createUserOnStart";
+  
+  // Log environment status (boolean only, no secrets)
+  const hasSupabaseUrl = !!process.env.SUPABASE_URL;
+  const hasSupabaseKey = !!process.env.SUPABASE_SERVICE_ROLE_KEY;
+  const isProduction = process.env.NODE_ENV === "production" || process.env.VERCEL_ENV === "production";
+  
+  console.log(`[bot:${requestId}] Operation: ${operationName}`);
+  console.log(`[bot:${requestId}] Environment: isProduction=${isProduction}, hasSupabaseUrl=${hasSupabaseUrl}, hasSupabaseKey=${hasSupabaseKey}`);
+  
   try {
     const telegram_id = ctx.from?.id;
     if (!telegram_id) {
-      console.error("[bot] /start: нет telegram_id");
+      console.error(`[bot:${requestId}] /start: нет telegram_id`);
       return ctx.reply("Ошибка: не удалось определить ваш Telegram ID");
     }
 
-    console.log(`[bot] /start вызван для telegram_id: ${telegram_id}`);
+    console.log(`[bot:${requestId}] /start вызван для telegram_id: ${telegram_id}`);
 
     // Проверяем, есть ли пользователь и заполнена ли анкета
     const { data: existingUser, error: selectError } = await supabase
@@ -175,8 +187,21 @@ bot.start(async (ctx) => {
       .maybeSingle();
 
     if (selectError) {
-      console.error("[bot] Ошибка проверки пользователя:", selectError);
-      return ctx.reply("Ошибка базы данных. Попробуйте позже.");
+      // Detailed Postgres error logging
+      const dbErrorDetails = {
+        message: selectError.message,
+        code: selectError.code,
+        details: selectError.details,
+        hint: selectError.hint,
+        stack: selectError.stack,
+      };
+      console.error(`[bot:${requestId}] Ошибка проверки пользователя (select):`, {
+        operation: operationName,
+        telegram_id,
+        dbError: dbErrorDetails,
+        payloadKeys: ["telegram_id"], // Sanitized payload keys
+      });
+      return ctx.reply(`Ошибка базы данных. Попробуйте позже. Код: ${requestId}`);
     }
 
     let userId;
@@ -184,29 +209,62 @@ bot.start(async (ctx) => {
 
     if (existingUser) {
       userId = existingUser.id;
-      console.log(`[bot] Пользователь найден, id: ${userId}, анкета заполнена: ${isQuestionnaireFilled}`);
+      console.log(`[bot:${requestId}] Пользователь найден, id: ${userId}, анкета заполнена: ${isQuestionnaireFilled}`);
     } else {
       // Создаём новую запись ТОЛЬКО с telegram_id
       // Форма потом обновит остальные поля через /api/save
-      console.log(`[bot] Создание новой записи для telegram_id: ${telegram_id}`);
-      const { data: upserted, error: upsertError } = await supabase
-        .from("users")
-        .upsert({ telegram_id }, { onConflict: "telegram_id", ignoreDuplicates: false })
-        .select("id")
-        .single();
+      console.log(`[bot:${requestId}] Создание новой записи для telegram_id: ${telegram_id}`);
+      console.log(`[bot:${requestId}] Insert payload keys: ["telegram_id"]`); // Sanitized payload keys
+      
+      const upsertPayload = { telegram_id };
+      
+      try {
+        const { data: upserted, error: upsertError } = await supabase
+          .from("users")
+          .upsert(upsertPayload, { onConflict: "telegram_id", ignoreDuplicates: false })
+          .select("id")
+          .single();
 
-      if (upsertError) {
-        console.error("[bot] Ошибка upsert:", upsertError);
-        return ctx.reply("Ошибка создания записи в базе. Попробуйте позже.");
+        if (upsertError) {
+          // Detailed Postgres error logging with all fields
+          const dbErrorDetails = {
+            message: upsertError.message,
+            code: upsertError.code,
+            details: upsertError.details,
+            hint: upsertError.hint,
+            stack: upsertError.stack,
+          };
+          console.error(`[bot:${requestId}] Ошибка upsert (createUserOnStart):`, {
+            operation: operationName,
+            telegram_id,
+            payloadKeys: Object.keys(upsertPayload), // Sanitized payload keys
+            dbError: dbErrorDetails,
+          });
+          return ctx.reply(`Ошибка создания записи в базе. Попробуйте позже. Код: ${requestId}`);
+        }
+
+        if (!upserted?.id) {
+          console.error(`[bot:${requestId}] Upsert вернул пустой результат`);
+          return ctx.reply(`Ошибка: не удалось получить ID пользователя. Код: ${requestId}`);
+        }
+
+        userId = upserted.id;
+        console.log(`[bot:${requestId}] Создана новая запись, id: ${userId}`);
+      } catch (error: any) {
+        // Catch any unexpected errors during DB insert
+        const errorDetails = {
+          message: error?.message || "Unknown error",
+          code: error?.code,
+          stack: error?.stack,
+        };
+        console.error(`[bot:${requestId}] Неожиданная ошибка при upsert (createUserOnStart):`, {
+          operation: operationName,
+          telegram_id,
+          payloadKeys: Object.keys(upsertPayload),
+          error: errorDetails,
+        });
+        return ctx.reply(`Ошибка создания записи в базе. Попробуйте позже. Код: ${requestId}`);
       }
-
-      if (!upserted?.id) {
-        console.error("[bot] Upsert вернул пустой результат");
-        return ctx.reply("Ошибка: не удалось получить ID пользователя");
-      }
-
-      userId = upserted.id;
-      console.log(`[bot] Создана новая запись, id: ${userId}`);
     }
 
     // Если анкета не заполнена - показываем приветствие (только новая анкета)
