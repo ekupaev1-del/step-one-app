@@ -5,6 +5,8 @@ import { useState, useEffect, Suspense } from "react";
 import { useRouter } from "next/navigation";
 import "../globals.css";
 import AppLayout from "../components/AppLayout";
+import { DebugDetailsPanel, DebugErrorDetails } from "../components/DebugDetailsPanel";
+import { collectClientDebugContext } from "@/lib/debugContext";
 
 function SubscriptionPageContent() {
   const searchParams = useSearchParams();
@@ -15,6 +17,7 @@ function SubscriptionPageContent() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [subscription, setSubscription] = useState<any>(null);
+  const [debugError, setDebugError] = useState<DebugErrorDetails | null>(null);
   
   // Payment method selection state
   const [showPaymentMethod, setShowPaymentMethod] = useState(false);
@@ -71,10 +74,41 @@ function SubscriptionPageContent() {
   };
 
   const handlePay = async () => {
-    if (!selectedMethod || !userId) return;
+    if (!selectedMethod) return;
 
+    const startTime = Date.now();
     setProcessingPayment(true);
     setError(null);
+    setDebugError(null);
+
+    // Collect client debug context
+    const clientContext = collectClientDebugContext();
+
+    // Validate userId before making API call
+    if (!userId) {
+      const debugDetails: DebugErrorDetails = {
+        errorType: "USER_ID_MISSING",
+        message: "userId обязателен",
+        timestamp: new Date().toISOString(),
+        duration: Date.now() - startTime,
+        clientContext,
+        userId: {
+          value: null,
+          source: "state",
+          derivation: `userIdParam from URL: "${userIdParam}", parsed: ${userIdParam ? Number(userIdParam) : "null"}`,
+        },
+      };
+      setError("userId обязателен");
+      setDebugError(debugDetails);
+      setProcessingPayment(false);
+      return;
+    }
+
+    const payload = {
+      method: selectedMethod,
+      planCode: "trial_3d_then_199",
+      returnPath: `/subscription?id=${userId}`,
+    };
 
     try {
       const response = await fetch("/api/subscription/create-payment", {
@@ -82,17 +116,52 @@ function SubscriptionPageContent() {
         headers: {
           "Content-Type": "application/json",
         },
-        body: JSON.stringify({
-          method: selectedMethod,
-          planCode: "trial_3d_then_199",
-          returnPath: `/subscription?id=${userId}`,
-        }),
+        body: JSON.stringify(payload),
       });
 
       const data = await response.json();
+      const duration = Date.now() - startTime;
 
       if (!response.ok || !data.ok) {
-        throw new Error(data.error || "Ошибка создания платежа");
+        // Build debug error details
+        const debugDetails: DebugErrorDetails = {
+          errorType: "API_ERROR",
+          message: data.error || "Ошибка создания платежа",
+          requestId: data.requestId,
+          timestamp: new Date().toISOString(),
+          duration,
+          clientContext,
+          apiRequest: {
+            endpoint: "/api/subscription/create-payment",
+            method: "POST",
+            payloadKeys: Object.keys(payload),
+            headers: {
+              "Content-Type": "application/json",
+            },
+          },
+          apiResponse: {
+            status: response.status,
+            statusText: response.statusText,
+            body: data,
+          },
+          serverError: data.errorDetails || (data.error
+            ? {
+                code: data.code || undefined,
+                message: data.error,
+                details: data.details || undefined,
+              }
+            : undefined),
+          userId: {
+            value: userId,
+            source: "state",
+            derivation: `userIdParam from URL: "${userIdParam}", parsed: ${userId}`,
+          },
+        };
+
+        setError(data.error || "Ошибка создания платежа");
+        setDebugError(debugDetails);
+        setProcessingPayment(false);
+        return;
       }
 
       // Open payment URL
@@ -108,8 +177,33 @@ function SubscriptionPageContent() {
       // Note: After payment, user will be redirected back to /subscription
       // The status will be reloaded automatically
     } catch (err: any) {
+      const duration = Date.now() - startTime;
       console.error("[SubscriptionPage] Ошибка создания платежа:", err);
+
+      // Build debug error details for network/client errors
+      const debugDetails: DebugErrorDetails = {
+        errorType: "CLIENT_ERROR",
+        message: err.message || "Ошибка создания платежа",
+        timestamp: new Date().toISOString(),
+        duration,
+        clientContext,
+        apiRequest: {
+          endpoint: "/api/subscription/create-payment",
+          method: "POST",
+          payloadKeys: Object.keys(payload),
+          headers: {
+            "Content-Type": "application/json",
+          },
+        },
+        userId: {
+          value: userId,
+          source: "state",
+          derivation: `userIdParam from URL: "${userIdParam}", parsed: ${userId}`,
+        },
+      };
+
       setError(err.message || "Ошибка создания платежа");
+      setDebugError(debugDetails);
       setProcessingPayment(false);
     }
   };
@@ -246,8 +340,11 @@ function SubscriptionPageContent() {
                 </div>
 
                 {error && (
-                  <div className="mb-4 p-3 bg-red-50 border border-red-200 rounded-lg text-red-600 text-sm">
-                    {error}
+                  <div className="mb-4">
+                    <div className="p-3 bg-red-50 border border-red-200 rounded-lg text-red-600 text-sm">
+                      {error}
+                    </div>
+                    <DebugDetailsPanel error={debugError} />
                   </div>
                 )}
 
@@ -268,6 +365,7 @@ function SubscriptionPageContent() {
                     setShowPaymentMethod(false);
                     setSelectedMethod(null);
                     setError(null);
+                    setDebugError(null);
                   }}
                   className="w-full mt-3 py-2 text-textSecondary hover:text-textPrimary transition-colors"
                 >

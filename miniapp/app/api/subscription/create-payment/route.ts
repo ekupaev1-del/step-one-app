@@ -48,7 +48,17 @@ export async function POST(req: Request) {
         { 
           ok: false, 
           error: "userId обязателен",
-          requestId 
+          requestId,
+          errorDetails: {
+            code: "USER_ID_MISSING",
+            message: "userId обязателен",
+            details: {
+              queryParams: {
+                userId: new URL(req.url).searchParams.get("userId"),
+                id: new URL(req.url).searchParams.get("id"),
+              },
+            },
+          },
         },
         { status: 400 }
       );
@@ -134,8 +144,15 @@ export async function POST(req: Request) {
         { 
           ok: false, 
           error: "Ошибка создания платежа",
-          details: insertError.message,
-          requestId 
+          requestId,
+          errorDetails: {
+            code: "DATABASE_ERROR",
+            message: insertError.message,
+            details: {
+              code: insertError.code,
+              hint: insertError.hint,
+            },
+          },
         },
         { status: 500 }
       );
@@ -158,7 +175,11 @@ export async function POST(req: Request) {
         { 
           ok: false, 
           error: "Ошибка создания платежной ссылки",
-          requestId 
+          requestId,
+          errorDetails: {
+            code: "PAYMENT_URL_BUILD_ERROR",
+            message: "Failed to build payment URL",
+          },
         },
         { status: 500 }
       );
@@ -190,7 +211,12 @@ export async function POST(req: Request) {
       { 
         ok: false, 
         error: error?.message || "Internal server error",
-        requestId 
+        requestId,
+        errorDetails: {
+          code: "INTERNAL_ERROR",
+          message: error?.message || "Internal server error",
+          details: error?.stack ? { stack: error.stack.substring(0, 500) } : undefined,
+        },
       },
       { status: 500 }
     );

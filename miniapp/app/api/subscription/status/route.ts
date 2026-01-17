@@ -15,6 +15,7 @@ export async function GET(req: Request) {
   const requestId = `subscription-status-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
   
   try {
+    const url = new URL(req.url);
     const userId = await getUserIdFromRequest(req);
     
     if (!userId) {
@@ -22,7 +23,17 @@ export async function GET(req: Request) {
         { 
           ok: false, 
           error: "userId обязателен (используйте ?userId=123 или ?id=123)",
-          requestId 
+          requestId,
+          errorDetails: {
+            code: "USER_ID_MISSING",
+            message: "userId обязателен (используйте ?userId=123 или ?id=123)",
+            details: {
+              queryParams: {
+                userId: url.searchParams.get("userId"),
+                id: url.searchParams.get("id"),
+              },
+            },
+          },
         },
         { status: 400 }
       );
@@ -43,7 +54,15 @@ export async function GET(req: Request) {
         { 
           ok: false, 
           error: error.message || "Database error",
-          requestId 
+          requestId,
+          errorDetails: {
+            code: "DATABASE_ERROR",
+            message: error.message || "Database error",
+            details: {
+              code: error.code,
+              hint: error.hint,
+            },
+          },
         },
         { status: 500 }
       );
@@ -69,7 +88,12 @@ export async function GET(req: Request) {
       { 
         ok: false, 
         error: error?.message || "Internal server error",
-        requestId 
+        requestId,
+        errorDetails: {
+          code: "INTERNAL_ERROR",
+          message: error?.message || "Internal server error",
+          details: error?.stack ? { stack: error.stack.substring(0, 500) } : undefined,
+        },
       },
       { status: 500 }
     );
