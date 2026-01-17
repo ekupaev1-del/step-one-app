@@ -7,8 +7,8 @@
  */
 
 import { NextResponse } from "next/server";
-import { createServerSupabaseClient } from "../../../../../../lib/supabaseAdmin";
-import { getRobokassaConfig } from "../../../../../../lib/robokassa";
+import { createServerSupabaseClient } from "../../../../../../../lib/supabaseAdmin";
+import { getRobokassaConfig } from "../../../../../../../lib/robokassa";
 
 export const dynamic = "force-dynamic";
 

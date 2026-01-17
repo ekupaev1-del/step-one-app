@@ -6,8 +6,8 @@
  */
 
 import { NextResponse } from "next/server";
-import { createServerSupabaseClient } from "../../../../lib/supabaseAdmin";
-import { getUserIdFromRequest } from "../../../../lib/getUserId";
+import { createServerSupabaseClient } from "../../../../../lib/supabaseAdmin";
+import { getUserIdFromRequest } from "../../../../../lib/getUserId";
 
 export const dynamic = "force-dynamic";
 
