@@ -2,7 +2,18 @@
  * Create Payment Endpoint
  * POST /api/subscription/create-payment
  * 
- * Creates payment record and returns Robokassa payment URL
+ * Creates Robokassa invoice record and returns payment URL.
+ * 
+ * CRITICAL FIX: Uses DB-generated auto-increment integer as InvId (not timestamp).
+ * Robokassa requires InvId to be a small integer (<= 10 digits / 32-bit range).
+ * Large timestamps (13+ digits) or non-numeric IDs cause error 29 "Оплата счетов недоступна".
+ * 
+ * Flow:
+ * 1. Resolve userId from query params (?userId= or ?id=) or body ({ userId } or { id })
+ * 2. Create invoice record in robokassa_invoices table
+ * 3. Use invoice.id (small integer) as Robokassa InvId
+ * 4. Build payment URL with proper signature
+ * 5. Return payment URL to client
  */
 
 import { NextRequest, NextResponse } from "next/server";
@@ -18,6 +29,14 @@ interface CreatePaymentRequest {
   returnPath?: string;
   userId?: number;
   id?: number;
+}
+
+// Helper to mask sensitive values in logs
+function maskValue(value: string, first: number = 6, last: number = 4): string {
+  if (!value || value.length <= first + last) {
+    return "***";
+  }
+  return `${value.substring(0, first)}...${value.substring(value.length - last)}`;
 }
 
 // Helper to check if debug should be included
@@ -39,8 +58,27 @@ function shouldIncludeDebug(req: NextRequest): boolean {
   return false;
 }
 
+// Structured logging helper
+function logEvent(event: string, data: Record<string, any>, requestId: string) {
+  // Never log passwords or full signatures
+  const safeData = { ...data };
+  if (safeData.password1) safeData.password1 = "<PASSWORD1>";
+  if (safeData.password2) safeData.password2 = "<PASSWORD2>";
+  if (safeData.signature) safeData.signature = maskValue(safeData.signature);
+  if (safeData.signatureValue) safeData.signatureValue = maskValue(safeData.signatureValue);
+  
+  console.log(JSON.stringify({
+    event,
+    requestId,
+    timestamp: new Date().toISOString(),
+    ...safeData,
+  }));
+}
+
 export async function POST(req: NextRequest) {
   const requestId = `create-payment-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
+  
+  logEvent("create-payment:start", { url: req.url }, requestId);
   
   try {
     // Check Robokassa config
@@ -48,11 +86,14 @@ export async function POST(req: NextRequest) {
     const debugWarnings: string[] = [];
     
     if (!config) {
-      console.error(`[subscription/create-payment:${requestId}] Robokassa not configured`);
-      const missingVars: string[] = [];
-      if (!process.env.ROBOKASSA_MERCHANT_LOGIN) missingVars.push("ROBOKASSA_MERCHANT_LOGIN");
-      if (!process.env.ROBOKASSA_PASSWORD1) missingVars.push("ROBOKASSA_PASSWORD1");
-      if (!process.env.ROBOKASSA_PASSWORD2) missingVars.push("ROBOKASSA_PASSWORD2");
+      logEvent("create-payment:error", { 
+        error: "ROBOKASSA_CONFIG_MISSING",
+        missingVars: [
+          !process.env.ROBOKASSA_MERCHANT_LOGIN ? "ROBOKASSA_MERCHANT_LOGIN" : null,
+          !process.env.ROBOKASSA_PASSWORD1 ? "ROBOKASSA_PASSWORD1" : null,
+          !process.env.ROBOKASSA_PASSWORD2 ? "ROBOKASSA_PASSWORD2" : null,
+        ].filter(Boolean),
+      }, requestId);
       
       const response: any = {
         ok: false,
@@ -63,10 +104,11 @@ export async function POST(req: NextRequest) {
 
       if (shouldIncludeDebug(req)) {
         response.debug = {
-          missingEnvVars: missingVars,
-          hasRobokassaMerchantLogin: !!process.env.ROBOKASSA_MERCHANT_LOGIN,
-          hasRobokassaPassword1: !!process.env.ROBOKASSA_PASSWORD1,
-          hasRobokassaPassword2: !!process.env.ROBOKASSA_PASSWORD2,
+          missingEnvVars: [
+            !process.env.ROBOKASSA_MERCHANT_LOGIN ? "ROBOKASSA_MERCHANT_LOGIN" : null,
+            !process.env.ROBOKASSA_PASSWORD1 ? "ROBOKASSA_PASSWORD1" : null,
+            !process.env.ROBOKASSA_PASSWORD2 ? "ROBOKASSA_PASSWORD2" : null,
+          ].filter(Boolean),
         };
       }
 
@@ -93,6 +135,7 @@ export async function POST(req: NextRequest) {
     }
 
     // Resolve userId with full diagnostics (pass parsed body to avoid double reading)
+    // Supports both query params (?userId= or ?id=) and body ({ userId } or { id })
     const userIdResolution = await resolveUserIdFromRequest(req, body);
     const userId = userIdResolution.userId;
 
@@ -114,6 +157,14 @@ export async function POST(req: NextRequest) {
     });
 
     if (!userId) {
+      logEvent("create-payment:error", {
+        error: "USER_ID_MISSING",
+        userIdResolution,
+        queryParams,
+        bodyHasUserId: body?.userId !== undefined,
+        bodyHasId: body?.id !== undefined,
+      }, requestId);
+      
       const response: any = {
         ok: false,
         error: "userId is required",
@@ -170,42 +221,48 @@ export async function POST(req: NextRequest) {
     const amount = "1.00";
     const description = `Подписка: Первые 3 дня за 1 ₽, далее 199 ₽/мес`;
 
-    // Generate unique invoice ID - MUST be numeric (Robokassa requirement)
-    // Use Date.now() which returns a number (milliseconds since epoch)
-    // This ensures InvId is ALWAYS a pure integer, no hyphens or letters
-    const invId = Date.now().toString(); // Pure numeric string, e.g., "1768658664801"
-    
-    // Store requestId separately in Shp_requestId for tracking (not in InvId)
-    // requestId can contain hyphens/letters for uniqueness, but InvId must be numeric
-    const orderToken = requestId; // Use requestId as order token
-
     const supabase = createServerSupabaseClient();
 
-    // Create payment record
-    const paymentRecord = {
+    // CRITICAL: Create invoice record FIRST, then use invoice.id as InvId
+    // This ensures InvId is a small integer (auto-increment), not a large timestamp
+    const invoiceRecord = {
       user_id: userId,
-      provider: "robokassa",
-      inv_id: invId,
-      method,
       plan_code: planCode,
+      method,
       amount: Number(amount),
       currency: "RUB",
       status: "created",
-      out_sum: Number(amount),  // Important: out_sum must match amount
-      provider_payload: {
+      request_id: requestId, // Store requestId separately (can contain hyphens/letters)
+      raw_payload: {
         returnPath,
         testMode: config.testMode,
+        userIdResolution,
       },
     };
 
-    const { data: payment, error: insertError } = await supabase
-      .from("payments")
-      .insert(paymentRecord)
-      .select("id, inv_id")
+    logEvent("create-payment:invoice-creating", {
+      userId,
+      planCode,
+      method,
+      amount,
+    }, requestId);
+
+    const { data: invoice, error: insertError } = await supabase
+      .from("robokassa_invoices")
+      .insert(invoiceRecord)
+      .select("id, user_id, plan_code, method, amount, status, request_id, created_at")
       .single();
 
     if (insertError) {
-      console.error(`[subscription/create-payment:${requestId}] DB insert error:`, insertError);
+      logEvent("create-payment:error", {
+        error: "DATABASE_ERROR",
+        databaseError: {
+          message: insertError.message,
+          code: insertError.code,
+          hint: insertError.hint,
+        },
+      }, requestId);
+      
       const response: any = {
         ok: false,
         error: "Ошибка создания платежа",
@@ -226,21 +283,37 @@ export async function POST(req: NextRequest) {
       return NextResponse.json(response, { status: 500 });
     }
 
-    // Build Robokassa payment URL (pass requestId for debug logging)
-    // Include orderToken in Shp params for tracking (not in InvId)
-    const paymentUrlResult = buildRobokassaPaymentUrl({
+    // Use invoice.id as InvId (small integer, within Robokassa's supported range)
+    const invId = String(invoice.id); // Convert to string for Robokassa URL
+    
+    logEvent("create-payment:invoice-created", {
+      invoiceId: invoice.id,
       invId,
+      userId,
+      planCode,
+      method,
+      amount,
+    }, requestId);
+
+    // Build Robokassa payment URL using invoice.id as InvId
+    // Include requestId in Shp params for tracking (not in InvId)
+    const paymentUrlResult = buildRobokassaPaymentUrl({
+      invId, // Small integer from DB
       outSum: amount,
       description,
       userId,
       planCode,
       method,
       returnPath,
-      orderToken, // Store in Shp_requestId for tracking
+      orderToken: requestId, // Store in Shp_requestId for tracking
     }, requestId);
 
     if (!paymentUrlResult) {
-      console.error(`[subscription/create-payment:${requestId}] Failed to build payment URL`);
+      logEvent("create-payment:error", {
+        error: "PAYMENT_URL_BUILD_ERROR",
+        invoiceId: invoice.id,
+      }, requestId);
+      
       const response: any = {
         ok: false,
         error: "Ошибка создания платежной ссылки",
@@ -252,29 +325,34 @@ export async function POST(req: NextRequest) {
         response.debug = {
           message: "Failed to build payment URL",
           configPresent: !!config,
+          invoiceId: invoice.id,
         };
       }
 
       return NextResponse.json(response, { status: 500 });
     }
 
-    // Update payment record with payment_url
+    // Update invoice record with payment_url
     await supabase
-      .from("payments")
+      .from("robokassa_invoices")
       .update({ payment_url: paymentUrlResult.url })
-      .eq("id", payment.id);
+      .eq("id", invoice.id);
 
-    console.log(`[subscription/create-payment:${requestId}] Payment created:`, {
-      userId,
+    logEvent("create-payment:url-generated", {
+      invoiceId: invoice.id,
       invId,
+      userId,
       method,
       planCode,
       amount,
-    });
+      isTest: config.testMode,
+      paymentUrlLength: paymentUrlResult.url.length,
+    }, requestId);
 
+    // Build response
     const successResponse: any = {
       ok: true,
-      invId,
+      invId, // Small integer from DB
       paymentUrl: paymentUrlResult.url,
       requestId,
       timestamp: new Date().toISOString(),
@@ -289,10 +367,16 @@ export async function POST(req: NextRequest) {
           nodeEnv: process.env.NODE_ENV,
           debugPayments: process.env.DEBUG_PAYMENTS === "true",
         },
+        resolvedUserId: userId,
+        userIdResolution: {
+          source: userIdResolution.source,
+          candidates: userIdResolution.candidates,
+        },
+        invoiceId: invoice.id, // DB-generated small integer
         merchantLogin: robokassaDebug?.mrchLogin,
         outSumRaw: robokassaDebug?.outSumRaw,
         outSumFormatted: robokassaDebug?.outSumFormatted,
-        invId: robokassaDebug?.invId, // Should be numeric
+        invId: robokassaDebug?.invId, // Should match invoice.id
         descriptionRaw: robokassaDebug?.descriptionRaw,
         descriptionEncodedOnce: robokassaDebug?.descriptionEncoded,
         shpParams: robokassaDebug?.shpParams,
@@ -300,22 +384,26 @@ export async function POST(req: NextRequest) {
         signatureMasked: robokassaDebug?.signatureMasked,
         finalPaymentUrl: robokassaDebug?.finalPaymentUrlMasked, // Masked for safety
         sanityChecklist: robokassaDebug?.sanityChecklist || {},
+        isTest: config.testMode,
         // Additional context
         queryParams,
         bodyPreview,
         parsedBodyKeys: body && typeof body === "object" ? Object.keys(body) : [],
         bodyHasUserId: body?.userId !== undefined,
         bodyHasId: body?.id !== undefined,
-        userIdResolution,
         headersSubset,
-        resolvedUserId: userId,
         debugWarnings: debugWarnings.length > 0 ? debugWarnings : undefined,
       };
     }
 
     return NextResponse.json(successResponse);
   } catch (error: any) {
-    console.error(`[subscription/create-payment:${requestId}] Unexpected error:`, error);
+    logEvent("create-payment:error", {
+      error: "INTERNAL_ERROR",
+      message: error?.message,
+      stack: error?.stack ? error.stack.substring(0, 500) : undefined,
+    }, requestId);
+    
     const response: any = {
       ok: false,
       error: error?.message || "Internal server error",

@@ -75,46 +75,92 @@ export async function POST(req: Request) {
 
     const supabase = createServerSupabaseClient();
 
-    // Find payment record
-    const { data: payment, error: paymentError } = await supabase
-      .from("payments")
-      .select("*")
-      .eq("inv_id", invId)
-      .maybeSingle();
+    // Find invoice record in robokassa_invoices table (new invoices use DB-generated IDs)
+    // InvId is now a small integer (invoice.id), so we can query by id directly
+    const invIdNum = Number(invId);
+    let invoice = null;
+    let payment = null;
+    
+    if (Number.isFinite(invIdNum) && invIdNum > 0) {
+      // Try robokassa_invoices first (new invoices)
+      const { data: invoiceData, error: invoiceError } = await supabase
+        .from("robokassa_invoices")
+        .select("*")
+        .eq("id", invIdNum)
+        .maybeSingle();
+      
+      if (invoiceError) {
+        console.error(`[robokassa-result:${requestId}] DB error finding invoice:`, invoiceError);
+      } else if (invoiceData) {
+        invoice = invoiceData;
+      }
+    }
+    
+    // Fallback to payments table (old invoices with text inv_id)
+    if (!invoice) {
+      const { data: paymentData, error: paymentError } = await supabase
+        .from("payments")
+        .select("*")
+        .eq("inv_id", invId)
+        .maybeSingle();
 
-    if (paymentError) {
-      console.error(`[robokassa-result:${requestId}] DB error finding payment:`, paymentError);
-      return new NextResponse("ERROR: Database error", { status: 500 });
+      if (paymentError) {
+        console.error(`[robokassa-result:${requestId}] DB error finding payment:`, paymentError);
+        return new NextResponse("ERROR: Database error", { status: 500 });
+      }
+      
+      if (paymentData) {
+        payment = paymentData;
+      }
     }
 
-    if (!payment) {
-      console.error(`[robokassa-result:${requestId}] Payment not found:`, invId);
+    if (!invoice && !payment) {
+      console.error(`[robokassa-result:${requestId}] Invoice/Payment not found:`, invId);
       return new NextResponse("ERROR: Payment not found", { status: 404 });
     }
 
     // Check if already processed
-    if (payment.status === "paid") {
+    const currentStatus = invoice?.status || payment?.status;
+    if (currentStatus === "paid") {
       console.log(`[robokassa-result:${requestId}] Payment already processed:`, invId);
       return new NextResponse(`OK${invId}`, { status: 200 });
     }
 
-    // Update payment status to paid
-    const { error: updateError } = await supabase
-      .from("payments")
-      .update({
-        status: "paid",
-        updated_at: new Date().toISOString(),
-      })
-      .eq("id", payment.id);
-
-    if (updateError) {
-      console.error(`[robokassa-result:${requestId}] DB error updating payment:`, updateError);
-      return new NextResponse("ERROR: Failed to update payment", { status: 500 });
+    // Update invoice/payment status to paid
+    let updateError = null;
+    if (invoice) {
+      const result = await supabase
+        .from("robokassa_invoices")
+        .update({
+          status: "paid",
+          updated_at: new Date().toISOString(),
+        })
+        .eq("id", invoice.id);
+      
+      updateError = result.error;
+      if (updateError) {
+        console.error(`[robokassa-result:${requestId}] DB error updating invoice:`, updateError);
+        return new NextResponse("ERROR: Failed to update invoice", { status: 500 });
+      }
+    } else if (payment) {
+      const result = await supabase
+        .from("payments")
+        .update({
+          status: "paid",
+          updated_at: new Date().toISOString(),
+        })
+        .eq("id", payment.id);
+      
+      updateError = result.error;
+      if (updateError) {
+        console.error(`[robokassa-result:${requestId}] DB error updating payment:`, updateError);
+        return new NextResponse("ERROR: Failed to update payment", { status: 500 });
+      }
     }
 
     // Create or update subscription
-    const userId = payment.user_id;
-    const planCode = payment.plan_code;
+    const userId = invoice?.user_id || payment?.user_id;
+    const planCode = invoice?.plan_code || payment?.plan_code;
 
     // Calculate dates: 3 days from now for trial
     const now = new Date();
