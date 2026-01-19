@@ -170,8 +170,14 @@ export async function POST(req: NextRequest) {
     const amount = "1.00";
     const description = `Подписка: Первые 3 дня за 1 ₽, далее 199 ₽/мес`;
 
-    // Generate unique invoice ID
-    const invId = `${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
+    // Generate unique invoice ID - MUST be numeric (Robokassa requirement)
+    // Use Date.now() which returns a number (milliseconds since epoch)
+    // This ensures InvId is ALWAYS a pure integer, no hyphens or letters
+    const invId = Date.now().toString(); // Pure numeric string, e.g., "1768658664801"
+    
+    // Store requestId separately in Shp_requestId for tracking (not in InvId)
+    // requestId can contain hyphens/letters for uniqueness, but InvId must be numeric
+    const orderToken = requestId; // Use requestId as order token
 
     const supabase = createServerSupabaseClient();
 
@@ -221,6 +227,7 @@ export async function POST(req: NextRequest) {
     }
 
     // Build Robokassa payment URL (pass requestId for debug logging)
+    // Include orderToken in Shp params for tracking (not in InvId)
     const paymentUrlResult = buildRobokassaPaymentUrl({
       invId,
       outSum: amount,
@@ -229,6 +236,7 @@ export async function POST(req: NextRequest) {
       planCode,
       method,
       returnPath,
+      orderToken, // Store in Shp_requestId for tracking
     }, requestId);
 
     if (!paymentUrlResult) {
@@ -274,7 +282,25 @@ export async function POST(req: NextRequest) {
 
     // Include comprehensive debug echo when debug enabled
     if (shouldIncludeDebug(req)) {
+      const robokassaDebug = paymentUrlResult.debug;
       successResponse.debug = {
+        requestId,
+        env: {
+          nodeEnv: process.env.NODE_ENV,
+          debugPayments: process.env.DEBUG_PAYMENTS === "true",
+        },
+        merchantLogin: robokassaDebug?.mrchLogin,
+        outSumRaw: robokassaDebug?.outSumRaw,
+        outSumFormatted: robokassaDebug?.outSumFormatted,
+        invId: robokassaDebug?.invId, // Should be numeric
+        descriptionRaw: robokassaDebug?.descriptionRaw,
+        descriptionEncodedOnce: robokassaDebug?.descriptionEncoded,
+        shpParams: robokassaDebug?.shpParams,
+        signatureBaseString: robokassaDebug?.signatureBaseString, // Password masked as <PASSWORD1>
+        signatureMasked: robokassaDebug?.signatureMasked,
+        finalPaymentUrl: robokassaDebug?.finalPaymentUrlMasked, // Masked for safety
+        sanityChecklist: robokassaDebug?.sanityChecklist || {},
+        // Additional context
         queryParams,
         bodyPreview,
         parsedBodyKeys: body && typeof body === "object" ? Object.keys(body) : [],
@@ -283,28 +309,6 @@ export async function POST(req: NextRequest) {
         userIdResolution,
         headersSubset,
         resolvedUserId: userId,
-        env: {
-          nodeEnv: process.env.NODE_ENV,
-          debugPayments: process.env.DEBUG_PAYMENTS === "true",
-        },
-        robokassa: paymentUrlResult.debug ? {
-          outSum: paymentUrlResult.debug.outSum,
-          outSumRaw: paymentUrlResult.debug.outSumRaw,
-          outSumFormatted: paymentUrlResult.debug.outSumFormatted,
-          invId: paymentUrlResult.debug.invId,
-          invIdValid: paymentUrlResult.debug.invIdValid,
-          mrchLogin: paymentUrlResult.debug.mrchLogin,
-          descriptionRaw: paymentUrlResult.debug.descriptionRaw,
-          descriptionEncoded: paymentUrlResult.debug.descriptionEncoded,
-          isTest: paymentUrlResult.debug.isTest,
-          shpParams: paymentUrlResult.debug.shpParams,
-          sortedShpKeys: paymentUrlResult.debug.sortedShpKeys,
-          signatureBaseString: paymentUrlResult.debug.signatureBaseString,
-          signatureValueLength: paymentUrlResult.debug.signatureValueLength,
-          signatureMasked: paymentUrlResult.debug.signatureMasked,
-          finalPaymentUrlMasked: paymentUrlResult.debug.finalPaymentUrlMasked,
-          sanityChecklist: paymentUrlResult.debug.sanityChecklist,
-        } : undefined,
         debugWarnings: debugWarnings.length > 0 ? debugWarnings : undefined,
       };
     }

@@ -71,15 +71,14 @@ export function DebugDetailsPanel({ error }: DebugDetailsPanelProps) {
     (typeof process !== "undefined" && process.env.NODE_ENV !== "production") ||
     !!debugKey;
 
-  // Show panel if error exists OR if debug is enabled and we have payment info
-  if (!error && !debugEnabled) {
+  // Show panel if error exists OR if debug is enabled and we have server debug info
+  const hasServerDebug = error?.serverDebug || error?.apiResponse?.body?.debug;
+  if (!error && (!debugEnabled || !hasServerDebug)) {
     return null;
   }
 
-  // If no error but debug enabled, show minimal info
-  if (!error) {
-    return null; // Will be handled by success case in subscription page
-  }
+  // If no error but debug enabled and we have server debug, show it
+  // (This case is handled by the subscription page passing a debug object)
 
   // Mask secrets in the error object
   const safeError = maskSecretsInObject(error);
@@ -121,7 +120,10 @@ export function DebugDetailsPanel({ error }: DebugDetailsPanelProps) {
   const userIdValue = userIdResolution?.userId ?? error.userId?.value ?? null;
   const userIdSource = userIdResolution?.source ?? error.userId?.source ?? "unknown";
   const telegramInfo = error.clientContext?.telegram;
-  const robokassaInfo = error.serverDebug?.robokassa;
+  
+  // Server debug can be directly in serverDebug (new format) or nested in serverDebug.robokassa (old format)
+  const serverDebug = error.serverDebug;
+  const robokassaInfo = serverDebug?.robokassa || serverDebug; // Support both formats
 
   return (
     <div className="mt-4">
@@ -158,7 +160,19 @@ export function DebugDetailsPanel({ error }: DebugDetailsPanelProps) {
           <div>Response: {error.apiResponse.status} {error.apiResponse.statusText}</div>
         )}
         {robokassaInfo && (
-          <div>Robokassa: IsTest={robokassaInfo.isTest ? "1" : "0"} | OutSum={robokassaInfo.outSum} | Shp params: {robokassaInfo.sortedShpKeys.length}</div>
+          <div>
+            Robokassa: IsTest={robokassaInfo.isTest ? "1" : "0"} | 
+            OutSum={robokassaInfo.outSumFormatted || robokassaInfo.outSum} | 
+            InvId={robokassaInfo.invId} | 
+            Shp params: {robokassaInfo.sortedShpKeys?.length || Object.keys(robokassaInfo.shpParams || {}).length}
+          </div>
+        )}
+        {serverDebug && serverDebug.sanityChecklist && (
+          <div className="mt-1">
+            Sanity: InvId={serverDebug.sanityChecklist.invIdIsInteger ? "✓" : "✗"} | 
+            Desc={serverDebug.sanityChecklist.descriptionEncodedOnce ? "✓" : "✗"} | 
+            DoubleEnc={serverDebug.sanityChecklist.descriptionDoubleEncoded ? "⚠" : "✓"}
+          </div>
         )}
       </div>
 
@@ -195,32 +209,85 @@ export function DebugDetailsPanel({ error }: DebugDetailsPanelProps) {
         </div>
       </details>
 
-      {/* Robokassa Debug Section (if available) */}
-      {robokassaInfo && (
+      {/* Server Debug JSON Section (if available) */}
+      {serverDebug && (
         <details
-          className="mt-2 border border-orange-300 rounded-lg bg-orange-50"
+          className="mt-2 border border-purple-300 rounded-lg bg-purple-50"
           open={true}
         >
-          <summary className="px-4 py-2 cursor-pointer text-sm font-semibold text-orange-700 hover:bg-orange-100 select-none">
-            🔐 Robokassa Signature Debug
+          <summary className="px-4 py-2 cursor-pointer text-sm font-semibold text-purple-700 hover:bg-purple-100 select-none">
+            📊 Server Debug JSON
           </summary>
-          <div className="px-4 py-3 border-t border-orange-300 bg-white">
-            <div className="text-xs space-y-1">
-              <div><strong>OutSum:</strong> {robokassaInfo.outSum}</div>
-              <div><strong>InvId:</strong> {robokassaInfo.invId}</div>
-              <div><strong>MerchantLogin:</strong> {robokassaInfo.mrchLogin}</div>
-              <div><strong>IsTest:</strong> {robokassaInfo.isTest ? "1 (TEST MODE)" : "0 (PRODUCTION)"}</div>
-              <div><strong>Shp Params:</strong> {JSON.stringify(robokassaInfo.shpParams, null, 2)}</div>
-              <div><strong>Sorted Shp Keys:</strong> {robokassaInfo.sortedShpKeys.join(", ")}</div>
-              <div className="mt-2 p-2 bg-gray-100 rounded font-mono text-xs break-all">
-                <strong>String to Sign:</strong><br />
-                {robokassaInfo.stringToSign}
-              </div>
-              <div><strong>Signature (masked):</strong> {robokassaInfo.signatureMasked}</div>
-              <div className="mt-2 p-2 bg-gray-100 rounded font-mono text-xs break-all">
-                <strong>Final URL (masked):</strong><br />
-                {robokassaInfo.finalUrlMasked}
-              </div>
+          <div className="px-4 py-3 border-t border-purple-300 bg-white">
+            <div className="text-xs space-y-2">
+              {serverDebug.requestId && (
+                <div><strong>RequestId:</strong> {serverDebug.requestId}</div>
+              )}
+              {serverDebug.env && (
+                <div>
+                  <strong>Env:</strong> nodeEnv={serverDebug.env.nodeEnv}, 
+                  debugPayments={serverDebug.env.debugPayments ? "true" : "false"}
+                </div>
+              )}
+              {serverDebug.merchantLogin && (
+                <div><strong>MerchantLogin:</strong> {serverDebug.merchantLogin}</div>
+              )}
+              {serverDebug.outSumRaw && (
+                <div><strong>OutSum:</strong> Raw={serverDebug.outSumRaw}, Formatted={serverDebug.outSumFormatted}</div>
+              )}
+              {serverDebug.invId && (
+                <div>
+                  <strong>InvId:</strong> {serverDebug.invId} 
+                  {serverDebug.sanityChecklist?.invIdIsInteger ? " ✓" : " ✗ (NOT INTEGER!)"}
+                </div>
+              )}
+              {serverDebug.descriptionRaw && (
+                <div>
+                  <strong>Description:</strong> Raw="{serverDebug.descriptionRaw.substring(0, 50)}..."
+                  {serverDebug.descriptionEncodedOnce && (
+                    <span>, Encoded="{serverDebug.descriptionEncodedOnce.substring(0, 50)}..."</span>
+                  )}
+                </div>
+              )}
+              {serverDebug.shpParams && (
+                <div>
+                  <strong>Shp Params:</strong>
+                  <pre className="mt-1 p-2 bg-gray-100 rounded text-xs overflow-auto">
+                    {JSON.stringify(serverDebug.shpParams, null, 2)}
+                  </pre>
+                </div>
+              )}
+              {serverDebug.signatureBaseString && (
+                <div className="mt-2 p-2 bg-gray-100 rounded font-mono text-xs break-all">
+                  <strong>Signature Base String:</strong><br />
+                  {serverDebug.signatureBaseString}
+                </div>
+              )}
+              {serverDebug.signatureMasked && (
+                <div><strong>Signature (masked):</strong> {serverDebug.signatureMasked}</div>
+              )}
+              {serverDebug.finalPaymentUrl && (
+                <div className="mt-2 p-2 bg-gray-100 rounded font-mono text-xs break-all">
+                  <strong>Final Payment URL (masked):</strong><br />
+                  {serverDebug.finalPaymentUrl}
+                </div>
+              )}
+              {serverDebug.sanityChecklist && (
+                <div className="mt-2 p-2 bg-yellow-50 border border-yellow-200 rounded">
+                  <strong>Sanity Checklist:</strong>
+                  <div className="mt-1 space-y-0.5 text-xs">
+                    <div>outSumFormatValid: {serverDebug.sanityChecklist.outSumFormatValid ? "✓" : "✗"}</div>
+                    <div>outSumValid: {serverDebug.sanityChecklist.outSumValid ? "✓" : "✗"}</div>
+                    <div>invIdIsInteger: {serverDebug.sanityChecklist.invIdIsInteger ? "✓" : "✗"}</div>
+                    <div>invIdValid: {serverDebug.sanityChecklist.invIdValid ? "✓" : "✗"}</div>
+                    <div>descriptionEncodedOnce: {serverDebug.sanityChecklist.descriptionEncodedOnce ? "✓" : "✗"}</div>
+                    <div>descriptionDoubleEncoded: {serverDebug.sanityChecklist.descriptionDoubleEncoded ? "⚠ DOUBLE ENCODED!" : "✓"}</div>
+                    <div>merchantLoginPresent: {serverDebug.sanityChecklist.merchantLoginPresent ? "✓" : "✗"}</div>
+                    <div>signatureComputed: {serverDebug.sanityChecklist.signatureComputed ? "✓" : "✗"}</div>
+                    <div>urlBuilt: {serverDebug.sanityChecklist.urlBuilt ? "✓" : "✗"}</div>
+                  </div>
+                </div>
+              )}
             </div>
           </div>
         </details>

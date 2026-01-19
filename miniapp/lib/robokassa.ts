@@ -127,13 +127,14 @@ function maskUrlSignature(url: string): string {
  * Build Robokassa payment URL
  */
 export interface PaymentUrlParams {
-  invId: string;
+  invId: string; // Must be numeric only (Robokassa requirement)
   outSum: string;
   description: string;
   userId: number;
   planCode: string;
   method: "card" | "sbp";
   returnPath?: string;
+  orderToken?: string; // Optional: store in Shp_requestId for tracking
 }
 
 export interface PaymentUrlDebugInfo {
@@ -173,7 +174,7 @@ export function buildRobokassaPaymentUrl(
     return null;
   }
 
-  const { invId, outSum, description, userId, planCode, method, returnPath = "/subscription" } = params;
+  const { invId, outSum, description, userId, planCode, method, returnPath = "/subscription", orderToken } = params;
 
   // Validate and format OutSum (must be dot decimal with 2 decimals)
   const outSumNum = Number(outSum);
@@ -183,20 +184,51 @@ export function buildRobokassaPaymentUrl(
   }
   const formattedOutSum = outSumNum.toFixed(2); // Always "1.00", "199.00", etc.
 
-  // Validate InvId (must be valid string/integer)
+  // Validate InvId - MUST be numeric only (Robokassa requirement)
   const invIdStr = String(invId);
-  const invIdValid = /^\d+$/.test(invIdStr) || invIdStr.length > 0;
+  const invIdIsNumeric = /^\d+$/.test(invIdStr);
+  if (!invIdIsNumeric) {
+    console.error(`[robokassa:${requestId}] Invalid InvId (must be numeric): ${invIdStr}`);
+    return null;
+  }
+  const invIdValid = invIdIsNumeric && invIdStr.length > 0;
 
-  // URL encode Description (Robokassa requires proper encoding)
-  const descriptionEncoded = encodeURIComponent(description);
+  // Description: DO NOT pre-encode - URLSearchParams will encode it once
+  // CRITICAL: If description is already encoded (contains %XX patterns), decode it first
+  // Then pass raw description string to URLSearchParams.set() - it will encode once
+  let descriptionRaw = description;
+  
+  // Check if description is already URL-encoded (contains %XX patterns that decode to valid UTF-8)
+  // If it decodes successfully and is different, it was pre-encoded
+  try {
+    const decoded = decodeURIComponent(description);
+    // If decoding succeeds and produces different result, and original contains %XX, it was encoded
+    if (decoded !== description && /%[0-9A-Fa-f]{2}/.test(description)) {
+      console.warn(`[robokassa:${requestId}] Description appears pre-encoded, decoding first: ${description.substring(0, 50)}...`);
+      descriptionRaw = decoded; // Use decoded version
+    }
+  } catch (e) {
+    // Not encoded or invalid - use as-is
+    descriptionRaw = description;
+  }
+  
+  // This is what URLSearchParams will produce (for reference/debugging)
+  const descriptionEncodedOnce = encodeURIComponent(descriptionRaw);
 
   // Build Shp_ parameters
-  const shpParams = buildShpParams({
+  const shpParamsData: Record<string, string> = {
     userId: String(userId),
     planCode,
     method,
     returnPath,
-  });
+  };
+  
+  // Add orderToken if provided (for tracking, separate from InvId)
+  if (orderToken) {
+    shpParamsData.requestId = orderToken;
+  }
+  
+  const shpParams = buildShpParams(shpParamsData);
 
   // Sort Shp keys alphabetically for signature (CRITICAL: must match URL order)
   const sortedShpKeys = Object.keys(shpParams).sort();
@@ -223,11 +255,12 @@ export function buildRobokassaPaymentUrl(
   const signature = md5Hash(signatureString);
 
   // Build URL with proper encoding
+  // IMPORTANT: Do NOT pre-encode Description - URLSearchParams.set() will encode it once
   const url = new URL(config.baseUrl || "https://auth.robokassa.ru/Merchant/Index.aspx");
   url.searchParams.set("MerchantLogin", config.merchantLogin);
   url.searchParams.set("OutSum", formattedOutSum);
   url.searchParams.set("InvId", invIdStr);
-  url.searchParams.set("Description", descriptionEncoded); // URL encoded
+  url.searchParams.set("Description", descriptionRaw); // Pass raw - URLSearchParams encodes once
   url.searchParams.set("SignatureValue", signature);
   url.searchParams.set("IsTest", config.testMode ? "1" : "0");
 
@@ -237,16 +270,31 @@ export function buildRobokassaPaymentUrl(
   });
 
   const finalUrl = url.toString();
+  
+  // Check for double encoding in Description (if URL contains %25D0%25, it's double encoded)
+  // %25 is the encoded version of %, so %25D0%25 means %D0% which is double-encoded
+  const descriptionDoubleEncoded = finalUrl.includes("%25D0%25") || finalUrl.includes("%25D1%25");
+  
+  // Extract actual encoded description from URL for verification
+  const urlObj = new URL(finalUrl);
+  const descriptionInUrl = urlObj.searchParams.get("Description") || "";
+  
+  // Additional sanity check: if descriptionInUrl starts with %25, it's likely double-encoded
+  const likelyDoubleEncoded = descriptionInUrl.startsWith("%25") && descriptionInUrl.length > 3;
 
   // Sanity checklist
   const sanityChecklist = {
     outSumFormatValid: /^\d+\.\d{2}$/.test(formattedOutSum),
+    outSumValid: Number.isFinite(outSumNum) && outSumNum > 0,
+    invIdIsInteger: invIdIsNumeric,
     invIdValid: invIdValid,
     merchantLoginPresent: !!config.merchantLogin && config.merchantLogin.length > 0,
     password1Used: true, // We always use password1 for payment URL
     shpParamsSorted: JSON.stringify(sortedShpKeys) === JSON.stringify(Object.keys(shpParams).sort()),
     signatureComputed: signature.length === 32, // MD5 is 32 hex chars
     urlBuilt: finalUrl.includes("MerchantLogin") && finalUrl.includes("SignatureValue"),
+    descriptionDoubleEncoded: descriptionDoubleEncoded || likelyDoubleEncoded, // Flag if double encoded detected
+    descriptionEncodedOnce: !descriptionDoubleEncoded && !likelyDoubleEncoded && descriptionInUrl.length > 0,
   };
 
   // Debug info (always computed)
@@ -255,10 +303,10 @@ export function buildRobokassaPaymentUrl(
     outSumRaw: outSum,
     outSumFormatted: formattedOutSum,
     invId: invIdStr,
-    invIdValid,
+    invIdValid: invIdIsNumeric, // Must be numeric
     mrchLogin: config.merchantLogin,
-    descriptionRaw: description,
-    descriptionEncoded,
+    descriptionRaw: descriptionRaw,
+    descriptionEncoded: descriptionInUrl, // Actual encoded value from URL
     isTest: config.testMode,
     shpParams,
     sortedShpKeys,

@@ -21,11 +21,27 @@ function SubscriptionPageContent() {
   const [debugError, setDebugError] = useState<DebugErrorDetails | null>(null);
   const [lastApiRequestId, setLastApiRequestId] = useState<string | null>(null);
   const [lastApiResponse, setLastApiResponse] = useState<any>(null);
+  const [lastDebugFromStorage, setLastDebugFromStorage] = useState<DebugErrorDetails | null>(null);
   
   // Payment method selection state
   const [showPaymentMethod, setShowPaymentMethod] = useState(false);
   const [selectedMethod, setSelectedMethod] = useState<"card" | "sbp" | null>(null);
   const [processingPayment, setProcessingPayment] = useState(false);
+
+  // Load last debug from localStorage on mount (for persistence across redirects)
+  useEffect(() => {
+    if (typeof window !== "undefined" && window.localStorage) {
+      try {
+        const storedDebug = localStorage.getItem("payments:lastDebug");
+        if (storedDebug) {
+          const parsed = JSON.parse(storedDebug);
+          setLastDebugFromStorage(parsed);
+        }
+      } catch (e) {
+        console.error("[SubscriptionPage] Failed to load debug from localStorage:", e);
+      }
+    }
+  }, []);
 
   // Initialize userId with tracing
   useEffect(() => {
@@ -271,6 +287,7 @@ function SubscriptionPageContent() {
         !!debugKey; // Allow debug via query param
       
       // ALWAYS create debug info for success (for copy button and inspection)
+      // Include server debug if available
       const successDebug: DebugErrorDetails = {
         errorType: "UNKNOWN",
         message: "Payment URL generated successfully",
@@ -293,7 +310,7 @@ function SubscriptionPageContent() {
           statusText: response.statusText,
           body: data,
         },
-        serverDebug: data.debug,
+        serverDebug: data.debug, // Full server debug JSON
         userId: {
           value: finalUserId,
           source: trace.source,
@@ -307,10 +324,40 @@ function SubscriptionPageContent() {
         },
       };
       
+      // ALWAYS store debug info to localStorage for persistence (even if panel not shown)
+      // This ensures debug is available even after redirects
+      if (typeof window !== "undefined" && window.localStorage) {
+        try {
+          // Save full debug object (includes server debug)
+          localStorage.setItem("payments:lastDebug", JSON.stringify(successDebug));
+          
+          // Save masked payment URL
+          const maskedUrl = paymentUrl.replace(/SignatureValue=[^&]+/, (match: string) => {
+            const sig = match.split("=")[1];
+            return `SignatureValue=${sig.substring(0, 6)}...${sig.substring(sig.length - 4)}`;
+          });
+          localStorage.setItem("payments:lastPaymentUrl", maskedUrl);
+          
+          // Save timestamp
+          localStorage.setItem("payments:lastDebugTimestamp", new Date().toISOString());
+          
+          // Save requestId separately for quick access
+          if (data.requestId) {
+            localStorage.setItem("payments:lastRequestId", data.requestId);
+          }
+        } catch (e) {
+          console.error("[SubscriptionPage] Failed to save debug to localStorage:", e);
+        }
+      }
+      
       // Store debug info (will be shown if debug enabled)
       if (clientDebugEnabled) {
         setDebugError(successDebug);
       }
+      
+      // Also update lastApiRequestId and lastApiResponse for debug panel
+      setLastApiRequestId(data.requestId || null);
+      setLastApiResponse({ status: response.status, body: data });
       
       // Use Telegram.WebApp.openLink if available, otherwise window.location
       if (typeof window !== "undefined" && (window as any).Telegram?.WebApp?.openLink) {
@@ -499,21 +546,47 @@ function SubscriptionPageContent() {
                   </button>
                 </div>
 
-                {(error || debugError) && (
-                  <div className="mb-4">
-                    {error && (
-                      <div className="p-3 bg-red-50 border border-red-200 rounded-lg text-red-600 text-sm mb-2">
-                        {error}
-                      </div>
-                    )}
-                    {!error && debugError && (
-                      <div className="p-3 bg-green-50 border border-green-200 rounded-lg text-green-700 text-sm mb-2">
-                        ✓ Payment URL generated successfully (debug mode enabled)
-                      </div>
-                    )}
-                    <DebugDetailsPanel error={debugError} />
-                  </div>
-                )}
+                {/* Show debug panel if debug enabled OR if there's an error/debug info */}
+                {(() => {
+                  const urlParams = typeof window !== "undefined" ? new URLSearchParams(window.location.search) : null;
+                  const debugKey = urlParams?.get("debugKey");
+                  const clientDebugEnabled = 
+                    (typeof process !== "undefined" && process.env.NEXT_PUBLIC_DEBUG_PAYMENTS === "true") ||
+                    (typeof process !== "undefined" && process.env.NODE_ENV !== "production") ||
+                    !!debugKey;
+                  
+                  const hasDebugInfo = error || debugError || lastDebugFromStorage || (clientDebugEnabled && lastApiResponse);
+                  
+                  if (!hasDebugInfo) return null;
+                  
+                  return (
+                    <div className="mb-4">
+                      {error && (
+                        <div className="p-3 bg-red-50 border border-red-200 rounded-lg text-red-600 text-sm mb-2">
+                          {error}
+                        </div>
+                      )}
+                      {!error && (debugError || lastDebugFromStorage) && (
+                        <div className="p-3 bg-green-50 border border-green-200 rounded-lg text-green-700 text-sm mb-2">
+                          ✓ Payment URL generated successfully (debug mode enabled)
+                        </div>
+                      )}
+                      {clientDebugEnabled && lastApiResponse && !debugError && !lastDebugFromStorage && (
+                        <div className="p-3 bg-blue-50 border border-blue-200 rounded-lg text-blue-700 text-sm mb-2">
+                          Debug mode enabled - showing last API response
+                        </div>
+                      )}
+                      <DebugDetailsPanel error={debugError || lastDebugFromStorage || (clientDebugEnabled && lastApiResponse ? {
+                        errorType: "UNKNOWN",
+                        message: "Debug info from last API response",
+                        requestId: lastApiRequestId || undefined,
+                        timestamp: new Date().toISOString(),
+                        apiResponse: lastApiResponse,
+                        serverDebug: lastApiResponse?.body?.debug,
+                      } : null)} />
+                    </div>
+                  );
+                })()}
 
                 <button
                   onClick={handlePay}
