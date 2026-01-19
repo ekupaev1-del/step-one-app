@@ -7,6 +7,47 @@
 -- This column is auto-generated and guaranteed to be within range.
 
 -- ============================================================================
+-- Step 0: Create robokassa_invoices table if it doesn't exist
+-- ============================================================================
+
+CREATE TABLE IF NOT EXISTS robokassa_invoices (
+  id SERIAL PRIMARY KEY,
+  user_id BIGINT NOT NULL,
+  plan_code TEXT NOT NULL,
+  method TEXT NOT NULL CHECK (method IN ('card', 'sbp')),
+  amount NUMERIC(12, 2) NOT NULL,
+  currency TEXT NOT NULL DEFAULT 'RUB',
+  status TEXT NOT NULL DEFAULT 'created' CHECK (status IN ('created', 'paid', 'failed', 'expired')),
+  request_id TEXT,
+  payment_url TEXT,
+  raw_payload JSONB DEFAULT '{}'::jsonb,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+-- Create indexes if they don't exist
+CREATE INDEX IF NOT EXISTS idx_robokassa_invoices_user_id ON robokassa_invoices(user_id);
+CREATE INDEX IF NOT EXISTS idx_robokassa_invoices_status ON robokassa_invoices(status);
+CREATE INDEX IF NOT EXISTS idx_robokassa_invoices_request_id ON robokassa_invoices(request_id);
+CREATE INDEX IF NOT EXISTS idx_robokassa_invoices_created_at ON robokassa_invoices(created_at);
+
+-- Create trigger function for updated_at if it doesn't exist
+CREATE OR REPLACE FUNCTION update_updated_at_column()
+RETURNS TRIGGER AS $$
+BEGIN
+  NEW.updated_at = NOW();
+  RETURN NEW;
+END;
+$$ LANGUAGE plpgsql;
+
+-- Create trigger if it doesn't exist
+DROP TRIGGER IF EXISTS update_robokassa_invoices_updated_at ON robokassa_invoices;
+CREATE TRIGGER update_robokassa_invoices_updated_at
+  BEFORE UPDATE ON robokassa_invoices
+  FOR EACH ROW
+  EXECUTE FUNCTION update_updated_at_column();
+
+-- ============================================================================
 -- Step 1: Add inv_id column if it doesn't exist
 -- ============================================================================
 
