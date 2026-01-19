@@ -117,7 +117,7 @@ export async function POST(req: Request) {
         // For now, we log that we need provider integration
         console.log(`[cron/charge:${requestId}] Payment record created for recurring charge:`, {
           paymentId: payment.id,
-          invId,
+          invId: invId,
           subscriptionId: subscription.id,
           note: "Actual recurring charge API call not yet implemented - requires Robokassa API integration",
         });

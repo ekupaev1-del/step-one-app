@@ -58,7 +58,7 @@ function shouldIncludeDebug(req: NextRequest): boolean {
   return false;
 }
 
-// Structured logging helper
+// Structured logging helper - NEVER logs passwords or full signatures
 function logEvent(event: string, data: Record<string, any>, requestId: string) {
   // Never log passwords or full signatures
   const safeData = { ...data };
@@ -66,6 +66,7 @@ function logEvent(event: string, data: Record<string, any>, requestId: string) {
   if (safeData.password2) safeData.password2 = "<PASSWORD2>";
   if (safeData.signature) safeData.signature = maskValue(safeData.signature);
   if (safeData.signatureValue) safeData.signatureValue = maskValue(safeData.signatureValue);
+  if (safeData.serviceKey) safeData.serviceKey = maskValue(safeData.serviceKey);
   
   console.log(JSON.stringify({
     event,
@@ -75,8 +76,62 @@ function logEvent(event: string, data: Record<string, any>, requestId: string) {
   }));
 }
 
+// Helper to create detailed DB error response
+function createDbErrorResponse(
+  operation: string,
+  table: string,
+  error: any,
+  userId: number | null,
+  requestId: string,
+  payloadPreview: Record<string, any>,
+  shouldDebug: boolean
+): NextResponse {
+  // Structured error logging with full details
+  logEvent("create-payment:error", {
+    error: "DATABASE_ERROR",
+    operation,
+    table,
+    userId,
+    requestId,
+    payloadKeys: Object.keys(payloadPreview),
+    dbError: {
+      message: error.message,
+      code: error.code,
+      details: error.details,
+      hint: error.hint,
+    },
+  }, requestId);
+  
+  const response: any = {
+    ok: false,
+    error: "Ошибка создания платежа",
+    code: "DATABASE_ERROR",
+    requestId,
+  };
+
+  // Include detailed DB error in debug mode
+  if (shouldDebug) {
+    response.dbError = {
+      message: error.message,
+      code: error.code,
+      details: error.details,
+      hint: error.hint,
+    };
+    response.debug = {
+      userId,
+      step: operation,
+      table,
+      payloadPreview,
+      payloadKeys: Object.keys(payloadPreview),
+    };
+  }
+
+  return NextResponse.json(response, { status: 500 });
+}
+
 export async function POST(req: NextRequest) {
   const requestId = `create-payment-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
+  const shouldDebug = shouldIncludeDebug(req);
   
   logEvent("create-payment:start", { url: req.url }, requestId);
   
@@ -102,7 +157,7 @@ export async function POST(req: NextRequest) {
         requestId,
       };
 
-      if (shouldIncludeDebug(req)) {
+      if (shouldDebug) {
         response.debug = {
           missingEnvVars: [
             !process.env.ROBOKASSA_MERCHANT_LOGIN ? "ROBOKASSA_MERCHANT_LOGIN" : null,
@@ -173,8 +228,7 @@ export async function POST(req: NextRequest) {
         timestamp: new Date().toISOString(),
       };
 
-      // Include debug info only when DEBUG_PAYMENTS=true or not production
-      if (shouldIncludeDebug(req)) {
+      if (shouldDebug) {
         response.debug = {
           queryParams,
           bodyPreview,
@@ -240,11 +294,24 @@ export async function POST(req: NextRequest) {
       },
     };
 
+    const payloadPreview = {
+      user_id: invoiceRecord.user_id,
+      plan_code: invoiceRecord.plan_code,
+      method: invoiceRecord.method,
+      amount: invoiceRecord.amount,
+      currency: invoiceRecord.currency,
+      status: invoiceRecord.status,
+      hasRequestId: !!invoiceRecord.request_id,
+      hasRawPayload: !!invoiceRecord.raw_payload,
+    };
+
     logEvent("create-payment:invoice-creating", {
       userId,
       planCode,
       method,
       amount,
+      table: "robokassa_invoices",
+      payloadKeys: Object.keys(invoiceRecord),
     }, requestId);
 
     const { data: invoice, error: insertError } = await supabase
@@ -254,33 +321,15 @@ export async function POST(req: NextRequest) {
       .single();
 
     if (insertError) {
-      logEvent("create-payment:error", {
-        error: "DATABASE_ERROR",
-        databaseError: {
-          message: insertError.message,
-          code: insertError.code,
-          hint: insertError.hint,
-        },
-      }, requestId);
-      
-      const response: any = {
-        ok: false,
-        error: "Ошибка создания платежа",
-        code: "DATABASE_ERROR",
+      return createDbErrorResponse(
+        "insert_invoice",
+        "robokassa_invoices",
+        insertError,
+        userId,
         requestId,
-      };
-
-      if (shouldIncludeDebug(req)) {
-        response.debug = {
-          databaseError: {
-            message: insertError.message,
-            code: insertError.code,
-            hint: insertError.hint,
-          },
-        };
-      }
-
-      return NextResponse.json(response, { status: 500 });
+        payloadPreview,
+        shouldDebug
+      );
     }
 
     // Use invoice.id as InvId (small integer, within Robokassa's supported range)
@@ -321,7 +370,7 @@ export async function POST(req: NextRequest) {
         requestId,
       };
 
-      if (shouldIncludeDebug(req)) {
+      if (shouldDebug) {
         response.debug = {
           message: "Failed to build payment URL",
           configPresent: !!config,
@@ -333,10 +382,31 @@ export async function POST(req: NextRequest) {
     }
 
     // Update invoice record with payment_url
-    await supabase
+    const { error: updateError } = await supabase
       .from("robokassa_invoices")
       .update({ payment_url: paymentUrlResult.url })
       .eq("id", invoice.id);
+
+    if (updateError) {
+      // Log update error but don't fail the request (payment URL is already generated)
+      logEvent("create-payment:error", {
+        error: "DATABASE_UPDATE_WARNING",
+        operation: "update_invoice_payment_url",
+        table: "robokassa_invoices",
+        invoiceId: invoice.id,
+        userId,
+        requestId,
+        dbError: {
+          message: updateError.message,
+          code: updateError.code,
+          details: updateError.details,
+          hint: updateError.hint,
+        },
+      }, requestId);
+      
+      // Continue - payment URL is already generated and returned
+      // The invoice record exists, just payment_url update failed
+    }
 
     logEvent("create-payment:url-generated", {
       invoiceId: invoice.id,
@@ -359,7 +429,7 @@ export async function POST(req: NextRequest) {
     };
 
     // Include comprehensive debug echo when debug enabled
-    if (shouldIncludeDebug(req)) {
+    if (shouldDebug) {
       const robokassaDebug = paymentUrlResult.debug;
       successResponse.debug = {
         requestId,
@@ -411,7 +481,7 @@ export async function POST(req: NextRequest) {
       requestId,
     };
 
-    if (shouldIncludeDebug(req)) {
+    if (shouldDebug) {
       response.debug = {
         message: error?.message || "Internal server error",
         stack: error?.stack ? error.stack.substring(0, 500) : undefined,
