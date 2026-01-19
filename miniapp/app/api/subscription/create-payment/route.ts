@@ -68,9 +68,16 @@ function shouldIncludeDebug(req: NextRequest): boolean {
     return true;
   }
   
-  // Fallback: check DEBUG_KEY query param (for backward compatibility)
+  // Check query params: ?debug=1 or ?debugKey=anything
   const url = new URL(req.url);
+  const debugParam = url.searchParams.get("debug");
   const debugKey = url.searchParams.get("debugKey");
+  
+  if (debugParam === "1" || debugKey) {
+    return true;
+  }
+  
+  // Fallback: check DEBUG_KEY query param (for backward compatibility)
   const expectedKey = process.env.DEBUG_KEY;
   
   if (debugKey && expectedKey && debugKey === expectedKey) {

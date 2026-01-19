@@ -27,6 +27,22 @@ function SubscriptionPageContent() {
   const [showPaymentMethod, setShowPaymentMethod] = useState(false);
   const [selectedMethod, setSelectedMethod] = useState<"card" | "sbp" | null>(null);
   const [processingPayment, setProcessingPayment] = useState(false);
+  const [paymentUrl, setPaymentUrl] = useState<string | null>(null);
+  const [paymentError, setPaymentError] = useState<string | null>(null);
+
+  // Check if debug is enabled (multiple ways)
+  const checkDebugEnabled = (): boolean => {
+    if (typeof window === "undefined") return false;
+    
+    const urlParams = new URLSearchParams(window.location.search);
+    const debugParam = urlParams.get("debug");
+    const debugKey = urlParams.get("debugKey");
+    const localStorageDebug = localStorage.getItem("payments:debug");
+    const envDebug = typeof process !== "undefined" && process.env.NEXT_PUBLIC_DEBUG_PAYMENTS === "true";
+    const nodeEnvDebug = typeof process !== "undefined" && process.env.NODE_ENV !== "production";
+    
+    return debugParam === "1" || !!debugKey || localStorageDebug === "1" || envDebug || nodeEnvDebug;
+  };
 
   // Load last debug from localStorage on mount (for persistence across redirects)
   useEffect(() => {
@@ -36,6 +52,11 @@ function SubscriptionPageContent() {
         if (storedDebug) {
           const parsed = JSON.parse(storedDebug);
           setLastDebugFromStorage(parsed);
+        }
+        const storedPaymentUrl = localStorage.getItem("payments:lastPaymentUrl");
+        if (storedPaymentUrl && !paymentUrl) {
+          // Restore payment URL if available (for debugging)
+          setPaymentUrl(storedPaymentUrl);
         }
       } catch (e) {
         console.error("[SubscriptionPage] Failed to load debug from localStorage:", e);
@@ -215,17 +236,12 @@ function SubscriptionPageContent() {
     };
     
     // Add debug headers if debug is enabled
-    const urlParams = typeof window !== "undefined" ? new URLSearchParams(window.location.search) : null;
-    const debugKey = urlParams?.get("debugKey");
-    const clientDebugEnabled = 
-      (typeof process !== "undefined" && process.env.NEXT_PUBLIC_DEBUG_PAYMENTS === "true") ||
-      (typeof process !== "undefined" && process.env.NODE_ENV !== "production") ||
-      !!debugKey;
+    const debugEnabled = checkDebugEnabled();
     
-    if (clientDebugEnabled) {
+    if (debugEnabled) {
+      headers["X-Debug-Payments"] = "1";
       const debugToken = typeof process !== "undefined" ? process.env.NEXT_PUBLIC_DEBUG_PAYMENTS_TOKEN : null;
       if (debugToken) {
-        headers["X-Debug-Payments"] = "1";
         headers["X-Debug-Token"] = debugToken;
       }
     }
@@ -297,18 +313,14 @@ function SubscriptionPageContent() {
       // Success - ALWAYS include payment URL in debug (even if not error)
       const paymentUrl = data.paymentUrl;
       
-      // Check if debug should be shown (check URL for debugKey too)
-      const urlParams = typeof window !== "undefined" ? new URLSearchParams(window.location.search) : null;
-      const debugKey = urlParams?.get("debugKey");
-      const clientDebugEnabled = 
-        (typeof process !== "undefined" && process.env.NEXT_PUBLIC_DEBUG_PAYMENTS === "true") ||
-        (typeof process !== "undefined" && process.env.NODE_ENV !== "production") ||
-        !!debugKey; // Allow debug via query param
+      // Check if debug should be shown
+      const debugEnabled = checkDebugEnabled();
       
       // ALWAYS create debug info for success (for copy button and inspection)
       // Include server debug if available
       const successDebug: DebugErrorDetails = {
         errorType: "UNKNOWN",
+        status: "success", // Mark as success, not error
         message: "Payment URL generated successfully",
         requestId: data.requestId,
         timestamp: new Date().toISOString(),
@@ -369,8 +381,14 @@ function SubscriptionPageContent() {
         }
       }
       
+      // CRITICAL: Reset processing state BEFORE doing anything else
+      // Telegram desktop opens external browser and WebApp stays alive
+      setProcessingPayment(false);
+      setPaymentUrl(paymentUrl);
+      setPaymentError(null);
+      
       // Store debug info (will be shown if debug enabled)
-      if (clientDebugEnabled) {
+      if (debugEnabled) {
         setDebugError(successDebug);
       }
       
@@ -378,26 +396,20 @@ function SubscriptionPageContent() {
       setLastApiRequestId(data.requestId || null);
       setLastApiResponse({ status: response.status, body: data });
       
-      // Use Telegram.WebApp.openLink if available, otherwise window.location
-      // Log which method is used (in debug mode)
-      if (clientDebugEnabled) {
-        console.log("[SubscriptionPage] Opening payment URL:", {
+      // Log which method will be used (in debug mode)
+      if (debugEnabled) {
+        console.log("[SubscriptionPage] Payment URL generated:", {
           hasTelegramWebApp: !!(typeof window !== "undefined" && (window as any).Telegram?.WebApp),
           hasOpenLink: !!(typeof window !== "undefined" && (window as any).Telegram?.WebApp?.openLink),
           paymentUrlLength: paymentUrl.length,
           currentHref: typeof window !== "undefined" ? window.location.href : "N/A",
-          method: (typeof window !== "undefined" && (window as any).Telegram?.WebApp?.openLink) ? "Telegram.WebApp.openLink" : "window.location.href",
+          requestId: data.requestId,
+          invId: data.invId,
         });
       }
       
-      if (typeof window !== "undefined" && (window as any).Telegram?.WebApp?.openLink) {
-        (window as any).Telegram.WebApp.openLink(paymentUrl);
-      } else {
-        window.location.href = paymentUrl;
-      }
-
-      // Note: After payment, user will be redirected back to /subscription
-      // The status will be reloaded automatically
+      // DO NOT automatically open - let user click button
+      // This prevents getting stuck in processing state
     } catch (err: any) {
       const duration = Date.now() - startTime;
       console.error("[SubscriptionPage] Ошибка создания платежа:", err);
@@ -435,8 +447,46 @@ function SubscriptionPageContent() {
       };
 
       setError(err.message || "Ошибка создания платежа");
+      setPaymentError(err.message || "Ошибка создания платежа");
       setDebugError(debugDetails);
       setProcessingPayment(false);
+      setPaymentUrl(null);
+    }
+  };
+
+  // Helper to open payment URL
+  const handleOpenPaymentUrl = () => {
+    if (!paymentUrl) return;
+    
+    try {
+      if (typeof window !== "undefined" && (window as any).Telegram?.WebApp?.openLink) {
+        (window as any).Telegram.WebApp.openLink(paymentUrl);
+      } else {
+        // Fallback: open in new tab
+        const opened = window.open(paymentUrl, "_blank");
+        if (!opened) {
+          setPaymentError("Не удалось открыть страницу оплаты. Возможно, блокировщик всплывающих окон.");
+        }
+      }
+    } catch (err: any) {
+      console.error("[SubscriptionPage] Failed to open payment URL:", err);
+      setPaymentError(err.message || "Ошибка открытия страницы оплаты");
+    }
+  };
+
+  // Helper to copy payment URL
+  const handleCopyPaymentUrl = async () => {
+    if (!paymentUrl) return;
+    
+    try {
+      await navigator.clipboard.writeText(paymentUrl);
+      // Show temporary success message
+      const prevError = paymentError;
+      setPaymentError(null);
+      setTimeout(() => setPaymentError(prevError), 2000);
+    } catch (err) {
+      console.error("[SubscriptionPage] Failed to copy payment URL:", err);
+      setPaymentError("Не удалось скопировать ссылку");
     }
   };
 
@@ -576,18 +626,35 @@ function SubscriptionPageContent() {
                   </button>
                 </div>
 
+                {/* Payment URL actions (shown after successful payment URL generation) */}
+                {paymentUrl && (
+                  <div className="mb-4 space-y-2">
+                    <button
+                      onClick={handleOpenPaymentUrl}
+                      className="w-full py-3 px-4 rounded-lg font-semibold text-white bg-green-600 hover:bg-green-700 transition-colors"
+                    >
+                      Открыть страницу оплаты
+                    </button>
+                    <button
+                      onClick={handleCopyPaymentUrl}
+                      className="w-full py-2 px-4 rounded-lg font-medium text-blue-600 bg-blue-50 hover:bg-blue-100 transition-colors border border-blue-200"
+                    >
+                      📋 Копировать ссылку оплаты
+                    </button>
+                    {paymentError && (
+                      <div className="p-3 bg-yellow-50 border border-yellow-200 rounded-lg text-yellow-700 text-sm">
+                        {paymentError}
+                      </div>
+                    )}
+                  </div>
+                )}
+
                 {/* Show debug panel if debug enabled OR if there's an error/debug info */}
                 {(() => {
-                  const urlParams = typeof window !== "undefined" ? new URLSearchParams(window.location.search) : null;
-                  const debugKey = urlParams?.get("debugKey");
-                  const clientDebugEnabled = 
-                    (typeof process !== "undefined" && process.env.NEXT_PUBLIC_DEBUG_PAYMENTS === "true") ||
-                    (typeof process !== "undefined" && process.env.NODE_ENV !== "production") ||
-                    !!debugKey;
+                  const debugEnabled = checkDebugEnabled();
+                  const hasDebugInfo = error || debugError || lastDebugFromStorage || (debugEnabled && lastApiResponse);
                   
-                  const hasDebugInfo = error || debugError || lastDebugFromStorage || (clientDebugEnabled && lastApiResponse);
-                  
-                  if (!hasDebugInfo) return null;
+                  if (!hasDebugInfo && !debugEnabled) return null;
                   
                   return (
                     <div className="mb-4">
@@ -596,18 +663,19 @@ function SubscriptionPageContent() {
                           {error}
                         </div>
                       )}
-                      {!error && (debugError || lastDebugFromStorage) && (
+                      {!error && paymentUrl && (
                         <div className="p-3 bg-green-50 border border-green-200 rounded-lg text-green-700 text-sm mb-2">
-                          ✓ Payment URL generated successfully (debug mode enabled)
+                          ✓ Payment URL generated successfully
                         </div>
                       )}
-                      {clientDebugEnabled && lastApiResponse && !debugError && !lastDebugFromStorage && (
+                      {debugEnabled && lastApiResponse && !debugError && !lastDebugFromStorage && (
                         <div className="p-3 bg-blue-50 border border-blue-200 rounded-lg text-blue-700 text-sm mb-2">
                           Debug mode enabled - showing last API response
                         </div>
                       )}
-                      <DebugDetailsPanel error={debugError || lastDebugFromStorage || (clientDebugEnabled && lastApiResponse ? {
+                      <DebugDetailsPanel error={debugError || lastDebugFromStorage || (debugEnabled && lastApiResponse ? {
                         errorType: "UNKNOWN",
+                        status: "success",
                         message: "Debug info from last API response",
                         requestId: lastApiRequestId || undefined,
                         timestamp: new Date().toISOString(),

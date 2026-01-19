@@ -224,12 +224,20 @@ export function buildRobokassaPaymentUrl(
   const formattedOutSum = outSumNum.toFixed(2); // Always "1.00", "199.00", etc.
 
   // Validate InvId - MUST be numeric only (Robokassa requirement)
+  // CRITICAL: Robokassa prefers small integers (<= 10 digits)
+  // Large timestamps (13+ digits) can cause error 29 "Оплата счетов недоступна"
   const invIdStr = String(invId);
   const invIdIsNumeric = /^\d+$/.test(invIdStr);
   if (!invIdIsNumeric) {
     console.error(`[robokassa:${requestId}] Invalid InvId (must be numeric): ${invIdStr}`);
     return null;
   }
+  
+  // Warn if InvId is too large (but don't fail - some Robokassa accounts may accept it)
+  if (invIdStr.length > 10) {
+    console.warn(`[robokassa:${requestId}] InvId is large (${invIdStr.length} digits). Robokassa may reject it. Consider using DB-generated small integer.`);
+  }
+  
   const invIdValid = invIdIsNumeric && invIdStr.length > 0;
 
   // Description: DO NOT pre-encode - URLSearchParams will encode it once

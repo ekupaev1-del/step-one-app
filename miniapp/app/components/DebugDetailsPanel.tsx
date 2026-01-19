@@ -5,6 +5,7 @@ import { ClientDebugContext, maskSecretsInObject } from "@/lib/debugContext";
 
 export interface DebugErrorDetails {
   errorType: "USER_ID_MISSING" | "API_ERROR" | "CLIENT_ERROR" | "UNKNOWN";
+  status?: "success" | "error"; // New field to distinguish success from error
   message: string;
   requestId?: string;
   timestamp: string;
@@ -73,6 +74,8 @@ export function DebugDetailsPanel({ error }: DebugDetailsPanelProps) {
 
   // Show panel if error exists OR if debug is enabled and we have server debug info
   const hasServerDebug = error?.serverDebug || error?.apiResponse?.body?.debug;
+  const isSuccess = error?.status === "success";
+  
   if (!error && (!debugEnabled || !hasServerDebug)) {
     return null;
   }
@@ -128,8 +131,12 @@ export function DebugDetailsPanel({ error }: DebugDetailsPanelProps) {
   return (
     <div className="mt-4">
       {/* DEBUG ENABLED Badge */}
-      <div className="mb-2 px-3 py-1 bg-red-100 border border-red-300 rounded text-red-700 text-xs font-bold">
-        🔴 DEBUG ENABLED
+      <div className={`mb-2 px-3 py-1 border rounded text-xs font-bold ${
+        isSuccess 
+          ? "bg-green-100 border-green-300 text-green-700" 
+          : "bg-red-100 border-red-300 text-red-700"
+      }`}>
+        {isSuccess ? "🟢 DEBUG ENABLED (SUCCESS)" : "🔴 DEBUG ENABLED"}
       </div>
       
       {/* Build Info */}
