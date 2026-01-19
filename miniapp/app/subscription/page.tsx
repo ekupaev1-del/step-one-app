@@ -36,12 +36,13 @@ function SubscriptionPageContent() {
     
     const urlParams = new URLSearchParams(window.location.search);
     const debugParam = urlParams.get("debug");
+    const debugPayments = urlParams.get("debugPayments"); // New: explicit debugPayments param
     const debugKey = urlParams.get("debugKey");
     const localStorageDebug = localStorage.getItem("payments:debug");
     const envDebug = typeof process !== "undefined" && process.env.NEXT_PUBLIC_DEBUG_PAYMENTS === "true";
     const nodeEnvDebug = typeof process !== "undefined" && process.env.NODE_ENV !== "production";
     
-    return debugParam === "1" || !!debugKey || localStorageDebug === "1" || envDebug || nodeEnvDebug;
+    return debugParam === "1" || debugPayments === "1" || !!debugKey || localStorageDebug === "1" || envDebug || nodeEnvDebug;
   };
 
   // Load last debug from localStorage on mount (for persistence across redirects)
@@ -460,13 +461,11 @@ function SubscriptionPageContent() {
     
     try {
       if (typeof window !== "undefined" && (window as any).Telegram?.WebApp?.openLink) {
+        // Use Telegram WebApp.openLink if available (preferred for Telegram Mini App)
         (window as any).Telegram.WebApp.openLink(paymentUrl);
       } else {
-        // Fallback: open in new tab
-        const opened = window.open(paymentUrl, "_blank");
-        if (!opened) {
-          setPaymentError("Не удалось открыть страницу оплаты. Возможно, блокировщик всплывающих окон.");
-        }
+        // Fallback: use window.location.assign (reliable redirect, not popup)
+        window.location.assign(paymentUrl);
       }
     } catch (err: any) {
       console.error("[SubscriptionPage] Failed to open payment URL:", err);

@@ -44,12 +44,13 @@ function shouldIncludeDebug(req: NextRequest): boolean {
     return true;
   }
   
-  // Check query params: ?debug=1 or ?debugKey=anything
+  // Check query params: ?debug=1, ?debugPayments=1, or ?debugKey=anything
   const url = new URL(req.url);
   const debugParam = url.searchParams.get("debug");
+  const debugPayments = url.searchParams.get("debugPayments"); // New: explicit debugPayments param
   const debugKey = url.searchParams.get("debugKey");
   
-  if (debugParam === "1" || debugKey) {
+  if (debugParam === "1" || debugPayments === "1" || debugKey) {
     return true;
   }
   

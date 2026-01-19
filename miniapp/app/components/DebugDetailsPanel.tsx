@@ -64,13 +64,22 @@ interface DebugDetailsPanelProps {
 export function DebugDetailsPanel({ error }: DebugDetailsPanelProps) {
   const [copySuccess, setCopySuccess] = useState<string | null>(null);
 
-  // Check if debug should be shown
-  const urlParams = typeof window !== "undefined" ? new URLSearchParams(window.location.search) : null;
-  const debugKey = urlParams?.get("debugKey");
-  const debugEnabled = 
-    (typeof process !== "undefined" && process.env.NEXT_PUBLIC_DEBUG_PAYMENTS === "true") ||
-    (typeof process !== "undefined" && process.env.NODE_ENV !== "production") ||
-    !!debugKey;
+  // Check if debug should be shown (multiple ways)
+  const checkDebugEnabled = (): boolean => {
+    if (typeof window === "undefined") return false;
+    
+    const urlParams = new URLSearchParams(window.location.search);
+    const debugParam = urlParams.get("debug");
+    const debugPayments = urlParams.get("debugPayments"); // New: explicit debugPayments param
+    const debugKey = urlParams.get("debugKey");
+    const localStorageDebug = localStorage.getItem("payments:debug");
+    const envDebug = typeof process !== "undefined" && process.env.NEXT_PUBLIC_DEBUG_PAYMENTS === "true";
+    const nodeEnvDebug = typeof process !== "undefined" && process.env.NODE_ENV !== "production";
+    
+    return debugParam === "1" || debugPayments === "1" || !!debugKey || localStorageDebug === "1" || envDebug || nodeEnvDebug;
+  };
+
+  const debugEnabled = checkDebugEnabled();
 
   // Show panel if error exists OR if debug is enabled and we have server debug info
   const hasServerDebug = error?.serverDebug || error?.apiResponse?.body?.debug;

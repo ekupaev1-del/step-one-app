@@ -223,22 +223,27 @@ export function buildRobokassaPaymentUrl(
   }
   const formattedOutSum = outSumNum.toFixed(2); // Always "1.00", "199.00", etc.
 
-  // Validate InvId - MUST be numeric only (Robokassa requirement)
-  // CRITICAL: Robokassa prefers small integers (<= 10 digits)
-  // Large timestamps (13+ digits) can cause error 29 "Оплата счетов недоступна"
+  // Validate InvId - MUST be numeric and within int32 range (1..2147483647)
+  // CRITICAL: Robokassa requires InvId to be within int32 range
+  // Large values (like Date.now() timestamps) cause error 29 "Оплата счетов недоступна"
   const invIdStr = String(invId);
   const invIdIsNumeric = /^\d+$/.test(invIdStr);
+  
   if (!invIdIsNumeric) {
     console.error(`[robokassa:${requestId}] Invalid InvId (must be numeric): ${invIdStr}`);
     return null;
   }
   
-  // Warn if InvId is too large (but don't fail - some Robokassa accounts may accept it)
-  if (invIdStr.length > 10) {
-    console.warn(`[robokassa:${requestId}] InvId is large (${invIdStr.length} digits). Robokassa may reject it. Consider using DB-generated small integer.`);
+  const invIdNum = parseInt(invIdStr, 10);
+  const INT32_MAX = 2147483647;
+  
+  // Enforce int32 range: must be 1 <= invId <= 2147483647
+  if (!Number.isFinite(invIdNum) || invIdNum < 1 || invIdNum > INT32_MAX) {
+    console.error(`[robokassa:${requestId}] InvId out of range: ${invIdNum} (must be 1..${INT32_MAX})`);
+    return null;
   }
   
-  const invIdValid = invIdIsNumeric && invIdStr.length > 0;
+  const invIdValid = invIdIsNumeric && invIdNum >= 1 && invIdNum <= INT32_MAX;
 
   // Description: DO NOT pre-encode - URLSearchParams will encode it once
   // CRITICAL: If description is already encoded (contains %XX patterns), decode it first

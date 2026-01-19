@@ -68,12 +68,13 @@ function shouldIncludeDebug(req: NextRequest): boolean {
     return true;
   }
   
-  // Check query params: ?debug=1 or ?debugKey=anything
+  // Check query params: ?debug=1, ?debugPayments=1, or ?debugKey=anything
   const url = new URL(req.url);
   const debugParam = url.searchParams.get("debug");
+  const debugPayments = url.searchParams.get("debugPayments"); // New: explicit debugPayments param
   const debugKey = url.searchParams.get("debugKey");
   
-  if (debugParam === "1" || debugKey) {
+  if (debugParam === "1" || debugPayments === "1" || debugKey) {
     return true;
   }
   
@@ -346,7 +347,7 @@ export async function POST(req: NextRequest) {
     const { data: invoice, error: insertError } = await supabase
       .from("robokassa_invoices")
       .insert(invoiceRecord)
-      .select("id, user_id, plan_code, method, amount, status, request_id, created_at")
+      .select("id, inv_id, user_id, plan_code, method, amount, status, request_id, created_at")
       .single();
 
     if (insertError) {
@@ -361,16 +362,77 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    // Use invoice.id as InvId (small integer, within Robokassa's supported range)
-    const invId = String(invoice.id); // Convert to string for Robokassa URL
+    // CRITICAL: Use invoice.inv_id (int32) for Robokassa InvId, not invoice.id
+    // inv_id is guaranteed to be within int32 range (1..2147483647)
+    if (!invoice.inv_id) {
+      logEvent("create-payment:error:missing_inv_id", {
+        invoiceId: invoice.id,
+        userId,
+        error: "inv_id is missing from invoice record",
+      }, requestId);
+      
+      const response: any = {
+        ok: false,
+        error: "Ошибка создания платежа: inv_id отсутствует",
+        code: "INV_ID_MISSING",
+        requestId,
+      };
+      
+      if (shouldDebug) {
+        response.debug = {
+          invoiceId: invoice.id,
+          invoice,
+          message: "Invoice record created but inv_id is missing. Check database schema.",
+        };
+      }
+      
+      return NextResponse.json(response, { status: 500 });
+    }
+
+    // Validate inv_id is within int32 range (1..2147483647)
+    const invIdNum = Number(invoice.inv_id);
+    const INT32_MAX = 2147483647;
+    
+    if (!Number.isFinite(invIdNum) || invIdNum < 1 || invIdNum > INT32_MAX) {
+      logEvent("create-payment:error:inv_id_out_of_range", {
+        invoiceId: invoice.id,
+        invId: invoice.inv_id,
+        invIdNum,
+        userId,
+        error: `inv_id ${invIdNum} is out of int32 range (1..${INT32_MAX})`,
+      }, requestId);
+      
+      const response: any = {
+        ok: false,
+        error: "Ошибка создания платежа: inv_id вне допустимого диапазона",
+        code: "INV_ID_OUT_OF_RANGE",
+        requestId,
+      };
+      
+      if (shouldDebug) {
+        response.debug = {
+          invoiceId: invoice.id,
+          invId: invoice.inv_id,
+          invIdNum,
+          validRange: `1..${INT32_MAX}`,
+          message: `inv_id must be within int32 range (1..${INT32_MAX})`,
+        };
+      }
+      
+      return NextResponse.json(response, { status: 500 });
+    }
+
+    const invId = String(invoice.inv_id); // Convert to string for Robokassa URL
     
     logEvent("create-payment:invoice-created", {
       invoiceId: invoice.id,
-      invId,
+      invId: invoice.inv_id,
+      invIdStr: invId,
       userId,
       planCode,
       method,
       amount,
+      invIdWithinRange: invIdNum >= 1 && invIdNum <= INT32_MAX,
     }, requestId);
 
     // Build Robokassa payment URL using invoice.id as InvId
@@ -454,7 +516,9 @@ export async function POST(req: NextRequest) {
     // Build response
     const successResponse: any = {
       ok: true,
-      invId, // Small integer from DB
+      invId, // int32 value from invoice.inv_id
+      invIdUsed: invId, // Explicit field for debug (the actual value sent to Robokassa)
+      invoiceDbId: invoice.id, // The database id (can be larger than int32)
       paymentUrl: paymentUrlResult.url,
       requestId,
       timestamp: new Date().toISOString(),
