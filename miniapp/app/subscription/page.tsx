@@ -209,12 +209,31 @@ function SubscriptionPageContent() {
     // Build URL with userId in query string
     const apiUrl = `/api/subscription/create-payment?userId=${finalUserId}`;
 
+    // Build headers with optional debug tokens
+    const headers: Record<string, string> = {
+      "Content-Type": "application/json",
+    };
+    
+    // Add debug headers if debug is enabled
+    const urlParams = typeof window !== "undefined" ? new URLSearchParams(window.location.search) : null;
+    const debugKey = urlParams?.get("debugKey");
+    const clientDebugEnabled = 
+      (typeof process !== "undefined" && process.env.NEXT_PUBLIC_DEBUG_PAYMENTS === "true") ||
+      (typeof process !== "undefined" && process.env.NODE_ENV !== "production") ||
+      !!debugKey;
+    
+    if (clientDebugEnabled) {
+      const debugToken = typeof process !== "undefined" ? process.env.NEXT_PUBLIC_DEBUG_PAYMENTS_TOKEN : null;
+      if (debugToken) {
+        headers["X-Debug-Payments"] = "1";
+        headers["X-Debug-Token"] = debugToken;
+      }
+    }
+    
     try {
       const response = await fetch(apiUrl, {
         method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
+        headers,
         body: JSON.stringify(payload),
       });
 
@@ -360,6 +379,17 @@ function SubscriptionPageContent() {
       setLastApiResponse({ status: response.status, body: data });
       
       // Use Telegram.WebApp.openLink if available, otherwise window.location
+      // Log which method is used (in debug mode)
+      if (clientDebugEnabled) {
+        console.log("[SubscriptionPage] Opening payment URL:", {
+          hasTelegramWebApp: !!(typeof window !== "undefined" && (window as any).Telegram?.WebApp),
+          hasOpenLink: !!(typeof window !== "undefined" && (window as any).Telegram?.WebApp?.openLink),
+          paymentUrlLength: paymentUrl.length,
+          currentHref: typeof window !== "undefined" ? window.location.href : "N/A",
+          method: (typeof window !== "undefined" && (window as any).Telegram?.WebApp?.openLink) ? "Telegram.WebApp.openLink" : "window.location.href",
+        });
+      }
+      
       if (typeof window !== "undefined" && (window as any).Telegram?.WebApp?.openLink) {
         (window as any).Telegram.WebApp.openLink(paymentUrl);
       } else {

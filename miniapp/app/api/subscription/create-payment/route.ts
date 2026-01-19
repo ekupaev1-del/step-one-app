@@ -39,14 +39,36 @@ function maskValue(value: string, first: number = 6, last: number = 4): string {
   return `${value.substring(0, first)}...${value.substring(value.length - last)}`;
 }
 
-// Helper to check if debug should be included
+// Helper to parse boolean from env (robust)
+function parseBooleanEnv(value: string | undefined, defaultValue: boolean = false): boolean {
+  if (!value) return defaultValue;
+  const normalized = value.toLowerCase().trim();
+  return normalized === "true" || normalized === "1";
+}
+
+// Helper to check if debug should be included (safe for production)
 function shouldIncludeDebug(req: NextRequest): boolean {
-  // Check env flag
-  if (process.env.DEBUG_PAYMENTS === "true" || process.env.NODE_ENV !== "production") {
+  // Always enable in non-production
+  if (process.env.NODE_ENV !== "production") {
     return true;
   }
   
-  // Check DEBUG_KEY query param (for production debugging)
+  // In production: check DEBUG_PAYMENTS env var
+  const debugPaymentsEnv = parseBooleanEnv(process.env.DEBUG_PAYMENTS, false);
+  if (debugPaymentsEnv) {
+    return true;
+  }
+  
+  // In production: check debug headers (requires token)
+  const debugHeader = req.headers.get("x-debug-payments");
+  const debugToken = req.headers.get("x-debug-token");
+  const expectedToken = process.env.DEBUG_PAYMENTS_TOKEN;
+  
+  if (debugHeader === "1" && debugToken && expectedToken && debugToken === expectedToken) {
+    return true;
+  }
+  
+  // Fallback: check DEBUG_KEY query param (for backward compatibility)
   const url = new URL(req.url);
   const debugKey = url.searchParams.get("debugKey");
   const expectedKey = process.env.DEBUG_KEY;
@@ -416,7 +438,10 @@ export async function POST(req: NextRequest) {
       planCode,
       amount,
       isTest: config.testMode,
+      merchantLogin: config.merchantLogin,
+      signatureMasked: paymentUrlResult.debug?.signatureMasked,
       paymentUrlLength: paymentUrlResult.url.length,
+      sanityChecklist: paymentUrlResult.debug?.sanityChecklist,
     }, requestId);
 
     // Build response

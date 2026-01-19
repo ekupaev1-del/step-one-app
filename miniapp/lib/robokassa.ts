@@ -14,13 +14,52 @@ export interface RobokassaConfig {
 }
 
 /**
- * Get Robokassa configuration from environment variables
+ * Robustly parse boolean from environment variable
+ * Accepts: "true"/"false", "1"/"0", true/false
  */
+function parseBooleanEnv(value: string | undefined, defaultValue: boolean = false): boolean {
+  if (!value) return defaultValue;
+  const normalized = value.toLowerCase().trim();
+  return normalized === "true" || normalized === "1";
+}
+
+/**
+ * Get Robokassa configuration from environment variables
+ * Logs configuration on first call (server-side only)
+ */
+let configLogged = false;
+
 export function getRobokassaConfig(): RobokassaConfig | null {
   const merchantLogin = process.env.ROBOKASSA_MERCHANT_LOGIN;
   const password1 = process.env.ROBOKASSA_PASSWORD1;
   const password2 = process.env.ROBOKASSA_PASSWORD2;
-  const testMode = process.env.ROBOKASSA_TEST_MODE === "1" || process.env.ROBOKASSA_TEST_MODE === "true";
+  
+  // Robust boolean parsing: accept "true"/"false", "1"/"0", true/false
+  const testModeRaw = process.env.ROBOKASSA_TEST_MODE;
+  const testMode = parseBooleanEnv(testModeRaw, false);
+  
+  // Log configuration once on server startup (server-side only)
+  if (!configLogged && typeof process !== "undefined" && process.env) {
+    const nodeEnv = process.env.NODE_ENV || "unknown";
+    const hasPassword1 = !!password1;
+    const hasPassword2 = !!password2;
+    const password1Masked = hasPassword1 ? `${password1.substring(0, 6)}...${password1.substring(password1.length - 4)}` : "MISSING";
+    const password2Masked = hasPassword2 ? `${password2.substring(0, 6)}...${password2.substring(password2.length - 4)}` : "MISSING";
+    
+    console.log(JSON.stringify({
+      event: "robokassa_config_loaded",
+      nodeEnv,
+      testMode,
+      testModeRaw,
+      merchantLogin: merchantLogin || "MISSING",
+      hasPassword1,
+      hasPassword2,
+      password1Masked,
+      password2Masked,
+      timestamp: new Date().toISOString(),
+    }));
+    configLogged = true;
+  }
 
   // Primary env vars (ROBOKASSA_*)
   if (merchantLogin && password1 && password2) {
@@ -257,17 +296,22 @@ export function buildRobokassaPaymentUrl(
   // Build URL with proper encoding
   // IMPORTANT: Do NOT pre-encode Description - URLSearchParams.set() will encode it once
   const url = new URL(config.baseUrl || "https://auth.robokassa.ru/Merchant/Index.aspx");
+  
+  // Set required parameters first
   url.searchParams.set("MerchantLogin", config.merchantLogin);
   url.searchParams.set("OutSum", formattedOutSum);
   url.searchParams.set("InvId", invIdStr);
   url.searchParams.set("Description", descriptionRaw); // Pass raw - URLSearchParams encodes once
-  url.searchParams.set("SignatureValue", signature);
-  url.searchParams.set("IsTest", config.testMode ? "1" : "0");
-
+  url.searchParams.set("IsTest", config.testMode ? "1" : "0"); // CRITICAL: 0 for production, 1 for test
+  
   // Add Shp_ parameters in sorted order (must match signature order)
+  // CRITICAL: Shp params must be added in the SAME order as in signature
   sortedShpKeys.forEach((key) => {
     url.searchParams.set(key, shpParams[key]);
   });
+  
+  // Set SignatureValue LAST (after all Shp params) - this is Robokassa requirement
+  url.searchParams.set("SignatureValue", signature);
 
   const finalUrl = url.toString();
   
@@ -282,20 +326,32 @@ export function buildRobokassaPaymentUrl(
   // Additional sanity check: if descriptionInUrl starts with %25, it's likely double-encoded
   const likelyDoubleEncoded = descriptionInUrl.startsWith("%25") && descriptionInUrl.length > 3;
 
-  // Sanity checklist
+  // Sanity checklist - comprehensive validation
   const sanityChecklist = {
     outSumFormatValid: /^\d+\.\d{2}$/.test(formattedOutSum),
     outSumValid: Number.isFinite(outSumNum) && outSumNum > 0,
     invIdIsInteger: invIdIsNumeric,
-    invIdValid: invIdValid,
+    invIdValid: invIdValid && invIdStr.length <= 10, // Robokassa prefers <= 10 digits
+    invIdLength: invIdStr.length,
     merchantLoginPresent: !!config.merchantLogin && config.merchantLogin.length > 0,
     password1Used: true, // We always use password1 for payment URL
     shpParamsSorted: JSON.stringify(sortedShpKeys) === JSON.stringify(Object.keys(shpParams).sort()),
+    shpParamsCount: sortedShpKeys.length,
     signatureComputed: signature.length === 32, // MD5 is 32 hex chars
+    signatureUppercase: signature === signature.toUpperCase(), // Robokassa requires uppercase
     urlBuilt: finalUrl.includes("MerchantLogin") && finalUrl.includes("SignatureValue"),
+    isTestSet: url.searchParams.get("IsTest") === (config.testMode ? "1" : "0"),
     descriptionDoubleEncoded: descriptionDoubleEncoded || likelyDoubleEncoded, // Flag if double encoded detected
     descriptionEncodedOnce: !descriptionDoubleEncoded && !likelyDoubleEncoded && descriptionInUrl.length > 0,
+    allChecksPass: true, // Will be set to false if any check fails
   };
+  
+  // Mark allChecksPass as false if any critical check fails
+  if (!sanityChecklist.outSumFormatValid || !sanityChecklist.invIdValid || 
+      !sanityChecklist.merchantLoginPresent || !sanityChecklist.signatureComputed ||
+      !sanityChecklist.urlBuilt || sanityChecklist.descriptionDoubleEncoded) {
+    sanityChecklist.allChecksPass = false;
+  }
 
   // Debug info (always computed)
   const debugInfo: PaymentUrlDebugInfo = {
