@@ -538,6 +538,12 @@ export async function POST(req: NextRequest) {
         userIdResolution: {
           source: userIdResolution.source,
           candidates: userIdResolution.candidates,
+          notes: userIdResolution.notes,
+        },
+        telegramInitData: {
+          present: userIdResolution.candidates.telegram_user_id !== null,
+          userId: userIdResolution.candidates.telegram_user_id,
+          source: userIdResolution.source === "telegram_initData_user_id" ? "initData" : "not_used",
         },
         invoiceId: invoice.id, // DB-generated small integer
         merchantLogin: robokassaDebug?.mrchLogin,
@@ -545,12 +551,15 @@ export async function POST(req: NextRequest) {
         outSumFormatted: robokassaDebug?.outSumFormatted,
         invId: robokassaDebug?.invId, // Should match invoice.inv_id
         invIdUsed: invId, // The actual InvId sent to Robokassa (from invoice.inv_id)
+        invIdType: robokassaDebug?.invIdType || "number",
         invoiceDbId: invoiceDbId, // The database id (can be larger than int32)
         descriptionRaw: robokassaDebug?.descriptionRaw,
         descriptionEncodedOnce: robokassaDebug?.descriptionEncoded,
+        signatureAlgorithm: robokassaDebug?.signatureAlgorithm || "sha256",
         shpParams: robokassaDebug?.shpParams,
         signatureBaseString: robokassaDebug?.signatureBaseString, // Password masked as <PASSWORD1>
         signatureMasked: robokassaDebug?.signatureMasked,
+        signatureValueLength: robokassaDebug?.signatureValueLength,
         finalPaymentUrl: robokassaDebug?.finalPaymentUrlMasked, // Masked for safety
         sanityChecklist: {
           ...(robokassaDebug?.sanityChecklist || {}),

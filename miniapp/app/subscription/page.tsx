@@ -419,8 +419,8 @@ function SubscriptionPageContent() {
             // Use Telegram WebApp.openLink if available (preferred for Telegram Mini App)
             (window as any).Telegram.WebApp.openLink(paymentUrl);
           } else {
-            // Fallback: use window.location.assign (reliable redirect, not popup)
-            window.location.assign(paymentUrl);
+            // Fallback: open in new tab with security attributes
+            window.open(paymentUrl, "_blank", "noopener,noreferrer");
           }
         } catch (err: any) {
           console.error("[SubscriptionPage] Failed to open payment URL:", err);
@@ -703,9 +703,9 @@ function SubscriptionPageContent() {
 
                 <button
                   onClick={handlePay}
-                  disabled={!selectedMethod || processingPayment}
+                  disabled={!selectedMethod || processingPayment || !userId}
                   className={`w-full py-3 px-4 rounded-lg font-semibold text-white transition-colors ${
-                    !selectedMethod || processingPayment
+                    !selectedMethod || processingPayment || !userId
                       ? "bg-gray-400 cursor-not-allowed"
                       : "bg-blue-600 hover:bg-blue-700"
                   }`}

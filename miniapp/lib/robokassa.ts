@@ -10,6 +10,7 @@ export interface RobokassaConfig {
   password1: string;
   password2: string;
   testMode: boolean;
+  signatureAlgorithm: "md5" | "sha256";
   baseUrl?: string;
 }
 
@@ -38,6 +39,16 @@ export function getRobokassaConfig(): RobokassaConfig | null {
   const testModeRaw = process.env.ROBOKASSA_TEST_MODE;
   const testMode = parseBooleanEnv(testModeRaw, false);
   
+  // Parse signature algorithm: "md5" | "sha256", default to "sha256"
+  const signatureAlgRaw = process.env.ROBOKASSA_SIGNATURE_ALG;
+  let signatureAlgorithm: "md5" | "sha256" = "sha256"; // Default to SHA256 (most common in production)
+  if (signatureAlgRaw) {
+    const normalized = signatureAlgRaw.toLowerCase().trim();
+    if (normalized === "md5" || normalized === "sha256") {
+      signatureAlgorithm = normalized as "md5" | "sha256";
+    }
+  }
+  
   // Log configuration once on server startup (server-side only)
   if (!configLogged && typeof process !== "undefined" && process.env) {
     const nodeEnv = process.env.NODE_ENV || "unknown";
@@ -51,6 +62,8 @@ export function getRobokassaConfig(): RobokassaConfig | null {
       nodeEnv,
       testMode,
       testModeRaw,
+      signatureAlgorithm,
+      signatureAlgRaw: signatureAlgRaw || "default (sha256)",
       merchantLogin: merchantLogin || "MISSING",
       hasPassword1,
       hasPassword2,
@@ -68,6 +81,7 @@ export function getRobokassaConfig(): RobokassaConfig | null {
       password1,
       password2,
       testMode,
+      signatureAlgorithm,
       baseUrl: testMode
         ? "https://auth.robokassa.ru/Merchant/Index.aspx"
         : "https://auth.robokassa.ru/Merchant/Index.aspx",
@@ -85,6 +99,7 @@ export function getRobokassaConfig(): RobokassaConfig | null {
       password1: fallbackPassword1,
       password2: fallbackPassword2,
       testMode,
+      signatureAlgorithm,
       baseUrl: testMode
         ? "https://auth.robokassa.ru/Merchant/Index.aspx"
         : "https://auth.robokassa.ru/Merchant/Index.aspx",
@@ -130,10 +145,11 @@ function buildSignatureString(
 }
 
 /**
- * Generate MD5 hash (uppercase hex for Robokassa signature)
+ * Generate hash for Robokassa signature (MD5 or SHA256)
+ * Returns uppercase hex string
  */
-function md5Hash(input: string): string {
-  return crypto.createHash("md5").update(input, "utf8").digest("hex").toUpperCase();
+function generateSignatureHash(input: string, algorithm: "md5" | "sha256"): string {
+  return crypto.createHash(algorithm).update(input, "utf8").digest("hex").toUpperCase();
 }
 
 /**
@@ -183,10 +199,12 @@ export interface PaymentUrlDebugInfo {
   invId: string;
   invIdValid: boolean;
   invIdWithinRange?: boolean; // Explicit int32 range check (1..2147483647)
+  invIdType: string; // "number" | "string" | etc.
   mrchLogin: string;
   descriptionRaw: string;
   descriptionEncoded: string;
   isTest: boolean;
+  signatureAlgorithm: "md5" | "sha256";
   shpParams: Record<string, string>;
   sortedShpKeys: string[];
   signatureBaseString: string; // With password masked as <PASSWORD1>
@@ -202,6 +220,7 @@ export interface PaymentUrlDebugInfo {
     password1Used: boolean;
     shpParamsSorted: boolean;
     signatureComputed: boolean;
+    signatureAlgorithmCorrect: boolean;
     urlBuilt: boolean;
   };
 }
@@ -297,6 +316,9 @@ export function buildRobokassaPaymentUrl(
   );
 
   // Build actual signature string (with real password)
+  // CRITICAL: Use exact values as they appear in URL (before encoding)
+  // Signature base: MerchantLogin:OutSum:InvId:Password1[:Shp_key1=value1:Shp_key2=value2]
+  // Shp params must be sorted lexicographically by key name
   const signatureString = buildSignatureString(
     config.merchantLogin,
     formattedOutSum,
@@ -305,11 +327,13 @@ export function buildRobokassaPaymentUrl(
     shpParams
   );
 
-  // Generate signature (uppercase MD5) - Robokassa requires uppercase
-  const signature = md5Hash(signatureString);
+  // Generate signature using configured algorithm (MD5 or SHA256)
+  // Robokassa requires uppercase hex
+  const signature = generateSignatureHash(signatureString, config.signatureAlgorithm);
 
   // Build URL with proper encoding
-  // IMPORTANT: Do NOT pre-encode Description - URLSearchParams.set() will encode it once
+  // IMPORTANT: Do NOT pre-encode Description or Shp values - URLSearchParams.set() will encode them once
+  // CRITICAL: Signature is computed over RAW (non-encoded) values, but URL uses encoded values
   const url = new URL(config.baseUrl || "https://auth.robokassa.ru/Merchant/Index.aspx");
   
   // Set required parameters first
@@ -321,7 +345,10 @@ export function buildRobokassaPaymentUrl(
   
   // Add Shp_ parameters in sorted order (must match signature order)
   // CRITICAL: Shp params must be added in the SAME order as in signature
+  // URLSearchParams.set() will URL-encode the values automatically (once)
+  // The signature was computed over RAW values (before encoding), which is correct
   sortedShpKeys.forEach((key) => {
+    // Pass raw value - URLSearchParams will encode it once
     url.searchParams.set(key, shpParams[key]);
   });
   
@@ -342,6 +369,7 @@ export function buildRobokassaPaymentUrl(
   const likelyDoubleEncoded = descriptionInUrl.startsWith("%25") && descriptionInUrl.length > 3;
 
   // Sanity checklist - comprehensive validation
+  const expectedSignatureLength = config.signatureAlgorithm === "md5" ? 32 : 64; // MD5=32, SHA256=64
   const sanityChecklist = {
     outSumFormatValid: /^\d+\.\d{2}$/.test(formattedOutSum),
     outSumValid: Number.isFinite(outSumNum) && outSumNum > 0,
@@ -353,7 +381,8 @@ export function buildRobokassaPaymentUrl(
     password1Used: true, // We always use password1 for payment URL
     shpParamsSorted: JSON.stringify(sortedShpKeys) === JSON.stringify(Object.keys(shpParams).sort()),
     shpParamsCount: sortedShpKeys.length,
-    signatureComputed: signature.length === 32, // MD5 is 32 hex chars
+    signatureComputed: signature.length === expectedSignatureLength, // MD5=32, SHA256=64 hex chars
+    signatureAlgorithmCorrect: config.signatureAlgorithm === "md5" || config.signatureAlgorithm === "sha256",
     signatureUppercase: signature === signature.toUpperCase(), // Robokassa requires uppercase
     urlBuilt: finalUrl.includes("MerchantLogin") && finalUrl.includes("SignatureValue"),
     isTestSet: url.searchParams.get("IsTest") === (config.testMode ? "1" : "0"),
@@ -365,8 +394,8 @@ export function buildRobokassaPaymentUrl(
   // Mark allChecksPass as false if any critical check fails
   if (!sanityChecklist.outSumFormatValid || !sanityChecklist.invIdValid || 
       !sanityChecklist.invIdWithinRange || !sanityChecklist.merchantLoginPresent || 
-      !sanityChecklist.signatureComputed || !sanityChecklist.urlBuilt || 
-      sanityChecklist.descriptionDoubleEncoded) {
+      !sanityChecklist.signatureComputed || !sanityChecklist.signatureAlgorithmCorrect || 
+      !sanityChecklist.urlBuilt || sanityChecklist.descriptionDoubleEncoded) {
     sanityChecklist.allChecksPass = false;
   }
 
@@ -378,10 +407,12 @@ export function buildRobokassaPaymentUrl(
     invId: invIdStr,
     invIdValid: invIdValid, // Must be numeric and within int32 range
     invIdWithinRange: invIdNum >= 1 && invIdNum <= INT32_MAX, // Explicit range check
+    invIdType: typeof invIdNum === "number" ? "number" : "string",
     mrchLogin: config.merchantLogin,
     descriptionRaw: descriptionRaw,
     descriptionEncoded: descriptionInUrl, // Actual encoded value from URL
     isTest: config.testMode,
+    signatureAlgorithm: config.signatureAlgorithm,
     shpParams,
     sortedShpKeys,
     signatureBaseString: signatureBaseStringForLog, // With masked password
@@ -403,9 +434,11 @@ export function buildRobokassaPaymentUrl(
       outSumRaw: outSum,
       outSumFormatted: formattedOutSum,
       invId: invIdStr,
+      invIdType: typeof invIdNum === "number" ? "number" : "string",
       descriptionRaw: descriptionRaw,
       descriptionEncoded: descriptionEncodedOnce,
       isTest: config.testMode,
+      signatureAlgorithm: config.signatureAlgorithm,
       shpParams,
       signatureBaseString: signatureBaseStringForLog,
       signatureValueLength: signature.length,
@@ -450,7 +483,12 @@ export function verifyRobokassaResultSignature(params: {
     signatureString = `${formattedOutSum}:${invId}:${config.password2}`;
   }
 
-  const expectedSignature = md5Hash(signatureString).toUpperCase();
+  // Use SHA256 for result verification (most Robokassa accounts use SHA256 now)
+  // If your account uses MD5, you may need to adjust this
+  // For now, default to SHA256 but could be made configurable
+  const robokassaConfig = getRobokassaConfig();
+  const algorithm = robokassaConfig?.signatureAlgorithm || "sha256";
+  const expectedSignature = generateSignatureHash(signatureString, algorithm);
 
   return receivedSignature.toUpperCase() === expectedSignature;
 }
