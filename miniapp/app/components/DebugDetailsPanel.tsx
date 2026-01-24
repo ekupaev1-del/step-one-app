@@ -374,6 +374,9 @@ export function DebugDetailsPanel({ error }: DebugDetailsPanelProps) {
                     {serverDebug.sanityChecklist.shpSorted !== undefined && (
                       <div>shpSorted: {serverDebug.sanityChecklist.shpSorted ? "✓" : "✗"}</div>
                     )}
+                    {serverDebug.sanityChecklist.signatureHasMerchantLogin !== undefined && (
+                      <div>signatureHasMerchantLogin: {serverDebug.sanityChecklist.signatureHasMerchantLogin ? "✓" : "✗ MISSING!"}</div>
+                    )}
                     <div>urlBuilt: {serverDebug.sanityChecklist.urlBuilt ? "✓" : "✗"}</div>
                   </div>
                 </div>

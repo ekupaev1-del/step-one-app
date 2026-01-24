@@ -640,6 +640,7 @@ export async function POST(req: NextRequest) {
         sanityChecklist: {
           ...(robokassaDebug?.sanityChecklist || {}),
           invIdWithinRange: invIdNum >= 1 && invIdNum <= INT32_MAX, // Add explicit range check
+          signatureHasMerchantLogin: robokassaDebug?.sanityChecklist?.signatureHasMerchantLogin ?? true, // Verify MerchantLogin is in base string
         },
         // Additional context
         queryParams,

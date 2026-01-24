@@ -160,32 +160,34 @@ function buildShpParams(params: Record<string, string>): Record<string, string> 
 
 /**
  * Build signature string for payment URL per Robokassa specification
- * CRITICAL: According to Robokassa docs, signature base is:
- * - Without Shp_: OutSum:InvId:MerchantPass1
- * - With Shp_: OutSum:InvId:MerchantPass1:Shp_a=b:Shp_c=d
+ * CRITICAL: Signature base string MUST be:
+ * - Without Shp_: MerchantLogin:OutSum:InvId:Password1
+ * - With Shp_: MerchantLogin:OutSum:InvId:Password1:Shp_a=b:Shp_c=d
  * 
- * IMPORTANT: MerchantLogin is NOT included in signature base string!
+ * IMPORTANT: MerchantLogin MUST be included at the beginning of signature base string!
  * 
  * Rules:
- * - Shp_* params must be sorted strictly alphabetically by full key name
+ * - Shp_* params must be sorted strictly alphabetically by full key name (case-sensitive)
  * - Values in base string are NOT URL-encoded (raw values)
+ * - All parameters are used as sent (non-encoded) for signature calculation
  */
 function buildSignatureString(
+  merchantLogin: string,
   outSum: string,
   invId: string,
   password1: string,
   shpParams: Record<string, string>
 ): string {
-  // Sort Shp params strictly alphabetically by full key name (including Shp_ prefix)
+  // Sort Shp params strictly alphabetically by full key name (case-sensitive, including Shp_ prefix)
   const sortedShpKeys = Object.keys(shpParams).sort();
   const shpString = sortedShpKeys.map((key) => `${key}=${shpParams[key]}`).join(":");
   
-  // Base format: OutSum:InvId:MerchantPass1 (NO MerchantLogin!)
+  // Base format: MerchantLogin:OutSum:InvId:Password1
   // If Shp params exist, append: :Shp_key1=value1:Shp_key2=value2
   if (shpString) {
-    return `${outSum}:${invId}:${password1}:${shpString}`;
+    return `${merchantLogin}:${outSum}:${invId}:${password1}:${shpString}`;
   }
-  return `${outSum}:${invId}:${password1}`;
+  return `${merchantLogin}:${outSum}:${invId}:${password1}`;
 }
 
 /**
@@ -275,6 +277,7 @@ export interface PaymentUrlDebugInfo {
     signatureComputed: boolean;
     signatureLengthMatchesAlgo: boolean; // MD5=32, SHA256=64
     signatureAlgorithmCorrect: boolean;
+    signatureHasMerchantLogin: boolean; // Verify MerchantLogin is in base string
     descriptionEncodedOnce: boolean;
     urlBuilt: boolean;
   };
@@ -370,9 +373,10 @@ export function buildRobokassaPaymentUrl(
   const sortedShpKeys = Object.keys(shpParams).sort();
 
   // Build signature base string (for logging, mask password)
-  // CRITICAL: According to Robokassa docs: OutSum:InvId:MerchantPass1[:Shp_*]
-  // MerchantLogin is NOT included in signature!
+  // CRITICAL: Robokassa signature format: MerchantLogin:OutSum:InvId:Password1[:Shp_key1=value1:Shp_key2=value2]
+  // MerchantLogin MUST be included at the beginning!
   const signatureBaseStringForLog = buildSignatureString(
+    config.merchantLogin,
     formattedOutSum,
     invIdStr,
     "<PASSWORD1>", // Masked for logging
@@ -380,15 +384,22 @@ export function buildRobokassaPaymentUrl(
   );
 
   // Build actual signature string (with real password)
-  // CRITICAL: Robokassa signature format: OutSum:InvId:MerchantPass1[:Shp_key1=value1:Shp_key2=value2]
+  // CRITICAL: Robokassa signature format: MerchantLogin:OutSum:InvId:Password1[:Shp_key1=value1:Shp_key2=value2]
   // Values are raw (not URL-encoded) in base string
-  // Shp params must be sorted lexicographically by key name
+  // Shp params must be sorted lexicographically by key name (case-sensitive)
   const signatureString = buildSignatureString(
+    config.merchantLogin,
     formattedOutSum,
     invIdStr,
     config.password1,
     shpParams
   );
+  
+  // Verify MerchantLogin is in base string (prevent regressions)
+  const signatureHasMerchantLogin = signatureString.startsWith(`${config.merchantLogin}:`);
+  if (!signatureHasMerchantLogin) {
+    console.error(`[robokassa:${requestId}] CRITICAL: MerchantLogin missing from signature base string!`);
+  }
 
   // Generate signature using configured algorithm (MD5 or SHA256)
   // CRITICAL: Robokassa requires SignatureValue in HEX UPPERCASE
@@ -463,7 +474,8 @@ export function buildRobokassaPaymentUrl(
     signatureComputed: signatureLengthMatchesAlgo,
     signatureLengthMatchesAlgo: signatureLengthMatchesAlgo, // MD5=32, SHA256=64 hex chars
     signatureAlgorithmCorrect: config.signatureAlgorithm === "md5" || config.signatureAlgorithm === "sha256",
-    signatureUppercase: signature === signature.toUpperCase(), // Robokassa requires uppercase hex
+    signatureLowercase: signature === signature.toLowerCase(), // Robokassa accepts case-insensitive, but we use lowercase
+    signatureHasMerchantLogin: signatureHasMerchantLogin, // Verify MerchantLogin is in base string
     urlBuilt: finalUrl.includes("MerchantLogin") && finalUrl.includes("SignatureValue"),
     isTestSet: url.searchParams.get("IsTest") === (config.testMode ? "1" : "0"),
     descriptionDoubleEncoded: descriptionDoubleEncoded || likelyDoubleEncoded, // Flag if double encoded detected
@@ -475,7 +487,8 @@ export function buildRobokassaPaymentUrl(
   if (!sanityChecklist.outSumFormatValid || !sanityChecklist.invIdValid || 
       !sanityChecklist.invIdWithinRange || !sanityChecklist.merchantLoginPresent || 
       !sanityChecklist.signatureComputed || !sanityChecklist.signatureAlgorithmCorrect || 
-      !sanityChecklist.urlBuilt || sanityChecklist.descriptionDoubleEncoded) {
+      !sanityChecklist.signatureHasMerchantLogin || !sanityChecklist.urlBuilt || 
+      sanityChecklist.descriptionDoubleEncoded) {
     sanityChecklist.allChecksPass = false;
   }
 
@@ -505,7 +518,10 @@ export function buildRobokassaPaymentUrl(
     finalPaymentUrlMasked: maskUrlSignature(finalUrl), // URL with masked SignatureValue
     shpParams, // Raw (decoded) values used for signature
     sortedShpKeys,
-    sanityChecklist,
+    sanityChecklist: {
+      ...sanityChecklist,
+      signatureHasMerchantLogin, // Verify MerchantLogin is in base string
+    },
   };
 
   // Always log to server console (structured JSON)
