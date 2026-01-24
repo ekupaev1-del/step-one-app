@@ -326,6 +326,27 @@ export function DebugDetailsPanel({ error }: DebugDetailsPanelProps) {
               {serverDebug.signatureValueLength && (
                 <div><strong>Signature Length:</strong> {serverDebug.signatureValueLength} chars ({serverDebug.signatureValueLength === 32 ? "MD5" : serverDebug.signatureValueLength === 64 ? "SHA256" : "UNKNOWN"})</div>
               )}
+              {serverDebug.envVarSources && (
+                <div className="mt-2 p-2 bg-blue-50 border border-blue-200 rounded">
+                  <strong>Environment Variable Sources:</strong>
+                  <div className="mt-1 space-y-0.5 text-xs">
+                    <div>merchantLoginSourceUsed: {serverDebug.envVarSources.merchantLoginSourceUsed}</div>
+                    <div>password1SourceUsed: {serverDebug.envVarSources.password1SourceUsed}</div>
+                    <div>password1Length: {serverDebug.envVarSources.password1Length} chars</div>
+                    <div>password1TrimmedChanged: {serverDebug.envVarSources.password1TrimmedChanged ? "⚠️ YES (had trailing spaces/newlines)" : "✓ No"}</div>
+                    <div>password2SourceUsed: {serverDebug.envVarSources.password2SourceUsed}</div>
+                    <div>password2Length: {serverDebug.envVarSources.password2Length} chars</div>
+                    <div>password2TrimmedChanged: {serverDebug.envVarSources.password2TrimmedChanged ? "⚠️ YES (had trailing spaces/newlines)" : "✓ No"}</div>
+                    <div>signatureAlgoRaw: {serverDebug.envVarSources.signatureAlgoRaw}</div>
+                  </div>
+                </div>
+              )}
+              {serverDebug.isTest !== undefined && (
+                <div><strong>IsTest:</strong> {serverDebug.isTest ? "1 (test mode)" : "0 (production)"}</div>
+              )}
+              {serverDebug.robokassaTestMode !== undefined && (
+                <div><strong>Robokassa Test Mode:</strong> {serverDebug.robokassaTestMode ? "true" : "false"} {serverDebug.robokassaTestModeRaw && `(raw: ${serverDebug.robokassaTestModeRaw})`}</div>
+              )}
               {serverDebug.finalPaymentUrl && (
                 <div className="mt-2 p-2 bg-gray-100 rounded font-mono text-xs break-all">
                   <strong>Final Payment URL (masked):</strong><br />
