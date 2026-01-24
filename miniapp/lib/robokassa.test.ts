@@ -26,7 +26,8 @@ export function selfCheckRobokassaSignature(): {
   const testInvId = "123";
   const testPassword1 = "test_password_1";
   
-  const md5BaseString = `${testMerchantLogin}:${testOutSum}:${testInvId}:${testPassword1}`;
+  // CRITICAL: Robokassa signature base is OutSum:InvId:MerchantPass1 (NO MerchantLogin!)
+  const md5BaseString = `${testOutSum}:${testInvId}:${testPassword1}`;
   const md5Signature = generateSignatureHash(md5BaseString, "md5");
   
   // Test case 2: SHA256 signature
@@ -85,7 +86,8 @@ export function selfCheckRobokassaSignatureWithShp(): {
   const sortedShpKeys = Object.keys(shpParams).sort();
   const shpString = sortedShpKeys.map((key) => `${key}=${shpParams[key]}`).join(":");
   
-  const baseString = `${testMerchantLogin}:${testOutSum}:${testInvId}:${testPassword1}:${shpString}`;
+  // CRITICAL: Robokassa signature base is OutSum:InvId:MerchantPass1:Shp_* (NO MerchantLogin!)
+  const baseString = `${testOutSum}:${testInvId}:${testPassword1}:${shpString}`;
   const md5Signature = generateSignatureHash(baseString, "md5");
   const sha256Signature = generateSignatureHash(baseString, "sha256");
   

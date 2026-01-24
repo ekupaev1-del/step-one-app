@@ -481,12 +481,13 @@ function SubscriptionPageContent() {
         // Use Telegram WebApp.openLink if available (preferred for Telegram Mini App)
         (window as any).Telegram.WebApp.openLink(paymentUrl);
       } else {
-        // Fallback: use window.location.assign (reliable redirect, not popup)
-        window.location.assign(paymentUrl);
+        // Fallback: use window.location.href (reliable redirect)
+        window.location.href = paymentUrl;
       }
     } catch (err: any) {
       console.error("[SubscriptionPage] Failed to open payment URL:", err);
       setPaymentError(err.message || "Ошибка открытия страницы оплаты");
+      setProcessingPayment(false); // Reset state on error
     }
   };
 

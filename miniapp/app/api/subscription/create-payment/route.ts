@@ -618,17 +618,17 @@ export async function POST(req: NextRequest) {
         signatureValue: robokassaDebug?.signatureMasked, // Masked signature (first 3 + last 3 chars)
         merchantLoginUsed: robokassaDebug?.mrchLogin,
         outSumUsed: robokassaDebug?.outSumFormatted,
+        isTest: config.testMode,
         shpParamsSorted: robokassaDebug?.sortedShpKeys,
+        shpParams: robokassaDebug?.shpParams, // Raw (decoded) values used for signature
         fullPaymentUrl: robokassaDebug?.finalPaymentUrlMasked, // URL with masked SignatureValue
         signatureMD5Masked: robokassaDebug?.signatureMD5Masked, // First 3 + last 3 chars
         signatureSHA256Masked: robokassaDebug?.signatureSHA256Masked, // First 3 + last 3 chars
         signatureValueLength: robokassaDebug?.signatureValueLength, // 32 for MD5, 64 for SHA256
-        shpParams: robokassaDebug?.shpParams, // Raw (decoded) values used for signature
         sanityChecklist: {
           ...(robokassaDebug?.sanityChecklist || {}),
           invIdWithinRange: invIdNum >= 1 && invIdNum <= INT32_MAX, // Add explicit range check
         },
-        isTest: config.testMode,
         // Additional context
         queryParams,
         bodyPreview,
