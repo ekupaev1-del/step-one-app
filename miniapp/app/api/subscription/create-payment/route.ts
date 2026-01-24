@@ -423,6 +423,7 @@ export async function POST(req: NextRequest) {
     }
 
     const invId = String(invoice.inv_id); // Convert to string for Robokassa URL
+    const invoiceDbId = invoice.id; // Keep original DB ID for internal reference
     
     logEvent("create-payment:invoice-created", {
       invoiceId: invoice.id,
@@ -542,14 +543,19 @@ export async function POST(req: NextRequest) {
         merchantLogin: robokassaDebug?.mrchLogin,
         outSumRaw: robokassaDebug?.outSumRaw,
         outSumFormatted: robokassaDebug?.outSumFormatted,
-        invId: robokassaDebug?.invId, // Should match invoice.id
+        invId: robokassaDebug?.invId, // Should match invoice.inv_id
+        invIdUsed: invId, // The actual InvId sent to Robokassa (from invoice.inv_id)
+        invoiceDbId: invoiceDbId, // The database id (can be larger than int32)
         descriptionRaw: robokassaDebug?.descriptionRaw,
         descriptionEncodedOnce: robokassaDebug?.descriptionEncoded,
         shpParams: robokassaDebug?.shpParams,
         signatureBaseString: robokassaDebug?.signatureBaseString, // Password masked as <PASSWORD1>
         signatureMasked: robokassaDebug?.signatureMasked,
         finalPaymentUrl: robokassaDebug?.finalPaymentUrlMasked, // Masked for safety
-        sanityChecklist: robokassaDebug?.sanityChecklist || {},
+        sanityChecklist: {
+          ...(robokassaDebug?.sanityChecklist || {}),
+          invIdWithinRange: invIdNum >= 1 && invIdNum <= INT32_MAX, // Add explicit range check
+        },
         isTest: config.testMode,
         // Additional context
         queryParams,

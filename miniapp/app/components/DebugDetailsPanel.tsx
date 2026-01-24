@@ -255,7 +255,16 @@ export function DebugDetailsPanel({ error }: DebugDetailsPanelProps) {
                 <div>
                   <strong>InvId:</strong> {serverDebug.invId} 
                   {serverDebug.sanityChecklist?.invIdIsInteger ? " ✓" : " ✗ (NOT INTEGER!)"}
+                  {serverDebug.sanityChecklist?.invIdWithinRange !== undefined && (
+                    <span> | Range: {serverDebug.sanityChecklist.invIdWithinRange ? "✓ (1..2147483647)" : "✗ (OUT OF RANGE!)"}</span>
+                  )}
                 </div>
+              )}
+              {serverDebug.invIdUsed && (
+                <div><strong>InvId Used (sent to Robokassa):</strong> {serverDebug.invIdUsed}</div>
+              )}
+              {serverDebug.invoiceDbId && (
+                <div><strong>Invoice DB ID:</strong> {serverDebug.invoiceDbId}</div>
               )}
               {serverDebug.descriptionRaw && (
                 <div>
@@ -296,6 +305,9 @@ export function DebugDetailsPanel({ error }: DebugDetailsPanelProps) {
                     <div>outSumValid: {serverDebug.sanityChecklist.outSumValid ? "✓" : "✗"}</div>
                     <div>invIdIsInteger: {serverDebug.sanityChecklist.invIdIsInteger ? "✓" : "✗"}</div>
                     <div>invIdValid: {serverDebug.sanityChecklist.invIdValid ? "✓" : "✗"}</div>
+                    {serverDebug.sanityChecklist.invIdWithinRange !== undefined && (
+                      <div>invIdWithinRange (1..2147483647): {serverDebug.sanityChecklist.invIdWithinRange ? "✓" : "✗ OUT OF RANGE!"}</div>
+                    )}
                     <div>descriptionEncodedOnce: {serverDebug.sanityChecklist.descriptionEncodedOnce ? "✓" : "✗"}</div>
                     <div>descriptionDoubleEncoded: {serverDebug.sanityChecklist.descriptionDoubleEncoded ? "⚠ DOUBLE ENCODED!" : "✓"}</div>
                     <div>merchantLoginPresent: {serverDebug.sanityChecklist.merchantLoginPresent ? "✓" : "✗"}</div>

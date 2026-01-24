@@ -406,11 +406,27 @@ function SubscriptionPageContent() {
           currentHref: typeof window !== "undefined" ? window.location.href : "N/A",
           requestId: data.requestId,
           invId: data.invId,
+          invIdUsed: data.invIdUsed,
+          invoiceDbId: data.invoiceDbId,
         });
       }
       
-      // DO NOT automatically open - let user click button
-      // This prevents getting stuck in processing state
+      // Automatically open payment URL after successful generation
+      // Use a small delay to ensure state is updated, but use paymentUrl directly from scope
+      setTimeout(() => {
+        try {
+          if (typeof window !== "undefined" && (window as any).Telegram?.WebApp?.openLink) {
+            // Use Telegram WebApp.openLink if available (preferred for Telegram Mini App)
+            (window as any).Telegram.WebApp.openLink(paymentUrl);
+          } else {
+            // Fallback: use window.location.assign (reliable redirect, not popup)
+            window.location.assign(paymentUrl);
+          }
+        } catch (err: any) {
+          console.error("[SubscriptionPage] Failed to open payment URL:", err);
+          setPaymentError(err.message || "Ошибка открытия страницы оплаты");
+        }
+      }, 100);
     } catch (err: any) {
       const duration = Date.now() - startTime;
       console.error("[SubscriptionPage] Ошибка создания платежа:", err);

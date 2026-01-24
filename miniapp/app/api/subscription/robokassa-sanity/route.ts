@@ -180,10 +180,16 @@ export async function GET(req: NextRequest) {
       sanityChecklist.allChecksPass = false;
     }
     
+    // Mock invoice IDs for sanity check
+    const invoiceDbId = 1; // Mock DB ID
+    const invIdUsed = sampleInvId; // Mock InvId (int32)
+    
     return NextResponse.json({
       ok: true,
       requestId,
       timestamp: new Date().toISOString(),
+      invIdUsed, // The InvId that would be sent to Robokassa
+      invoiceDbId, // The database ID (mocked for sanity check)
       debug: {
         config: {
           merchantLogin: config.merchantLogin,
@@ -198,6 +204,8 @@ export async function GET(req: NextRequest) {
         },
         parameters: {
           invId: sampleInvId,
+          invIdUsed, // Explicit field
+          invoiceDbId, // Explicit field
           outSum: amount,
           descriptionRaw: description,
           descriptionEncoded: encodeURIComponent(description),

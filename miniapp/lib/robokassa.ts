@@ -182,6 +182,7 @@ export interface PaymentUrlDebugInfo {
   outSumFormatted: string;
   invId: string;
   invIdValid: boolean;
+  invIdWithinRange?: boolean; // Explicit int32 range check (1..2147483647)
   mrchLogin: string;
   descriptionRaw: string;
   descriptionEncoded: string;
@@ -196,6 +197,7 @@ export interface PaymentUrlDebugInfo {
   sanityChecklist: {
     outSumFormatValid: boolean;
     invIdValid: boolean;
+    invIdWithinRange?: boolean; // Explicit int32 range check
     merchantLoginPresent: boolean;
     password1Used: boolean;
     shpParamsSorted: boolean;
@@ -345,6 +347,7 @@ export function buildRobokassaPaymentUrl(
     outSumValid: Number.isFinite(outSumNum) && outSumNum > 0,
     invIdIsInteger: invIdIsNumeric,
     invIdValid: invIdValid && invIdStr.length <= 10, // Robokassa prefers <= 10 digits
+    invIdWithinRange: invIdNum >= 1 && invIdNum <= INT32_MAX, // Explicit int32 range check
     invIdLength: invIdStr.length,
     merchantLoginPresent: !!config.merchantLogin && config.merchantLogin.length > 0,
     password1Used: true, // We always use password1 for payment URL
@@ -361,8 +364,9 @@ export function buildRobokassaPaymentUrl(
   
   // Mark allChecksPass as false if any critical check fails
   if (!sanityChecklist.outSumFormatValid || !sanityChecklist.invIdValid || 
-      !sanityChecklist.merchantLoginPresent || !sanityChecklist.signatureComputed ||
-      !sanityChecklist.urlBuilt || sanityChecklist.descriptionDoubleEncoded) {
+      !sanityChecklist.invIdWithinRange || !sanityChecklist.merchantLoginPresent || 
+      !sanityChecklist.signatureComputed || !sanityChecklist.urlBuilt || 
+      sanityChecklist.descriptionDoubleEncoded) {
     sanityChecklist.allChecksPass = false;
   }
 
@@ -372,7 +376,8 @@ export function buildRobokassaPaymentUrl(
     outSumRaw: outSum,
     outSumFormatted: formattedOutSum,
     invId: invIdStr,
-    invIdValid: invIdIsNumeric, // Must be numeric
+    invIdValid: invIdValid, // Must be numeric and within int32 range
+    invIdWithinRange: invIdNum >= 1 && invIdNum <= INT32_MAX, // Explicit range check
     mrchLogin: config.merchantLogin,
     descriptionRaw: descriptionRaw,
     descriptionEncoded: descriptionInUrl, // Actual encoded value from URL
