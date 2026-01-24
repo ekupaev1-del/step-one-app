@@ -714,6 +714,7 @@ function SubscriptionPageContent() {
                 >
                   {processingPayment ? "Обработка..." : paymentUrl ? "Оплатить снова" : "Оплатить"}
                 </button>
+                {/* Button becomes enabled when paymentUrl is set and processingPayment is false */}
 
                 <button
                   onClick={() => {

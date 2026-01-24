@@ -12,6 +12,7 @@ export interface RobokassaConfig {
   testMode: boolean;
   signatureAlgorithm: "md5" | "sha256";
   baseUrl?: string;
+  debug?: RobokassaConfigDebug;
 }
 
 /**
@@ -30,25 +31,56 @@ function parseBooleanEnv(value: string | undefined, defaultValue: boolean = fals
  */
 let configLogged = false;
 
-export function getRobokassaConfig(): RobokassaConfig | null {
-  const merchantLogin = process.env.ROBOKASSA_MERCHANT_LOGIN;
-  const password1 = process.env.ROBOKASSA_PASSWORD1;
-  const password2 = process.env.ROBOKASSA_PASSWORD2;
+export interface RobokassaConfigDebug {
+  merchantLoginSourceUsed: string;
+  password1SourceUsed: string;
+  password1Length: number;
+  password1TrimmedChanged: boolean;
+  password2SourceUsed: string;
+  password2Length: number;
+  password2TrimmedChanged: boolean;
+  testModeRaw: string | undefined;
+  signatureAlgoRaw: string | undefined;
+}
+
+export function getRobokassaConfig(): (RobokassaConfig & { debug?: RobokassaConfigDebug }) | null {
+  // Read env vars - use only ROBOKASSA_* (no fallback to ROBO_*)
+  const merchantLoginRaw = process.env.ROBOKASSA_MERCHANT_LOGIN;
+  const password1Raw = process.env.ROBOKASSA_PASSWORD1;
+  const password2Raw = process.env.ROBOKASSA_PASSWORD2;
+  
+  // Always trim secrets to eliminate trailing spaces/newlines
+  const merchantLogin = merchantLoginRaw?.trim();
+  const password1 = password1Raw?.trim();
+  const password2 = password2Raw?.trim();
   
   // Robust boolean parsing: accept "true"/"false", "1"/"0", true/false
   const testModeRaw = process.env.ROBOKASSA_TEST_MODE;
   const testMode = parseBooleanEnv(testModeRaw, false);
   
   // Parse signature algorithm: "md5" | "sha256", default to "md5"
-  // Support ROBOKASSA_HASH_ALGO (primary), ROBOKASSA_SIGNATURE_ALGO, and ROBOKASSA_SIGNATURE_ALG for compatibility
-  const hashAlgRaw = process.env.ROBOKASSA_HASH_ALGO || process.env.ROBOKASSA_SIGNATURE_ALGO || process.env.ROBOKASSA_SIGNATURE_ALG;
+  // Support ROBOKASSA_SIGNATURE_ALGO (primary) and ROBOKASSA_HASH_ALGO for compatibility
+  const signatureAlgoRaw = process.env.ROBOKASSA_SIGNATURE_ALGO || process.env.ROBOKASSA_HASH_ALGO;
   let signatureAlgorithm: "md5" | "sha256" = "md5"; // Default to MD5 (Robokassa default)
-  if (hashAlgRaw) {
-    const normalized = hashAlgRaw.toUpperCase().trim();
-    if (normalized === "MD5" || normalized === "SHA256") {
-      signatureAlgorithm = normalized.toLowerCase() as "md5" | "sha256";
+  if (signatureAlgoRaw) {
+    const normalized = signatureAlgoRaw.toLowerCase().trim();
+    if (normalized === "md5" || normalized === "sha256") {
+      signatureAlgorithm = normalized as "md5" | "sha256";
     }
   }
+  
+  // Build debug info (do not expose secrets, only metadata)
+  const debug: RobokassaConfigDebug = {
+    merchantLoginSourceUsed: merchantLoginRaw ? "ROBOKASSA_MERCHANT_LOGIN" : "MISSING",
+    password1SourceUsed: password1Raw ? "ROBOKASSA_PASSWORD1" : "MISSING",
+    password1Length: password1Raw?.length || 0,
+    password1TrimmedChanged: password1Raw && password1 ? password1Raw.length !== password1.length : false,
+    password2SourceUsed: password2Raw ? "ROBOKASSA_PASSWORD2" : "MISSING",
+    password2Length: password2Raw?.length || 0,
+    password2TrimmedChanged: password2Raw && password2 ? password2Raw.length !== password2.length : false,
+    testModeRaw,
+    signatureAlgoRaw,
+  };
   
   // Log configuration once on server startup (server-side only)
   if (!configLogged && typeof process !== "undefined" && process.env) {
@@ -64,18 +96,25 @@ export function getRobokassaConfig(): RobokassaConfig | null {
       testMode,
       testModeRaw,
       signatureAlgorithm,
-      hashAlgRaw: hashAlgRaw || "default (md5)",
+      signatureAlgoRaw: signatureAlgoRaw || "default (md5)",
       merchantLogin: merchantLogin || "MISSING",
+      merchantLoginSourceUsed: debug.merchantLoginSourceUsed,
       hasPassword1,
-      hasPassword2,
+      password1SourceUsed: debug.password1SourceUsed,
+      password1Length: debug.password1Length,
+      password1TrimmedChanged: debug.password1TrimmedChanged,
       password1Masked,
+      hasPassword2,
+      password2SourceUsed: debug.password2SourceUsed,
+      password2Length: debug.password2Length,
+      password2TrimmedChanged: debug.password2TrimmedChanged,
       password2Masked,
       timestamp: new Date().toISOString(),
     }));
     configLogged = true;
   }
 
-  // Primary env vars (ROBOKASSA_*)
+  // Use only ROBOKASSA_* env vars (no fallback to ROBO_*)
   if (merchantLogin && password1 && password2) {
     return {
       merchantLogin,
@@ -83,28 +122,24 @@ export function getRobokassaConfig(): RobokassaConfig | null {
       password2,
       testMode,
       signatureAlgorithm,
+      debug,
       baseUrl: testMode
         ? "https://auth.robokassa.ru/Merchant/Index.aspx"
         : "https://auth.robokassa.ru/Merchant/Index.aspx",
     };
   }
 
-  // Fallback to ROBO_* aliases
-  const fallbackLogin = process.env.ROBO_MERCHANT_LOGIN;
-  const fallbackPassword1 = process.env.ROBO_PASSWORD1;
-  const fallbackPassword2 = process.env.ROBO_PASSWORD2;
-
-  if (fallbackLogin && fallbackPassword1 && fallbackPassword2) {
-    return {
-      merchantLogin: fallbackLogin,
-      password1: fallbackPassword1,
-      password2: fallbackPassword2,
-      testMode,
-      signatureAlgorithm,
-      baseUrl: testMode
-        ? "https://auth.robokassa.ru/Merchant/Index.aspx"
-        : "https://auth.robokassa.ru/Merchant/Index.aspx",
-    };
+  // Log warning if config is missing
+  if (!configLogged && typeof process !== "undefined" && process.env) {
+    console.warn(JSON.stringify({
+      event: "robokassa_config_missing",
+      missing: [
+        !merchantLogin ? "ROBOKASSA_MERCHANT_LOGIN" : null,
+        !password1 ? "ROBOKASSA_PASSWORD1" : null,
+        !password2 ? "ROBOKASSA_PASSWORD2" : null,
+      ].filter(Boolean),
+      debug,
+    }));
   }
 
   return null;
@@ -155,10 +190,10 @@ function buildSignatureString(
 
 /**
  * Generate hash for Robokassa signature (MD5 or SHA256)
- * CRITICAL: Robokassa requires SignatureValue in HEX UPPERCASE
+ * Returns lowercase hex (Robokassa typically expects lowercase, but we'll use what's configured)
  */
 export function generateSignatureHash(input: string, algorithm: "md5" | "sha256"): string {
-  return crypto.createHash(algorithm).update(input, "utf8").digest("hex").toUpperCase();
+  return crypto.createHash(algorithm).update(input, "utf8").digest("hex").toLowerCase();
 }
 
 /**

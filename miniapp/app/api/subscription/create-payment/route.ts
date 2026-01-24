@@ -613,17 +613,29 @@ export async function POST(req: NextRequest) {
         invoiceDbId: invoiceDbId, // The database id (can be larger than int32)
         descriptionRaw: robokassaDebug?.descriptionRaw,
         descriptionEncodedOnce: robokassaDebug?.descriptionEncoded,
-        signatureAlgo: robokassaDebug?.signatureAlgoUsed || config.signatureAlgorithm,
+        signatureAlgoUsed: robokassaDebug?.signatureAlgoUsed || config.signatureAlgorithm,
         signatureBaseString: robokassaDebug?.signatureBaseString, // Password masked as <PASSWORD1>
-        signatureValue: robokassaDebug?.signatureMasked, // Masked signature (first 3 + last 3 chars)
+        signatureMD5Masked: robokassaDebug?.signatureMD5Masked, // First 3 + last 3 chars
+        signatureSHA256Masked: robokassaDebug?.signatureSHA256Masked, // First 3 + last 3 chars
+        signatureValue: robokassaDebug?.signatureMasked, // Masked signature (first 3 + last 3 chars) of algorithm used
         merchantLoginUsed: robokassaDebug?.mrchLogin,
         outSumUsed: robokassaDebug?.outSumFormatted,
         isTest: config.testMode,
+        robokassaTestMode: config.testMode,
+        robokassaTestModeRaw: config.debug?.testModeRaw,
+        envVarSources: {
+          merchantLoginSourceUsed: config.debug?.merchantLoginSourceUsed || "ROBOKASSA_MERCHANT_LOGIN",
+          password1SourceUsed: config.debug?.password1SourceUsed || "ROBOKASSA_PASSWORD1",
+          password1Length: config.debug?.password1Length || 0,
+          password1TrimmedChanged: config.debug?.password1TrimmedChanged || false,
+          password2SourceUsed: config.debug?.password2SourceUsed || "ROBOKASSA_PASSWORD2",
+          password2Length: config.debug?.password2Length || 0,
+          password2TrimmedChanged: config.debug?.password2TrimmedChanged || false,
+          signatureAlgoRaw: config.debug?.signatureAlgoRaw || "default (md5)",
+        },
         shpParamsSorted: robokassaDebug?.sortedShpKeys,
         shpParams: robokassaDebug?.shpParams, // Raw (decoded) values used for signature
         fullPaymentUrl: robokassaDebug?.finalPaymentUrlMasked, // URL with masked SignatureValue
-        signatureMD5Masked: robokassaDebug?.signatureMD5Masked, // First 3 + last 3 chars
-        signatureSHA256Masked: robokassaDebug?.signatureSHA256Masked, // First 3 + last 3 chars
         signatureValueLength: robokassaDebug?.signatureValueLength, // 32 for MD5, 64 for SHA256
         sanityChecklist: {
           ...(robokassaDebug?.sanityChecklist || {}),
