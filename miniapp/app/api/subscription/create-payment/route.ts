@@ -555,12 +555,13 @@ export async function POST(req: NextRequest) {
         invoiceDbId: invoiceDbId, // The database id (can be larger than int32)
         descriptionRaw: robokassaDebug?.descriptionRaw,
         descriptionEncodedOnce: robokassaDebug?.descriptionEncoded,
-        signatureAlgorithm: robokassaDebug?.signatureAlgorithm || "sha256",
-        shpParams: robokassaDebug?.shpParams,
+        signatureAlgorithm: robokassaDebug?.signatureAlgorithm || "md5",
+        shpParams: robokassaDebug?.shpParams, // Raw (decoded) values used for signature
+        sortedShpKeys: robokassaDebug?.sortedShpKeys,
         signatureBaseString: robokassaDebug?.signatureBaseString, // Password masked as <PASSWORD1>
-        signatureMasked: robokassaDebug?.signatureMasked,
-        signatureValueLength: robokassaDebug?.signatureValueLength,
-        finalPaymentUrl: robokassaDebug?.finalPaymentUrlMasked, // Masked for safety
+        signatureMasked: robokassaDebug?.signatureMasked, // First 3 + last 3 chars
+        signatureValueLength: robokassaDebug?.signatureValueLength, // 32 for MD5, 64 for SHA256
+        finalPaymentUrl: robokassaDebug?.finalPaymentUrlMasked, // URL with masked SignatureValue
         sanityChecklist: {
           ...(robokassaDebug?.sanityChecklist || {}),
           invIdWithinRange: invIdNum >= 1 && invIdNum <= INT32_MAX, // Add explicit range check

@@ -710,7 +710,7 @@ function SubscriptionPageContent() {
                       : "bg-blue-600 hover:bg-blue-700"
                   }`}
                 >
-                  {processingPayment ? "Обработка..." : "Оплатить"}
+                  {processingPayment ? "Обработка..." : paymentUrl ? "Оплатить снова" : "Оплатить"}
                 </button>
 
                 <button

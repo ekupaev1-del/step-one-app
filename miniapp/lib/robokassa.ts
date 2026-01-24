@@ -39,9 +39,9 @@ export function getRobokassaConfig(): RobokassaConfig | null {
   const testModeRaw = process.env.ROBOKASSA_TEST_MODE;
   const testMode = parseBooleanEnv(testModeRaw, false);
   
-  // Parse signature algorithm: "md5" | "sha256", default to "sha256"
+  // Parse signature algorithm: "md5" | "sha256", default to "md5"
   const signatureAlgRaw = process.env.ROBOKASSA_SIGNATURE_ALG;
-  let signatureAlgorithm: "md5" | "sha256" = "sha256"; // Default to SHA256 (most common in production)
+  let signatureAlgorithm: "md5" | "sha256" = "md5"; // Default to MD5 (Robokassa default)
   if (signatureAlgRaw) {
     const normalized = signatureAlgRaw.toLowerCase().trim();
     if (normalized === "md5" || normalized === "sha256") {
@@ -63,7 +63,7 @@ export function getRobokassaConfig(): RobokassaConfig | null {
       testMode,
       testModeRaw,
       signatureAlgorithm,
-      signatureAlgRaw: signatureAlgRaw || "default (sha256)",
+      signatureAlgRaw: signatureAlgRaw || "default (md5)",
       merchantLogin: merchantLogin || "MISSING",
       hasPassword1,
       hasPassword2,
@@ -205,19 +205,21 @@ export interface PaymentUrlDebugInfo {
   descriptionEncoded: string;
   isTest: boolean;
   signatureAlgorithm: "md5" | "sha256";
-  shpParams: Record<string, string>;
+  shpParams: Record<string, string>; // Raw (decoded) values used for signature
   sortedShpKeys: string[];
   signatureBaseString: string; // With password masked as <PASSWORD1>
+  signatureValue: string; // Full signature (for server logs only, not returned to client)
   signatureValueLength: number;
-  signatureMasked: string;
+  signatureMasked: string; // First 3 + last 3 chars
   finalPaymentUrl: string; // Full URL
-  finalPaymentUrlMasked: string;
+  finalPaymentUrlMasked: string; // URL with masked SignatureValue
   sanityChecklist: {
     outSumFormatValid: boolean;
     invIdValid: boolean;
     invIdWithinRange?: boolean; // Explicit int32 range check
     merchantLoginPresent: boolean;
     password1Used: boolean;
+    password1Present: boolean;
     shpParamsSorted: boolean;
     signatureComputed: boolean;
     signatureAlgorithmCorrect: boolean;
@@ -379,6 +381,7 @@ export function buildRobokassaPaymentUrl(
     invIdLength: invIdStr.length,
     merchantLoginPresent: !!config.merchantLogin && config.merchantLogin.length > 0,
     password1Used: true, // We always use password1 for payment URL
+    password1Present: !!config.password1 && config.password1.length > 0,
     shpParamsSorted: JSON.stringify(sortedShpKeys) === JSON.stringify(Object.keys(shpParams).sort()),
     shpParamsCount: sortedShpKeys.length,
     signatureComputed: signature.length === expectedSignatureLength, // MD5=32, SHA256=64 hex chars
@@ -413,13 +416,14 @@ export function buildRobokassaPaymentUrl(
     descriptionEncoded: descriptionInUrl, // Actual encoded value from URL
     isTest: config.testMode,
     signatureAlgorithm: config.signatureAlgorithm,
-    shpParams,
+    shpParams, // Raw (decoded) values used for signature
     sortedShpKeys,
-    signatureBaseString: signatureBaseStringForLog, // With masked password
+    signatureBaseString: signatureBaseStringForLog, // With password masked as <PASSWORD1>
+    signatureValue: signature, // Full signature (for server logs, not returned to client)
     signatureValueLength: signature.length,
-    signatureMasked: maskValue(signature, 6, 4),
+    signatureMasked: maskValue(signature, 3, 3), // First 3 + last 3 chars
     finalPaymentUrl: finalUrl, // Full URL for server logs
-    finalPaymentUrlMasked: maskUrlSignature(finalUrl),
+    finalPaymentUrlMasked: maskUrlSignature(finalUrl), // URL with masked SignatureValue
     sanityChecklist,
   };
 
@@ -501,8 +505,44 @@ export function parseShpParams(searchParams: URLSearchParams): Record<string, st
   searchParams.forEach((value, key) => {
     if (key.startsWith("Shp_")) {
       const paramKey = key.replace("Shp_", "");
+      // Values are URL-decoded by URLSearchParams automatically
       shpParams[paramKey] = value;
     }
   });
   return shpParams;
+}
+
+/**
+ * Signature test vector helper (for development/debugging)
+ * Computes signature for fixed inputs to verify correctness
+ */
+export function computeSignatureTestVector(
+  merchantLogin: string,
+  outSum: string,
+  invId: string,
+  password1: string,
+  shpParams: Record<string, string>,
+  algorithm: "md5" | "sha256" = "md5"
+): {
+  baseString: string;
+  signature: string;
+  algorithm: string;
+} {
+  const sortedShpKeys = Object.keys(shpParams).sort();
+  const shpString = sortedShpKeys.map((key) => `${key}=${shpParams[key]}`).join(":");
+  
+  let baseString: string;
+  if (shpString) {
+    baseString = `${merchantLogin}:${outSum}:${invId}:${password1}:${shpString}`;
+  } else {
+    baseString = `${merchantLogin}:${outSum}:${invId}:${password1}`;
+  }
+  
+  const signature = generateSignatureHash(baseString, algorithm);
+  
+  return {
+    baseString,
+    signature,
+    algorithm,
+  };
 }
