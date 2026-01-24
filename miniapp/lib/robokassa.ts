@@ -40,13 +40,13 @@ export function getRobokassaConfig(): RobokassaConfig | null {
   const testMode = parseBooleanEnv(testModeRaw, false);
   
   // Parse signature algorithm: "md5" | "sha256", default to "md5"
-  // Support both ROBOKASSA_SIGNATURE_ALG and ROBOKASSA_SIGNATURE_ALGO for compatibility
-  const signatureAlgRaw = process.env.ROBOKASSA_SIGNATURE_ALGO || process.env.ROBOKASSA_SIGNATURE_ALG;
+  // Support ROBOKASSA_HASH_ALGO (primary), ROBOKASSA_SIGNATURE_ALGO, and ROBOKASSA_SIGNATURE_ALG for compatibility
+  const hashAlgRaw = process.env.ROBOKASSA_HASH_ALGO || process.env.ROBOKASSA_SIGNATURE_ALGO || process.env.ROBOKASSA_SIGNATURE_ALG;
   let signatureAlgorithm: "md5" | "sha256" = "md5"; // Default to MD5 (Robokassa default)
-  if (signatureAlgRaw) {
-    const normalized = signatureAlgRaw.toLowerCase().trim();
-    if (normalized === "md5" || normalized === "sha256") {
-      signatureAlgorithm = normalized as "md5" | "sha256";
+  if (hashAlgRaw) {
+    const normalized = hashAlgRaw.toUpperCase().trim();
+    if (normalized === "MD5" || normalized === "SHA256") {
+      signatureAlgorithm = normalized.toLowerCase() as "md5" | "sha256";
     }
   }
   
@@ -64,7 +64,7 @@ export function getRobokassaConfig(): RobokassaConfig | null {
       testMode,
       testModeRaw,
       signatureAlgorithm,
-      signatureAlgRaw: signatureAlgRaw || "default (md5)",
+      hashAlgRaw: hashAlgRaw || "default (md5)",
       merchantLogin: merchantLogin || "MISSING",
       hasPassword1,
       hasPassword2,
@@ -124,8 +124,14 @@ function buildShpParams(params: Record<string, string>): Record<string, string> 
 }
 
 /**
- * Build signature string for payment URL
+ * Build signature string for payment URL per Robokassa specification
  * Format: MerchantLogin:OutSum:InvId:Password1:Shp_key1=value1:Shp_key2=value2
+ * 
+ * Rules:
+ * - InvId must be included (use empty string if missing, but we always have it)
+ * - Modifiers (Receipt, StepByStep, ResultUrl2, etc.) are only included if present and in strict order
+ * - We don't use modifiers, so format is: MerchantLogin:OutSum:InvId:Password1[:Shp_*]
+ * - Shp_* params must be sorted strictly alphabetically by full key name
  */
 function buildSignatureString(
   merchantLogin: string,
@@ -134,11 +140,12 @@ function buildSignatureString(
   password1: string,
   shpParams: Record<string, string>
 ): string {
+  // Sort Shp params strictly alphabetically by full key name (including Shp_ prefix)
   const sortedShpKeys = Object.keys(shpParams).sort();
   const shpString = sortedShpKeys.map((key) => `${key}=${shpParams[key]}`).join(":");
   
-  // If no Shp params, signature is: MerchantLogin:OutSum:InvId:Password1
-  // If Shp params exist: MerchantLogin:OutSum:InvId:Password1:Shp_key1=value1:Shp_key2=value2
+  // Base format: MerchantLogin:OutSum:InvId:Password1
+  // If Shp params exist, append: :Shp_key1=value1:Shp_key2=value2
   if (shpString) {
     return `${merchantLogin}:${outSum}:${invId}:${password1}:${shpString}`;
   }
@@ -147,10 +154,10 @@ function buildSignatureString(
 
 /**
  * Generate hash for Robokassa signature (MD5 or SHA256)
- * Returns uppercase hex string
+ * Returns lowercase hex string (Robokassa expects lowercase)
  */
 export function generateSignatureHash(input: string, algorithm: "md5" | "sha256"): string {
-  return crypto.createHash(algorithm).update(input, "utf8").digest("hex").toUpperCase();
+  return crypto.createHash(algorithm).update(input, "utf8").digest("hex").toLowerCase();
 }
 
 /**
@@ -248,13 +255,21 @@ export function buildRobokassaPaymentUrl(
 
   const { invId, outSum, description, userId, planCode, method, returnPath = "/subscription", orderToken, email } = params;
 
-  // Validate and format OutSum (must be dot decimal with 2 decimals)
+  // Validate and format OutSum (must be dot decimal with 2 decimals, no commas)
+  // CRITICAL: OutSum must be formatted as string with exactly 2 decimals and dot separator
   const outSumNum = Number(outSum);
   if (!Number.isFinite(outSumNum) || outSumNum <= 0) {
     console.error(`[robokassa:${requestId}] Invalid OutSum: ${outSum}`);
     return null;
   }
-  const formattedOutSum = outSumNum.toFixed(2); // Always "1.00", "199.00", etc.
+  // Format with 2 decimals, dot separator, no commas
+  let formattedOutSum = outSumNum.toFixed(2); // Always "1.00", "199.00", etc.
+  
+  // Ensure no commas (replace if any)
+  if (formattedOutSum.includes(",")) {
+    console.warn(`[robokassa:${requestId}] OutSum contains comma, replacing with dot: ${formattedOutSum}`);
+    formattedOutSum = formattedOutSum.replace(/,/g, ".");
+  }
 
   // Validate InvId - MUST be numeric and within int32 range (1..2147483647)
   // CRITICAL: Robokassa requires InvId to be within int32 range
@@ -340,7 +355,7 @@ export function buildRobokassaPaymentUrl(
   );
 
   // Generate signature using configured algorithm (MD5 or SHA256)
-  // Robokassa requires uppercase hex
+  // CRITICAL: Robokassa expects lowercase hex (not uppercase)
   const signature = generateSignatureHash(signatureString, config.signatureAlgorithm);
   
   // Also compute both MD5 and SHA256 for debug comparison
@@ -412,7 +427,7 @@ export function buildRobokassaPaymentUrl(
     signatureComputed: signatureLengthMatchesAlgo,
     signatureLengthMatchesAlgo: signatureLengthMatchesAlgo, // MD5=32, SHA256=64 hex chars
     signatureAlgorithmCorrect: config.signatureAlgorithm === "md5" || config.signatureAlgorithm === "sha256",
-    signatureUppercase: signature === signature.toUpperCase(), // Robokassa requires uppercase
+    signatureLowercase: signature === signature.toLowerCase(), // Robokassa requires lowercase hex
     urlBuilt: finalUrl.includes("MerchantLogin") && finalUrl.includes("SignatureValue"),
     isTestSet: url.searchParams.get("IsTest") === (config.testMode ? "1" : "0"),
     descriptionDoubleEncoded: descriptionDoubleEncoded || likelyDoubleEncoded, // Flag if double encoded detected
@@ -524,7 +539,8 @@ export function verifyRobokassaResultSignature(params: {
   const algorithm = robokassaConfig?.signatureAlgorithm || "sha256";
   const expectedSignature = generateSignatureHash(signatureString, algorithm);
 
-  return receivedSignature.toUpperCase() === expectedSignature;
+  // Compare signatures (both should be lowercase)
+  return receivedSignature.toLowerCase() === expectedSignature.toLowerCase();
 }
 
 /**

@@ -613,15 +613,17 @@ export async function POST(req: NextRequest) {
         invoiceDbId: invoiceDbId, // The database id (can be larger than int32)
         descriptionRaw: robokassaDebug?.descriptionRaw,
         descriptionEncodedOnce: robokassaDebug?.descriptionEncoded,
-        signatureAlgoUsed: robokassaDebug?.signatureAlgoUsed || "md5",
+        signatureAlgo: robokassaDebug?.signatureAlgoUsed || config.signatureAlgorithm,
         signatureBaseString: robokassaDebug?.signatureBaseString, // Password masked as <PASSWORD1>
+        signatureValue: robokassaDebug?.signatureMasked, // Masked signature (first 3 + last 3 chars)
+        merchantLoginUsed: robokassaDebug?.mrchLogin,
+        outSumUsed: robokassaDebug?.outSumFormatted,
+        shpParamsSorted: robokassaDebug?.sortedShpKeys,
+        fullPaymentUrl: robokassaDebug?.finalPaymentUrlMasked, // URL with masked SignatureValue
         signatureMD5Masked: robokassaDebug?.signatureMD5Masked, // First 3 + last 3 chars
         signatureSHA256Masked: robokassaDebug?.signatureSHA256Masked, // First 3 + last 3 chars
-        signatureMasked: robokassaDebug?.signatureMasked, // First 3 + last 3 chars (of algorithm used)
         signatureValueLength: robokassaDebug?.signatureValueLength, // 32 for MD5, 64 for SHA256
         shpParams: robokassaDebug?.shpParams, // Raw (decoded) values used for signature
-        sortedShpKeys: robokassaDebug?.sortedShpKeys,
-        finalPaymentUrl: robokassaDebug?.finalPaymentUrlMasked, // URL with masked SignatureValue
         sanityChecklist: {
           ...(robokassaDebug?.sanityChecklist || {}),
           invIdWithinRange: invIdNum >= 1 && invIdNum <= INT32_MAX, // Add explicit range check
