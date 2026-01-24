@@ -402,12 +402,13 @@ export function buildRobokassaPaymentUrl(
   }
 
   // Generate signature using configured algorithm (MD5 or SHA256)
-  // CRITICAL: Robokassa requires SignatureValue in HEX UPPERCASE
-  const signature = generateSignatureHash(signatureString, config.signatureAlgorithm);
-  
-  // Also compute both MD5 and SHA256 for debug comparison
+  // CRITICAL: Use lowercase hex for MD5 (Robokassa accepts case-insensitive, but lowercase is safer)
+  // Compute BOTH MD5 and SHA256 for debug comparison
   const signatureMD5 = generateSignatureHash(signatureString, "md5");
   const signatureSHA256 = generateSignatureHash(signatureString, "sha256");
+  
+  // Use chosen algorithm to set SignatureValue
+  const signature = config.signatureAlgorithm === "md5" ? signatureMD5 : signatureSHA256;
 
   // Build URL with proper encoding
   // IMPORTANT: Do NOT pre-encode Description or Shp values - URLSearchParams.set() will encode them once
