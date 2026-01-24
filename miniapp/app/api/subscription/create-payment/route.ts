@@ -29,6 +29,7 @@ interface CreatePaymentRequest {
   returnPath?: string;
   userId?: number;
   id?: number;
+  email?: string; // Optional: customer email for Robokassa
 }
 
 // Helper to mask sensitive values in logs
@@ -59,22 +60,31 @@ function shouldIncludeDebug(req: NextRequest): boolean {
     return true;
   }
   
-  // In production: check debug headers (requires token)
-  const debugHeader = req.headers.get("x-debug-payments");
+  // In production: check debug query param with token header
+  // Format: ?debug=1 AND x-debug-token header matches DEBUG_TOKEN
+  const url = new URL(req.url);
+  const debugParam = url.searchParams.get("debug");
   const debugToken = req.headers.get("x-debug-token");
-  const expectedToken = process.env.DEBUG_PAYMENTS_TOKEN;
+  const expectedToken = process.env.DEBUG_TOKEN;
   
-  if (debugHeader === "1" && debugToken && expectedToken && debugToken === expectedToken) {
+  if (debugParam === "1" && debugToken && expectedToken && debugToken === expectedToken) {
     return true;
   }
   
-  // Check query params: ?debug=1, ?debugPayments=1, or ?debugKey=anything
-  const url = new URL(req.url);
-  const debugParam = url.searchParams.get("debug");
-  const debugPayments = url.searchParams.get("debugPayments"); // New: explicit debugPayments param
+  // In production: check debug headers (requires token)
+  const debugHeader = req.headers.get("x-debug-payments");
+  const debugPaymentsToken = req.headers.get("x-debug-token");
+  const expectedPaymentsToken = process.env.DEBUG_PAYMENTS_TOKEN;
+  
+  if (debugHeader === "1" && debugPaymentsToken && expectedPaymentsToken && debugPaymentsToken === expectedPaymentsToken) {
+    return true;
+  }
+  
+  // Check query params: ?debugPayments=1, or ?debugKey=anything
+  const debugPayments = url.searchParams.get("debugPayments");
   const debugKey = url.searchParams.get("debugKey");
   
-  if (debugParam === "1" || debugPayments === "1" || debugKey) {
+  if (debugPayments === "1" || debugKey) {
     return true;
   }
   
@@ -306,6 +316,53 @@ export async function POST(req: NextRequest) {
     const description = `Подписка: Первые 3 дня за 1 ₽, далее 199 ₽/мес`;
 
     const supabase = createServerSupabaseClient();
+    
+    // Check if email is required and get user email if available
+    const requireEmail = parseBooleanEnv(process.env.ROBOKASSA_REQUIRE_EMAIL, false);
+    let userEmail: string | null = null;
+    
+    if (requireEmail || body.email) {
+      // Try to get email from request body first
+      if (body.email && typeof body.email === "string") {
+        userEmail = body.email;
+      } else {
+        // Try to get email from user record in DB
+        const { data: userData } = await supabase
+          .from("users")
+          .select("email")
+          .eq("id", userId)
+          .maybeSingle();
+        
+        if (userData?.email) {
+          userEmail = userData.email;
+        }
+      }
+      
+      if (requireEmail && !userEmail) {
+        logEvent("create-payment:error", {
+          error: "EMAIL_REQUIRED",
+          userId,
+          requireEmail,
+        }, requestId);
+        
+        const response: any = {
+          ok: false,
+          error: "Email обязателен для оплаты. Пожалуйста, укажите email.",
+          code: "EMAIL_REQUIRED",
+          requestId,
+        };
+        
+        if (shouldDebug) {
+          response.debug = {
+            requireEmail,
+            emailFromBody: body.email || null,
+            message: "ROBOKASSA_REQUIRE_EMAIL=true but email not found in body or user record",
+          };
+        }
+        
+        return NextResponse.json(response, { status: 400 });
+      }
+    }
 
     // CRITICAL: Create invoice record FIRST, then use invoice.id as InvId
     // This ensures InvId is a small integer (auto-increment), not a large timestamp
@@ -447,6 +504,7 @@ export async function POST(req: NextRequest) {
       method,
       returnPath,
       orderToken: requestId, // Store in Shp_requestId for tracking
+      email: userEmail || undefined, // Include email if available
     }, requestId);
 
     if (!paymentUrlResult) {
@@ -555,12 +613,14 @@ export async function POST(req: NextRequest) {
         invoiceDbId: invoiceDbId, // The database id (can be larger than int32)
         descriptionRaw: robokassaDebug?.descriptionRaw,
         descriptionEncodedOnce: robokassaDebug?.descriptionEncoded,
-        signatureAlgorithm: robokassaDebug?.signatureAlgorithm || "md5",
+        signatureAlgoUsed: robokassaDebug?.signatureAlgoUsed || "md5",
+        signatureBaseString: robokassaDebug?.signatureBaseString, // Password masked as <PASSWORD1>
+        signatureMD5Masked: robokassaDebug?.signatureMD5Masked, // First 3 + last 3 chars
+        signatureSHA256Masked: robokassaDebug?.signatureSHA256Masked, // First 3 + last 3 chars
+        signatureMasked: robokassaDebug?.signatureMasked, // First 3 + last 3 chars (of algorithm used)
+        signatureValueLength: robokassaDebug?.signatureValueLength, // 32 for MD5, 64 for SHA256
         shpParams: robokassaDebug?.shpParams, // Raw (decoded) values used for signature
         sortedShpKeys: robokassaDebug?.sortedShpKeys,
-        signatureBaseString: robokassaDebug?.signatureBaseString, // Password masked as <PASSWORD1>
-        signatureMasked: robokassaDebug?.signatureMasked, // First 3 + last 3 chars
-        signatureValueLength: robokassaDebug?.signatureValueLength, // 32 for MD5, 64 for SHA256
         finalPaymentUrl: robokassaDebug?.finalPaymentUrlMasked, // URL with masked SignatureValue
         sanityChecklist: {
           ...(robokassaDebug?.sanityChecklist || {}),

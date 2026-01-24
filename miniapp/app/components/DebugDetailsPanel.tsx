@@ -82,7 +82,8 @@ export function DebugDetailsPanel({ error }: DebugDetailsPanelProps) {
   const debugEnabled = checkDebugEnabled();
 
   // Show panel if error exists OR if debug is enabled and we have server debug info
-  const hasServerDebug = error?.serverDebug || error?.apiResponse?.body?.debug;
+  const serverDebug = error?.serverDebug || error?.apiResponse?.body?.debug;
+  const hasServerDebug = !!serverDebug;
   const isSuccess = error?.status === "success";
   
   if (!error && (!debugEnabled || !hasServerDebug)) {
@@ -104,7 +105,7 @@ export function DebugDetailsPanel({ error }: DebugDetailsPanelProps) {
   const currentTime = new Date().toISOString();
 
   // Extract payment URL from response if available
-  const paymentUrl = error.apiResponse?.body?.paymentUrl;
+  const paymentUrl = error?.apiResponse?.body?.paymentUrl;
 
   const handleCopyDebug = async () => {
     try {
@@ -128,13 +129,12 @@ export function DebugDetailsPanel({ error }: DebugDetailsPanelProps) {
   };
 
   // Extract key debug info for quick view
-  const userIdResolution = error.userIdResolution;
-  const userIdValue = userIdResolution?.userId ?? error.userId?.value ?? null;
-  const userIdSource = userIdResolution?.source ?? error.userId?.source ?? "unknown";
-  const telegramInfo = error.clientContext?.telegram;
+  const userIdResolution = error?.userIdResolution;
+  const userIdValue = userIdResolution?.userId ?? error?.userId?.value ?? null;
+  const userIdSource = userIdResolution?.source ?? error?.userId?.source ?? "unknown";
+  const telegramInfo = error?.clientContext?.telegram;
   
-  // Server debug can be directly in serverDebug (new format) or nested in serverDebug.robokassa (old format)
-  const serverDebug = error.serverDebug;
+  // Robokassa info can be directly in serverDebug or nested
   const robokassaInfo = serverDebug?.robokassa || serverDebug; // Support both formats
 
   return (
@@ -193,12 +193,12 @@ export function DebugDetailsPanel({ error }: DebugDetailsPanelProps) {
       </div>
 
       {/* Action Buttons */}
-      <div className="mb-2 flex gap-2">
+      <div className="mb-2 flex flex-wrap gap-2">
         <button
           onClick={handleCopyDebug}
           className="px-3 py-1 bg-blue-600 text-white text-xs rounded hover:bg-blue-700 transition-colors"
         >
-          {copySuccess === "debug" ? "✓ Copied!" : "📋 Copy Debug JSON"}
+          {copySuccess === "debug" ? "✓ Copied!" : "📋 Copy Full Debug JSON"}
         </button>
         {paymentUrl && (
           <button
@@ -208,7 +208,30 @@ export function DebugDetailsPanel({ error }: DebugDetailsPanelProps) {
             {copySuccess === "url" ? "✓ Copied!" : "🔗 Copy Payment URL"}
           </button>
         )}
+        {serverDebug && (
+          <button
+            onClick={async () => {
+              try {
+                await navigator.clipboard.writeText(JSON.stringify(serverDebug, null, 2));
+                setCopySuccess("serverDebug");
+                setTimeout(() => setCopySuccess(null), 2000);
+              } catch (err) {
+                console.error("Failed to copy server debug:", err);
+              }
+            }}
+            className="px-3 py-1 bg-purple-600 text-white text-xs rounded hover:bg-purple-700 transition-colors"
+          >
+            {copySuccess === "serverDebug" ? "✓ Copied!" : "📊 Copy Server Debug"}
+          </button>
+        )}
       </div>
+      
+      {/* Debug Status Warning */}
+      {!serverDebug && (
+        <div className="mb-2 px-3 py-2 bg-yellow-50 border border-yellow-300 rounded text-yellow-700 text-xs">
+          ⚠️ <strong>Server debug is OFF.</strong> Set DEBUG_PAYMENTS=true or use ?debug=1 with x-debug-token header matching DEBUG_TOKEN.
+        </div>
+      )}
 
       {/* Debug Details */}
       <details
@@ -282,14 +305,26 @@ export function DebugDetailsPanel({ error }: DebugDetailsPanelProps) {
                   </pre>
                 </div>
               )}
+              {serverDebug.signatureAlgoUsed && (
+                <div><strong>Signature Algorithm Used:</strong> {serverDebug.signatureAlgoUsed.toUpperCase()}</div>
+              )}
               {serverDebug.signatureBaseString && (
                 <div className="mt-2 p-2 bg-gray-100 rounded font-mono text-xs break-all">
-                  <strong>Signature Base String:</strong><br />
+                  <strong>Signature Base String (Password1 masked):</strong><br />
                   {serverDebug.signatureBaseString}
                 </div>
               )}
+              {serverDebug.signatureMD5Masked && (
+                <div><strong>Signature MD5 (masked):</strong> {serverDebug.signatureMD5Masked}</div>
+              )}
+              {serverDebug.signatureSHA256Masked && (
+                <div><strong>Signature SHA256 (masked):</strong> {serverDebug.signatureSHA256Masked}</div>
+              )}
               {serverDebug.signatureMasked && (
-                <div><strong>Signature (masked):</strong> {serverDebug.signatureMasked}</div>
+                <div><strong>Signature Used (masked):</strong> {serverDebug.signatureMasked} ({serverDebug.signatureAlgoUsed || "md5"})</div>
+              )}
+              {serverDebug.signatureValueLength && (
+                <div><strong>Signature Length:</strong> {serverDebug.signatureValueLength} chars ({serverDebug.signatureValueLength === 32 ? "MD5" : serverDebug.signatureValueLength === 64 ? "SHA256" : "UNKNOWN"})</div>
               )}
               {serverDebug.finalPaymentUrl && (
                 <div className="mt-2 p-2 bg-gray-100 rounded font-mono text-xs break-all">
@@ -312,6 +347,12 @@ export function DebugDetailsPanel({ error }: DebugDetailsPanelProps) {
                     <div>descriptionDoubleEncoded: {serverDebug.sanityChecklist.descriptionDoubleEncoded ? "⚠ DOUBLE ENCODED!" : "✓"}</div>
                     <div>merchantLoginPresent: {serverDebug.sanityChecklist.merchantLoginPresent ? "✓" : "✗"}</div>
                     <div>signatureComputed: {serverDebug.sanityChecklist.signatureComputed ? "✓" : "✗"}</div>
+                    {serverDebug.sanityChecklist.signatureLengthMatchesAlgo !== undefined && (
+                      <div>signatureLengthMatchesAlgo: {serverDebug.sanityChecklist.signatureLengthMatchesAlgo ? "✓" : "✗"}</div>
+                    )}
+                    {serverDebug.sanityChecklist.shpSorted !== undefined && (
+                      <div>shpSorted: {serverDebug.sanityChecklist.shpSorted ? "✓" : "✗"}</div>
+                    )}
                     <div>urlBuilt: {serverDebug.sanityChecklist.urlBuilt ? "✓" : "✗"}</div>
                   </div>
                 </div>
