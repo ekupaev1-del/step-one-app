@@ -7,8 +7,8 @@ import * as crypto from "crypto";
 
 export interface RobokassaConfig {
   merchantLogin: string;
-  password1: string;
-  password2: string;
+  password1: string; // Production password1 or test password1 (based on testMode)
+  password2: string; // Production password2 or test password2 (based on testMode)
   testMode: boolean;
   signatureAlgorithm: "md5" | "sha256";
   baseUrl?: string;
@@ -17,12 +17,48 @@ export interface RobokassaConfig {
 
 /**
  * Robustly parse boolean from environment variable
- * Accepts: "true"/"false", "1"/"0", true/false
+ * Handles Vercel UI quirks (leading "=") and various formats
+ * 
+ * Rules:
+ * - Trims whitespace
+ * - Removes optional leading "=" (Vercel UI sometimes keeps "=false/true")
+ * - Treats "1", "true", "yes", "on" as true (case-insensitive)
+ * - Treats "0", "false", "no", "off", "" as false
+ */
+export function parseBoolEnv(value: string | undefined, defaultValue: boolean = false): boolean {
+  if (!value) return defaultValue;
+  
+  // Trim whitespace
+  let normalized = value.trim();
+  
+  // Remove leading "=" if present (Vercel UI quirk)
+  if (normalized.startsWith("=")) {
+    normalized = normalized.substring(1).trim();
+  }
+  
+  // Convert to lowercase for comparison
+  normalized = normalized.toLowerCase();
+  
+  // True values
+  if (normalized === "true" || normalized === "1" || normalized === "yes" || normalized === "on") {
+    return true;
+  }
+  
+  // False values (explicit check for empty string after trimming)
+  if (normalized === "false" || normalized === "0" || normalized === "no" || normalized === "off" || normalized === "") {
+    return false;
+  }
+  
+  // Default to defaultValue for unrecognized values
+  return defaultValue;
+}
+
+/**
+ * @deprecated Use parseBoolEnv instead
+ * Kept for backward compatibility
  */
 function parseBooleanEnv(value: string | undefined, defaultValue: boolean = false): boolean {
-  if (!value) return defaultValue;
-  const normalized = value.toLowerCase().trim();
-  return normalized === "true" || normalized === "1";
+  return parseBoolEnv(value, defaultValue);
 }
 
 /**
@@ -33,14 +69,17 @@ let configLogged = false;
 
 export interface RobokassaConfigDebug {
   merchantLoginSourceUsed: string;
-  password1SourceUsed: string;
+  password1SourceUsed: string; // Which env var was used (name only, not value)
   password1Length: number;
   password1TrimmedChanged: boolean;
-  password2SourceUsed: string;
+  password2SourceUsed: string; // Which env var was used (name only, not value)
   password2Length: number;
   password2TrimmedChanged: boolean;
   testModeRaw: string | undefined;
   signatureAlgoRaw: string | undefined;
+  mode: "test" | "prod"; // Current mode
+  testPassword1Present: boolean; // Whether test passwords are configured
+  testPassword2Present: boolean;
 }
 
 export function getRobokassaConfig(): (RobokassaConfig & { debug?: RobokassaConfigDebug }) | null {
@@ -48,15 +87,59 @@ export function getRobokassaConfig(): (RobokassaConfig & { debug?: RobokassaConf
   const merchantLoginRaw = process.env.ROBOKASSA_MERCHANT_LOGIN;
   const password1Raw = process.env.ROBOKASSA_PASSWORD1;
   const password2Raw = process.env.ROBOKASSA_PASSWORD2;
+  const testPassword1Raw = process.env.ROBOKASSA_TEST_PASSWORD1;
+  const testPassword2Raw = process.env.ROBOKASSA_TEST_PASSWORD2;
   
   // Always trim secrets to eliminate trailing spaces/newlines
   const merchantLogin = merchantLoginRaw?.trim();
-  const password1 = password1Raw?.trim();
-  const password2 = password2Raw?.trim();
+  const password1Prod = password1Raw?.trim();
+  const password2Prod = password2Raw?.trim();
+  const password1Test = testPassword1Raw?.trim();
+  const password2Test = testPassword2Raw?.trim();
   
-  // Robust boolean parsing: accept "true"/"false", "1"/"0", true/false
+  // Robust boolean parsing with parseBoolEnv (handles leading "=" and various formats)
   const testModeRaw = process.env.ROBOKASSA_TEST_MODE;
-  const testMode = parseBooleanEnv(testModeRaw, false);
+  const testMode = parseBoolEnv(testModeRaw, false);
+  
+  // Select passwords based on mode
+  // If testMode=true, use test passwords; if testMode=false, use prod passwords
+  // CRITICAL: If testMode=true but test passwords are missing, throw error (do not silently fall back)
+  let password1: string | undefined;
+  let password2: string | undefined;
+  let password1SourceUsed: string;
+  let password2SourceUsed: string;
+  
+  if (testMode) {
+    // Test mode: require test passwords
+    if (!password1Test || !password2Test) {
+      const missing = [
+        !password1Test ? "ROBOKASSA_TEST_PASSWORD1" : null,
+        !password2Test ? "ROBOKASSA_TEST_PASSWORD2" : null,
+      ].filter(Boolean);
+      
+      console.error(JSON.stringify({
+        event: "robokassa_config_error",
+        error: "TEST_MODE_REQUIRES_TEST_PASSWORDS",
+        testMode: true,
+        testModeRaw,
+        missingTestPasswords: missing,
+        message: "ROBOKASSA_TEST_MODE=true but test passwords are missing. Set ROBOKASSA_TEST_PASSWORD1 and ROBOKASSA_TEST_PASSWORD2 in Robokassa LK test payment settings.",
+      }));
+      
+      return null;
+    }
+    
+    password1 = password1Test;
+    password2 = password2Test;
+    password1SourceUsed = "ROBOKASSA_TEST_PASSWORD1";
+    password2SourceUsed = "ROBOKASSA_TEST_PASSWORD2";
+  } else {
+    // Production mode: use production passwords
+    password1 = password1Prod;
+    password2 = password2Prod;
+    password1SourceUsed = "ROBOKASSA_PASSWORD1";
+    password2SourceUsed = "ROBOKASSA_PASSWORD2";
+  }
   
   // Parse signature algorithm: "md5" | "sha256", default to "md5"
   // Support ROBOKASSA_SIGNATURE_ALGO (primary) and ROBOKASSA_HASH_ALGO for compatibility
@@ -72,14 +155,21 @@ export function getRobokassaConfig(): (RobokassaConfig & { debug?: RobokassaConf
   // Build debug info (do not expose secrets, only metadata)
   const debug: RobokassaConfigDebug = {
     merchantLoginSourceUsed: merchantLoginRaw ? "ROBOKASSA_MERCHANT_LOGIN" : "MISSING",
-    password1SourceUsed: password1Raw ? "ROBOKASSA_PASSWORD1" : "MISSING",
-    password1Length: password1Raw?.length || 0,
-    password1TrimmedChanged: password1Raw && password1 ? password1Raw.length !== password1.length : false,
-    password2SourceUsed: password2Raw ? "ROBOKASSA_PASSWORD2" : "MISSING",
-    password2Length: password2Raw?.length || 0,
-    password2TrimmedChanged: password2Raw && password2 ? password2Raw.length !== password2.length : false,
+    password1SourceUsed: password1SourceUsed, // Which env var was used (name only)
+    password1Length: password1?.length || 0,
+    password1TrimmedChanged: testMode 
+      ? (testPassword1Raw && password1 ? testPassword1Raw.length !== password1.length : false)
+      : (password1Raw && password1 ? password1Raw.length !== password1.length : false),
+    password2SourceUsed: password2SourceUsed, // Which env var was used (name only)
+    password2Length: password2?.length || 0,
+    password2TrimmedChanged: testMode
+      ? (testPassword2Raw && password2 ? testPassword2Raw.length !== password2.length : false)
+      : (password2Raw && password2 ? password2Raw.length !== password2.length : false),
     testModeRaw,
     signatureAlgoRaw,
+    mode: testMode ? "test" : "prod",
+    testPassword1Present: !!password1Test,
+    testPassword2Present: !!password2Test,
   };
   
   // Log configuration once on server startup (server-side only)
@@ -93,6 +183,7 @@ export function getRobokassaConfig(): (RobokassaConfig & { debug?: RobokassaConf
     console.log(JSON.stringify({
       event: "robokassa_config_loaded",
       nodeEnv,
+      mode: testMode ? "test" : "prod",
       testMode,
       testModeRaw,
       signatureAlgorithm,
@@ -100,49 +191,54 @@ export function getRobokassaConfig(): (RobokassaConfig & { debug?: RobokassaConf
       merchantLogin: merchantLogin || "MISSING",
       merchantLoginSourceUsed: debug.merchantLoginSourceUsed,
       hasPassword1,
-      password1SourceUsed: debug.password1SourceUsed,
+      password1SourceUsed: debug.password1SourceUsed, // Which env var was used (name only)
       password1Length: debug.password1Length,
       password1TrimmedChanged: debug.password1TrimmedChanged,
       password1Masked,
       hasPassword2,
-      password2SourceUsed: debug.password2SourceUsed,
+      password2SourceUsed: debug.password2SourceUsed, // Which env var was used (name only)
       password2Length: debug.password2Length,
       password2TrimmedChanged: debug.password2TrimmedChanged,
       password2Masked,
+      testPassword1Present: debug.testPassword1Present,
+      testPassword2Present: debug.testPassword2Present,
       timestamp: new Date().toISOString(),
     }));
     configLogged = true;
   }
 
-  // Use only ROBOKASSA_* env vars (no fallback to ROBO_*)
-  if (merchantLogin && password1 && password2) {
-    return {
-      merchantLogin,
-      password1,
-      password2,
-      testMode,
-      signatureAlgorithm,
-      debug,
-      baseUrl: testMode
-        ? "https://auth.robokassa.ru/Merchant/Index.aspx"
-        : "https://auth.robokassa.ru/Merchant/Index.aspx",
-    };
-  }
-
-  // Log warning if config is missing
-  if (!configLogged && typeof process !== "undefined" && process.env) {
-    console.warn(JSON.stringify({
-      event: "robokassa_config_missing",
-      missing: [
+  // Validate required config
+  if (!merchantLogin || !password1 || !password2) {
+    // Log warning if config is missing
+    if (!configLogged && typeof process !== "undefined" && process.env) {
+      const missing = [
         !merchantLogin ? "ROBOKASSA_MERCHANT_LOGIN" : null,
-        !password1 ? "ROBOKASSA_PASSWORD1" : null,
-        !password2 ? "ROBOKASSA_PASSWORD2" : null,
-      ].filter(Boolean),
-      debug,
-    }));
+        !password1 ? (testMode ? "ROBOKASSA_TEST_PASSWORD1" : "ROBOKASSA_PASSWORD1") : null,
+        !password2 ? (testMode ? "ROBOKASSA_TEST_PASSWORD2" : "ROBOKASSA_PASSWORD2") : null,
+      ].filter(Boolean);
+      
+      console.warn(JSON.stringify({
+        event: "robokassa_config_missing",
+        mode: testMode ? "test" : "prod",
+        testMode,
+        missing,
+        debug,
+      }));
+    }
+    
+    return null;
   }
 
-  return null;
+  // Return config with selected passwords
+  return {
+    merchantLogin,
+    password1, // Selected based on mode (test or prod)
+    password2, // Selected based on mode (test or prod)
+    testMode,
+    signatureAlgorithm,
+    debug,
+    baseUrl: "https://auth.robokassa.ru/Merchant/Index.aspx", // Same URL for both test and prod
+  };
 }
 
 /**
@@ -192,10 +288,10 @@ function buildSignatureString(
 
 /**
  * Generate hash for Robokassa signature (MD5 or SHA256)
- * Returns lowercase hex (Robokassa typically expects lowercase, but we'll use what's configured)
+ * Returns uppercase hex for consistency (Robokassa accepts case-insensitive, but uppercase avoids confusion)
  */
 export function generateSignatureHash(input: string, algorithm: "md5" | "sha256"): string {
-  return crypto.createHash(algorithm).update(input, "utf8").digest("hex").toLowerCase();
+  return crypto.createHash(algorithm).update(input, "utf8").digest("hex").toUpperCase();
 }
 
 /**
@@ -525,13 +621,15 @@ export function buildRobokassaPaymentUrl(
     },
   };
 
-  // Always log to server console (structured JSON)
+  // Server-side debug logging (always log, but include more details if DEBUG_PAYMENTS is enabled)
+  const debugPayments = parseBoolEnv(process.env.DEBUG_PAYMENTS, false);
   if (requestId) {
-    console.log(JSON.stringify({
+    const logData: any = {
       requestId,
       type: "robokassa_payment_url_generated",
       userId,
       env: process.env.NODE_ENV,
+      mode: config.testMode ? "test" : "prod",
       merchantLogin: config.merchantLogin,
       outSumRaw: outSum,
       outSumFormatted: formattedOutSum,
@@ -540,14 +638,34 @@ export function buildRobokassaPaymentUrl(
       descriptionRaw: descriptionRaw,
       descriptionEncoded: descriptionEncodedOnce,
       isTest: config.testMode,
+      isTestSet: config.testMode ? "1" : "0",
       signatureAlgorithm: config.signatureAlgorithm,
+      password1SourceUsed: config.debug?.password1SourceUsed || "unknown", // Which env var was used (name only)
       shpParams,
-      signatureBaseString: signatureBaseStringForLog,
+      signatureBaseString: signatureBaseStringForLog, // Password already masked as <PASSWORD1>
       signatureValueLength: signature.length,
       signatureMasked: maskValue(signature, 6, 4),
       finalPaymentUrl: finalUrl,
       sanityChecklist,
-    }));
+    };
+    
+    // Add detailed debug info if DEBUG_PAYMENTS is enabled
+    if (debugPayments) {
+      logData.debugDetails = {
+        signatureBaseStringFull: signatureBaseStringForLog, // Already masked
+        signatureValue: maskValue(signature, 6, 4), // Masked
+        finalPaymentUrlMasked: maskUrlSignature(finalUrl),
+        sortedShpKeys,
+        shpParamsCount: sortedShpKeys.length,
+      };
+      
+      // Preflight diagnostic: warn about error 29 if in prod mode
+      if (!config.testMode) {
+        logData.warning = "If Robokassa shows error 29 in PROD mode, the shop is likely not activated or invoice payments are disabled. Switch to TEST mode (ROBOKASSA_TEST_MODE=true) and set TEST passwords in Robokassa LK.";
+      }
+    }
+    
+    console.log(JSON.stringify(logData));
   }
 
   return { url: finalUrl, signature, debug: debugInfo };
@@ -555,26 +673,39 @@ export function buildRobokassaPaymentUrl(
 
 /**
  * Verify Robokassa ResultURL signature
- * Uses Password2 for result verification
+ * Uses Password2 for result verification (test or prod based on current mode)
+ * 
+ * CRITICAL: Signature format for ResultURL is:
+ * OutSum:InvId:Password2[:Shp_key1=value1:Shp_key2=value2]
+ * 
+ * Note: ResultURL signature does NOT include MerchantLogin (unlike payment URL signature)
  */
 export function verifyRobokassaResultSignature(params: {
   outSum: string;
   invId: string;
   signature: string;
   shpParams: Record<string, string>;
+  requestId?: string; // Optional: for debug logging
 }): boolean {
   const config = getRobokassaConfig();
   if (!config) {
+    console.error(`[robokassa-result:${params.requestId || "unknown"}] Config missing for signature verification`);
     return false;
   }
 
-  const { outSum, invId, signature: receivedSignature, shpParams } = params;
+  const { outSum, invId, signature: receivedSignature, shpParams, requestId } = params;
 
-  // Format outSum
-  const formattedOutSum = Number(outSum).toFixed(2);
+  // Format outSum (must be stable: "1.00", dot decimal, 2 digits)
+  const outSumNum = Number(outSum);
+  if (!Number.isFinite(outSumNum) || outSumNum <= 0) {
+    console.error(`[robokassa-result:${requestId || "unknown"}] Invalid OutSum: ${outSum}`);
+    return false;
+  }
+  const formattedOutSum = outSumNum.toFixed(2);
 
   // Build signature string for result verification
-  // Format: OutSum:InvId:Password2:Shp_key1=value1:Shp_key2=value2
+  // Format: OutSum:InvId:Password2[:Shp_key1=value1:Shp_key2=value2]
+  // CRITICAL: Shp params must be sorted lexicographically by key name
   const sortedShpKeys = Object.keys(shpParams).sort();
   const shpString = sortedShpKeys.map((key) => `${key}=${shpParams[key]}`).join(":");
 
@@ -585,15 +716,35 @@ export function verifyRobokassaResultSignature(params: {
     signatureString = `${formattedOutSum}:${invId}:${config.password2}`;
   }
 
-  // Use SHA256 for result verification (most Robokassa accounts use SHA256 now)
-  // If your account uses MD5, you may need to adjust this
-  // For now, default to SHA256 but could be made configurable
-  const robokassaConfig = getRobokassaConfig();
-  const algorithm = robokassaConfig?.signatureAlgorithm || "sha256";
+  // Use configured algorithm (same as payment URL)
+  const algorithm = config.signatureAlgorithm;
   const expectedSignature = generateSignatureHash(signatureString, algorithm);
 
-  // Compare signatures (both should be uppercase per Robokassa spec)
-  return receivedSignature.toUpperCase() === expectedSignature.toUpperCase();
+  // Compare signatures (case-insensitive per Robokassa spec, but we use uppercase consistently)
+  const isValid = receivedSignature.toUpperCase() === expectedSignature.toUpperCase();
+
+  // Server-side debug logging (only if DEBUG_PAYMENTS is enabled)
+  const debugPayments = parseBoolEnv(process.env.DEBUG_PAYMENTS, false);
+  if (debugPayments && requestId) {
+    console.log(JSON.stringify({
+      event: "robokassa_result_signature_verification",
+      requestId,
+      mode: config.testMode ? "test" : "prod",
+      password2SourceUsed: config.debug?.password2SourceUsed || "unknown",
+      outSum,
+      formattedOutSum,
+      invId,
+      shpParams,
+      sortedShpKeys,
+      signatureBaseString: signatureString.replace(config.password2, "<PASSWORD2>"), // Mask password
+      receivedSignatureMasked: maskValue(receivedSignature, 6, 4),
+      expectedSignatureMasked: maskValue(expectedSignature, 6, 4),
+      algorithm,
+      isValid,
+    }));
+  }
+
+  return isValid;
 }
 
 /**
@@ -645,3 +796,51 @@ export function computeSignatureTestVector(
     algorithm,
   };
 }
+
+/**
+ * REQUIRED ENVIRONMENT VARIABLES FOR VERCEL:
+ * 
+ * Required (always):
+ * - ROBOKASSA_MERCHANT_LOGIN: Your Robokassa merchant login (e.g., "steopone")
+ * 
+ * Required for PRODUCTION mode (ROBOKASSA_TEST_MODE=false or not set):
+ * - ROBOKASSA_PASSWORD1: Production password #1 from Robokassa LK (Settings → Technical settings)
+ * - ROBOKASSA_PASSWORD2: Production password #2 from Robokassa LK (Settings → Technical settings)
+ * 
+ * Required for TEST mode (ROBOKASSA_TEST_MODE=true):
+ * - ROBOKASSA_TEST_PASSWORD1: Test password #1 from Robokassa LK (Settings → Test payment settings)
+ * - ROBOKASSA_TEST_PASSWORD2: Test password #2 from Robokassa LK (Settings → Test payment settings)
+ * 
+ * Optional:
+ * - ROBOKASSA_TEST_MODE: Set to "true" or "1" for test mode, "false" or "0" for production (default: false)
+ *   Note: Vercel UI may add leading "=" (e.g., "=false") - this is handled automatically
+ * - ROBOKASSA_SIGNATURE_ALGO: "md5" or "sha256" (default: "md5")
+ * - DEBUG_PAYMENTS: Set to "true" or "1" to enable detailed server-side debug logging (default: false)
+ * - DEBUG_TOKEN: Optional token for secure debug access via x-debug-token header
+ * 
+ * IMPORTANT NOTES:
+ * 1. Error 29 ("Payment of invoices is unavailable") usually means:
+ *    - Shop is not activated in Robokassa LK
+ *    - Invoice payments are disabled for the merchant account
+ *    - Production payments are not allowed yet
+ *    Solution: Use TEST mode (ROBOKASSA_TEST_MODE=true) with test passwords until shop is activated
+ * 
+ * 2. Test passwords are SEPARATE from production passwords:
+ *    - Get test passwords from: Robokassa LK → Settings → Test payment settings
+ *    - Get prod passwords from: Robokassa LK → Settings → Technical settings
+ * 
+ * 3. When switching from TEST to PROD:
+ *    - Set ROBOKASSA_TEST_MODE=false (or remove it)
+ *    - Ensure ROBOKASSA_PASSWORD1 and ROBOKASSA_PASSWORD2 are set
+ *    - Ensure shop is activated in Robokassa LK
+ * 
+ * 4. Signature format (payment URL):
+ *    MerchantLogin:OutSum:InvId:Password1[:Shp_key1=value1:Shp_key2=value2]
+ *    - Shp_ params must be sorted lexicographically by key name
+ *    - OutSum must be formatted as "1.00" (dot decimal, 2 digits)
+ *    - InvId must be integer within int32 range (1..2147483647)
+ * 
+ * 5. Signature format (result URL):
+ *    OutSum:InvId:Password2[:Shp_key1=value1:Shp_key2=value2]
+ *    - Note: ResultURL signature does NOT include MerchantLogin
+ */

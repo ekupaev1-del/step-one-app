@@ -56,12 +56,13 @@ export async function POST(req: Request) {
     // Parse Shp_ parameters
     const shpParams = parseShpParams(params);
 
-    // Verify signature
+    // Verify signature (pass requestId for debug logging)
     const isValid = verifyRobokassaResultSignature({
       outSum,
       invId,
       signature,
       shpParams,
+      requestId,
     });
 
     if (!isValid) {

@@ -19,7 +19,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createServerSupabaseClient } from "@/lib/supabaseAdmin";
 import { resolveUserIdFromRequest } from "@/lib/resolveUserIdFromRequest";
-import { buildRobokassaPaymentUrl, getRobokassaConfig } from "@/lib/robokassa";
+import { buildRobokassaPaymentUrl, getRobokassaConfig, parseBoolEnv } from "@/lib/robokassa";
 
 export const dynamic = "force-dynamic";
 
@@ -41,10 +41,10 @@ function maskValue(value: string, first: number = 6, last: number = 4): string {
 }
 
 // Helper to parse boolean from env (robust)
+// Use parseBoolEnv from robokassa lib for consistency
+// Keep backward compatibility alias
 function parseBooleanEnv(value: string | undefined, defaultValue: boolean = false): boolean {
-  if (!value) return defaultValue;
-  const normalized = value.toLowerCase().trim();
-  return normalized === "true" || normalized === "1";
+  return parseBoolEnv(value, defaultValue);
 }
 
 // Helper to check if debug should be included (safe for production)
@@ -179,14 +179,20 @@ export async function POST(req: NextRequest) {
     // Check Robokassa config
     const config = getRobokassaConfig();
     const debugWarnings: string[] = [];
+    const diagnostics: string[] = [];
     
     if (!config) {
       logEvent("create-payment:error", { 
         error: "ROBOKASSA_CONFIG_MISSING",
         missingVars: [
           !process.env.ROBOKASSA_MERCHANT_LOGIN ? "ROBOKASSA_MERCHANT_LOGIN" : null,
-          !process.env.ROBOKASSA_PASSWORD1 ? "ROBOKASSA_PASSWORD1" : null,
-          !process.env.ROBOKASSA_PASSWORD2 ? "ROBOKASSA_PASSWORD2" : null,
+          !process.env.ROBOKASSA_TEST_MODE ? "ROBOKASSA_TEST_MODE (check if test/prod passwords are set)" : null,
+          parseBoolEnv(process.env.ROBOKASSA_TEST_MODE, false) 
+            ? (!process.env.ROBOKASSA_TEST_PASSWORD1 ? "ROBOKASSA_TEST_PASSWORD1" : null)
+            : (!process.env.ROBOKASSA_PASSWORD1 ? "ROBOKASSA_PASSWORD1" : null),
+          parseBoolEnv(process.env.ROBOKASSA_TEST_MODE, false)
+            ? (!process.env.ROBOKASSA_TEST_PASSWORD2 ? "ROBOKASSA_TEST_PASSWORD2" : null)
+            : (!process.env.ROBOKASSA_PASSWORD2 ? "ROBOKASSA_PASSWORD2" : null),
         ].filter(Boolean),
       }, requestId);
       
@@ -198,16 +204,45 @@ export async function POST(req: NextRequest) {
       };
 
       if (shouldDebug) {
+        const testMode = parseBoolEnv(process.env.ROBOKASSA_TEST_MODE, false);
         response.debug = {
           missingEnvVars: [
             !process.env.ROBOKASSA_MERCHANT_LOGIN ? "ROBOKASSA_MERCHANT_LOGIN" : null,
-            !process.env.ROBOKASSA_PASSWORD1 ? "ROBOKASSA_PASSWORD1" : null,
-            !process.env.ROBOKASSA_PASSWORD2 ? "ROBOKASSA_PASSWORD2" : null,
+            testMode 
+              ? (!process.env.ROBOKASSA_TEST_PASSWORD1 ? "ROBOKASSA_TEST_PASSWORD1" : null)
+              : (!process.env.ROBOKASSA_PASSWORD1 ? "ROBOKASSA_PASSWORD1" : null),
+            testMode
+              ? (!process.env.ROBOKASSA_TEST_PASSWORD2 ? "ROBOKASSA_TEST_PASSWORD2" : null)
+              : (!process.env.ROBOKASSA_PASSWORD2 ? "ROBOKASSA_PASSWORD2" : null),
           ].filter(Boolean),
+          testMode,
+          diagnostic: "If testMode=true, you need ROBOKASSA_TEST_PASSWORD1 and ROBOKASSA_TEST_PASSWORD2. If testMode=false, you need ROBOKASSA_PASSWORD1 and ROBOKASSA_PASSWORD2.",
         };
       }
 
       return NextResponse.json(response, { status: 500 });
+    }
+
+    // Preflight diagnostic: check config completeness and warn about error 29
+    const debugPayments = parseBoolEnv(process.env.DEBUG_PAYMENTS, false);
+    if (shouldDebug || debugPayments) {
+      // Check if in prod mode
+      if (!config.testMode) {
+        diagnostics.push("PROD mode: If Robokassa shows error 29, the shop is likely not activated or invoice payments are disabled.");
+        diagnostics.push("Solution: Switch to TEST mode (ROBOKASSA_TEST_MODE=true) and set ROBOKASSA_TEST_PASSWORD1 and ROBOKASSA_TEST_PASSWORD2 in Robokassa LK test payment settings.");
+      } else {
+        diagnostics.push("TEST mode: Using test passwords. Payments will work in test mode.");
+      }
+      
+      // Check config completeness
+      if (config.debug) {
+        if (!config.debug.testPassword1Present && config.testMode) {
+          diagnostics.push("WARNING: TEST mode enabled but ROBOKASSA_TEST_PASSWORD1 is missing!");
+        }
+        if (!config.debug.testPassword2Present && config.testMode) {
+          diagnostics.push("WARNING: TEST mode enabled but ROBOKASSA_TEST_PASSWORD2 is missing!");
+        }
+      }
     }
 
     // Test/prod mismatch detection
@@ -650,6 +685,7 @@ export async function POST(req: NextRequest) {
         bodyHasId: body?.id !== undefined,
         headersSubset,
         debugWarnings: debugWarnings.length > 0 ? debugWarnings : undefined,
+        diagnostics: diagnostics.length > 0 ? diagnostics : undefined,
       };
     }
 
