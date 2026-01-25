@@ -12,6 +12,9 @@ import { startInactivityNotificationScheduler } from "./services/inactivityNotif
 // Инициализация бота
 const bot = new Telegraf(env.telegramBotToken);
 
+// DEBUG MODE: Enable detailed logging when DEBUG_FOOD=true
+const DEBUG_FOOD = process.env.DEBUG_FOOD === 'true' || process.env.DEBUG_FOOD === '1';
+
 // Миниап URL
 // ВАЖНО: Используем ТОЛЬКО production домен для стабильности
 // Preview деплои создают разные домены каждый раз - это ломает web_app URLs
@@ -1044,24 +1047,44 @@ const waitingForWaterInput = new Set<number>();
 const waitingForReminderTime = new Map<number, { type: ReminderType }>();
 
 bot.on("text", async (ctx) => {
+  // ============================================================================
+  // CRITICAL: Log webhook execution at the VERY START
+  // ============================================================================
+  const webhookTimestamp = new Date().toISOString();
+  console.log('[TG_WEBHOOK_HIT]', webhookTimestamp, 'text message received');
+  
   try {
     const telegram_id = ctx.from?.id;
+    const text = ctx.message?.text;
+    
+    // ============================================================================
+    // LOG: Incoming Telegram payload
+    // ============================================================================
+    console.log('[TG_INCOMING_PAYLOAD]', {
+      timestamp: webhookTimestamp,
+      telegram_id: telegram_id || 'MISSING',
+      text: text ? text.substring(0, 200) : 'MISSING',
+      message_id: ctx.message?.message_id,
+      chat_id: ctx.chat?.id,
+      from_username: ctx.from?.username,
+    });
+    
     if (!telegram_id) {
       return ctx.reply("Ошибка: не удалось определить ваш Telegram ID");
     }
 
-    const text = ctx.message.text.trim();
+    const textTrimmed = text?.trim() || '';
 
     // Игнорируем команды
-    if (text.startsWith("/")) {
+    if (textTrimmed.startsWith("/")) {
       return;
     }
 
     // Обработка воды (ПЕРЕД анализом еды через OpenAI)
     // ВАЖНО: При любом упоминании воды показываем кнопки, НЕ создаем запись еды
     
-    if (isWaterRequest(text)) {
-      console.log(`[bot] Обнаружено упоминание воды в тексте: "${text}" от ${telegram_id}`);
+    if (isWaterRequest(textTrimmed)) {
+      console.log(`[bot] Обнаружено упоминание воды в тексте: "${textTrimmed}" от ${telegram_id}`);
       
       // Показываем кнопки с вариантами
       return ctx.reply(
@@ -1422,14 +1445,35 @@ bot.on("text", async (ctx) => {
     // Generate requestId for tracing
     const requestId = `food-save-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
     
-    console.log(`[bot:${requestId}] Текстовое сообщение от ${telegram_id}: ${text}`);
+    // ============================================================================
+    // LOG: Request start with full context
+    // ============================================================================
+    console.log(`[FOOD_SAVE_START:${requestId}]`, {
+      telegram_id,
+      text: text?.substring(0, 200),
+      timestamp: new Date().toISOString(),
+    });
+    
+    if (DEBUG_FOOD) {
+      console.log(`[DEBUG_FOOD:${requestId}] Full text:`, text);
+      console.log(`[DEBUG_FOOD:${requestId}] Full ctx.message:`, JSON.stringify(ctx.message, null, 2));
+    }
 
     // Показываем, что обрабатываем
     const processingMsg = await ctx.reply("🔍 Анализирую еду...");
 
-    // Анализируем через OpenAI
-    const analysis = await analyzeFoodWithOpenAI(text);
+    // ============================================================================
+    // STEP 1: Analyze food with OpenAI
+    // ============================================================================
+    console.log(`[FOOD_ANALYSIS_START:${requestId}] Calling OpenAI...`);
+    const analysis = await analyzeFoodWithOpenAI(textTrimmed);
+    
+    if (DEBUG_FOOD) {
+      console.log(`[DEBUG_FOOD:${requestId}] OpenAI analysis result:`, JSON.stringify(analysis, null, 2));
+    }
+    
     if (!analysis) {
+      console.error(`[FOOD_ANALYSIS_FAILED:${requestId}] OpenAI returned null/undefined`);
       await ctx.telegram.editMessageText(
         ctx.chat!.id,
         processingMsg.message_id,
@@ -1438,6 +1482,8 @@ bot.on("text", async (ctx) => {
       );
       return;
     }
+    
+    console.log(`[FOOD_ANALYSIS_SUCCESS:${requestId}] Analysis completed`);
 
     // Проверяем, про еду ли идет речь
     if ('isNotFood' in analysis && analysis.isNotFood) {
@@ -1452,16 +1498,50 @@ bot.on("text", async (ctx) => {
 
     // Type guard: после проверки analysis гарантированно MealAnalysis
     const mealAnalysis = analysis as MealAnalysis;
+    
+    if (DEBUG_FOOD) {
+      console.log(`[DEBUG_FOOD:${requestId}] Parsed food:`, {
+        description: mealAnalysis.description,
+        calories: mealAnalysis.calories,
+        protein: mealAnalysis.protein,
+        fat: mealAnalysis.fat,
+        carbs: mealAnalysis.carbs,
+      });
+    }
 
+    // ============================================================================
+    // STEP 2: Resolve userId from users table
+    // ============================================================================
+    console.log(`[USER_RESOLVE_START:${requestId}] Looking up user by telegram_id=${telegram_id}`);
+    
     // Убеждаемся, что пользователь существует в таблице users
-    const { data: existingUser } = await supabase
+    const { data: existingUser, error: existingUserError } = await supabase
       .from("users")
       .select("id")
       .eq("telegram_id", telegram_id)
       .maybeSingle();
+    
+    if (existingUserError) {
+      console.error(`[USER_RESOLVE_ERROR:${requestId}]`, {
+        error_code: existingUserError.code,
+        error_message: existingUserError.message,
+        error_details: existingUserError.details,
+        error_hint: existingUserError.hint,
+      });
+    }
+    
+    if (DEBUG_FOOD) {
+      console.log(`[DEBUG_FOOD:${requestId}] Existing user check:`, {
+        found: !!existingUser,
+        user_id: existingUser?.id,
+        error: existingUserError,
+      });
+    }
 
     if (!existingUser) {
       // Создаём пользователя, если его нет
+      console.log(`[USER_CREATE_START:${requestId}] Creating new user for telegram_id=${telegram_id}`);
+      
       const { data: newUser, error: createError } = await supabase
         .from("users")
         .upsert({ telegram_id }, { onConflict: "telegram_id", ignoreDuplicates: false })
@@ -1469,7 +1549,13 @@ bot.on("text", async (ctx) => {
         .single();
 
       if (createError || !newUser) {
-        console.error("[bot] Ошибка создания пользователя:", createError);
+        console.error(`[USER_CREATE_ERROR:${requestId}]`, {
+          error_code: createError?.code || 'UNKNOWN',
+          error_message: createError?.message || 'Unknown error',
+          error_details: createError?.details || null,
+          error_hint: createError?.hint || null,
+          telegram_id,
+        });
         await ctx.telegram.editMessageText(
           ctx.chat!.id,
           processingMsg.message_id,
@@ -1478,19 +1564,28 @@ bot.on("text", async (ctx) => {
         );
         return;
       }
+      
+      console.log(`[USER_CREATE_SUCCESS:${requestId}] Created user with id=${newUser.id}`);
     }
 
-    // Get user ID from users table (not telegram_id directly)
+    // ============================================================================
+    // STEP 3: Get user ID from users table (not telegram_id directly)
     // CRITICAL: diary table expects user_id to be the id from users table, not telegram_id
+    // ============================================================================
+    console.log(`[USER_FETCH_START:${requestId}] Fetching user_id for telegram_id=${telegram_id}`);
+    
     const { data: userData, error: userError } = await supabase
       .from("users")
       .select("id")
       .eq("telegram_id", telegram_id)
       .maybeSingle();
 
-    if (userError || !userData) {
-      console.error("[bot] Ошибка получения user_id для сохранения еды:", {
-        error: userError,
+    if (userError) {
+      console.error(`[USER_FETCH_ERROR:${requestId}]`, {
+        error_code: userError.code || 'UNKNOWN',
+        error_message: userError.message || 'Unknown error',
+        error_details: userError.details || null,
+        error_hint: userError.hint || null,
         telegram_id,
       });
       await ctx.telegram.editMessageText(
@@ -1501,9 +1596,27 @@ bot.on("text", async (ctx) => {
       );
       return;
     }
+    
+    if (!userData) {
+      console.error(`[USER_FETCH_NOT_FOUND:${requestId}] User not found for telegram_id=${telegram_id}`);
+      await ctx.telegram.editMessageText(
+        ctx.chat!.id,
+        processingMsg.message_id,
+        undefined,
+        "❌ Ошибка: пользователь не найден. Используйте /start для регистрации."
+      );
+      return;
+    }
+    
+    console.log(`[USER_FETCH_SUCCESS:${requestId}] Resolved user_id=${userData.id} for telegram_id=${telegram_id}`);
+    
+    if (DEBUG_FOOD) {
+      console.log(`[DEBUG_FOOD:${requestId}] User data:`, userData);
+    }
 
-    // Сохраняем в базу используя user.id (не telegram_id)
-    // Store additional metadata for debugging
+    // ============================================================================
+    // STEP 4: Prepare diary entry payload
+    // ============================================================================
     const diaryEntry = {
       user_id: userData.id, // Use user.id from users table, not telegram_id
       telegram_user_id: telegram_id, // Also store telegram_id for direct lookup
@@ -1517,16 +1630,40 @@ bot.on("text", async (ctx) => {
       chat_id: ctx.chat?.id || null,
       parsed_json: mealAnalysis as any, // Store full analysis result for debugging
     };
+    
+    console.log(`[FOOD_PAYLOAD:${requestId}]`, JSON.stringify(diaryEntry, null, 2));
+    
+    if (DEBUG_FOOD) {
+      console.log(`[DEBUG_FOOD:${requestId}] Full diary entry:`, diaryEntry);
+    }
 
-    const { error: insertError } = await supabase.from("diary").insert(diaryEntry);
+    // ============================================================================
+    // STEP 5: Insert into Supabase diary table
+    // ============================================================================
+    console.log(`[DB_INSERT_START:${requestId}] Inserting into diary table...`);
+    
+    const { data: insertData, error: insertError } = await supabase
+      .from("diary")
+      .insert(diaryEntry)
+      .select("id")
+      .single();
+    
+    if (DEBUG_FOOD) {
+      console.log(`[DEBUG_FOOD:${requestId}] Insert result:`, {
+        data: insertData,
+        error: insertError,
+      });
+    }
 
     if (insertError) {
-      // Log full error details
+      // ============================================================================
+      // ERROR: Supabase insert failed - LOG EVERYTHING
+      // ============================================================================
       const errorContext = {
         requestId,
         telegram_user_id: telegram_id,
         user_id: userData.id,
-        input_text: text.substring(0, 100), // First 100 chars only
+        input_text: text?.substring(0, 100) || 'MISSING',
         table_name: 'diary',
         operation: 'insert',
         supabase_error: {
@@ -1538,21 +1675,26 @@ bot.on("text", async (ctx) => {
         payload_preview: {
           user_id: diaryEntry.user_id,
           telegram_user_id: diaryEntry.telegram_user_id,
-          meal_text_length: diaryEntry.meal_text.length,
+          meal_text_length: diaryEntry.meal_text?.length || 0,
           has_calories: diaryEntry.calories !== undefined,
         },
         timestamp: new Date().toISOString(),
       };
 
-      // Log to console (structured)
-      console.error(`[bot:${requestId}] Ошибка сохранения в diary:`, JSON.stringify(errorContext, null, 2));
+      // CRITICAL: Log full error to console (this goes to Vercel logs)
+      console.error(`[FOOD_SAVE_ERROR:${requestId}]`, JSON.stringify(errorContext, null, 2));
+      console.error(`[FOOD_SAVE_ERROR:${requestId}] Supabase error code:`, insertError.code);
+      console.error(`[FOOD_SAVE_ERROR:${requestId}] Supabase error message:`, insertError.message);
+      console.error(`[FOOD_SAVE_ERROR:${requestId}] Supabase error details:`, insertError.details);
+      console.error(`[FOOD_SAVE_ERROR:${requestId}] Supabase error hint:`, insertError.hint);
+      console.error(`[FOOD_SAVE_ERROR:${requestId}] Full insertError object:`, JSON.stringify(insertError, null, 2));
 
       // Log to app_errors table (async, don't wait)
       supabase.from("app_errors").insert({
         request_id: requestId,
         context: errorContext,
       }).catch((logError) => {
-        console.error(`[bot:${requestId}] Failed to log error to app_errors:`, logError);
+        console.error(`[FOOD_SAVE_ERROR:${requestId}] Failed to log error to app_errors:`, logError);
       });
 
       // Generate user-friendly error message with error code
@@ -1568,12 +1710,20 @@ bot.on("text", async (ctx) => {
       return;
     }
 
-    // Log successful save
-    console.log(`[bot:${requestId}] ✅ Успешно сохранено в diary:`, {
+    // ============================================================================
+    // SUCCESS: Log successful save
+    // ============================================================================
+    console.log(`[FOOD_SAVE_SUCCESS:${requestId}]`, {
+      inserted_id: insertData?.id,
       user_id: userData.id,
       telegram_user_id: telegram_id,
       meal_text: mealAnalysis.description.substring(0, 50),
+      timestamp: new Date().toISOString(),
     });
+    
+    if (DEBUG_FOOD) {
+      console.log(`[DEBUG_FOOD:${requestId}] Inserted record:`, insertData);
+    }
 
     // Получаем статистику за сегодня
     const todayMeals = await getTodayMeals(telegram_id);
@@ -1590,23 +1740,39 @@ bot.on("text", async (ctx) => {
       response
     );
   } catch (error: any) {
-    console.error("[bot] Ошибка обработки текста:", error);
+    // ============================================================================
+    // CRITICAL: Catch-all error handler - LOG EVERYTHING
+    // ============================================================================
+    const errorId = `error-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
+    
+    console.error(`[FOOD_SAVE_EXCEPTION:${errorId}]`, {
+      error_name: error?.name || 'Unknown',
+      error_message: error?.message || 'Unknown error',
+      error_stack: error?.stack || 'No stack trace',
+      error_response: error?.response || null,
+      telegram_id: ctx.from?.id || 'MISSING',
+      text: ctx.message?.text?.substring(0, 100) || 'MISSING',
+      timestamp: new Date().toISOString(),
+    });
+    
+    // Log full error object
+    console.error(`[FOOD_SAVE_EXCEPTION:${errorId}] Full error object:`, JSON.stringify(error, Object.getOwnPropertyNames(error), 2));
     
     // Если пользователь заблокировал бота - просто логируем, не пытаемся отправить сообщение
     if (error?.response?.error_code === 403 && error?.response?.description?.includes("blocked")) {
-      console.warn(`[bot] Пользователь ${ctx.from?.id} заблокировал бота, пропускаем отправку сообщения`);
+      console.warn(`[FOOD_SAVE_EXCEPTION:${errorId}] User ${ctx.from?.id} blocked bot, skipping message`);
       return;
     }
     
     // Для других ошибок пытаемся отправить сообщение
     try {
-      await ctx.reply("Произошла ошибка при обработке сообщения.");
+      await ctx.reply("Произошла ошибка при обработке сообщения");
     } catch (replyErr: any) {
       // Если и это не получилось (например, пользователь заблокирован) - просто логируем
       if (replyErr?.response?.error_code === 403) {
-        console.warn(`[bot] Не удалось отправить сообщение об ошибке - пользователь заблокирован`);
+        console.warn(`[FOOD_SAVE_EXCEPTION:${errorId}] Failed to send error message - user blocked`);
       } else {
-        console.error("[bot] Ошибка отправки сообщения об ошибке:", replyErr);
+        console.error(`[FOOD_SAVE_EXCEPTION:${errorId}] Error sending error message:`, replyErr);
       }
     }
   }
