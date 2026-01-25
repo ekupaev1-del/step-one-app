@@ -55,6 +55,8 @@ function ProfilePageContent() {
   const [deleting, setDeleting] = useState(false);
   const [needsOnboarding, setNeedsOnboarding] = useState(false);
   const [checkingPrivacy, setCheckingPrivacy] = useState(false);
+  const [subscription, setSubscription] = useState<any>(null);
+  const [subscriptionLoading, setSubscriptionLoading] = useState(false);
 
   // Safe Telegram bootstrap - must be unconditional hook
   useEffect(() => {
@@ -178,6 +180,28 @@ function ProfilePageContent() {
     };
 
     loadProfile();
+  }, [userId]);
+
+  // Load subscription status
+  useEffect(() => {
+    if (!userId) return;
+
+    const loadSubscription = async () => {
+      setSubscriptionLoading(true);
+      try {
+        const response = await fetch(`/api/subscription/status?userId=${userId}`);
+        const data = await response.json();
+        if (response.ok && data.ok) {
+          setSubscription(data);
+        }
+      } catch (err: any) {
+        console.error("[profile] Ошибка загрузки подписки:", err);
+      } finally {
+        setSubscriptionLoading(false);
+      }
+    };
+
+    loadSubscription();
   }, [userId]);
 
   // Если профиль пустой — отправляем на онбординг
@@ -721,6 +745,49 @@ function ProfilePageContent() {
                   <span className="font-medium text-textPrimary">{profile.waterGoalMl} мл</span>
                 </div>
               )}
+            </div>
+          )}
+        </div>
+
+        {/* Подписка */}
+        <div className="bg-white rounded-2xl shadow-soft p-6 mb-4">
+          <h2 className="text-lg font-semibold text-textPrimary mb-4">Подписка</h2>
+          {subscriptionLoading ? (
+            <div className="text-textSecondary text-sm">Загрузка...</div>
+          ) : subscription && subscription.hasSubscription ? (
+            <div className="space-y-3">
+              <div className="flex justify-between items-center py-2 border-b border-gray-100">
+                <span className="text-textSecondary">Статус</span>
+                <span className={`font-medium ${subscription.active ? 'text-green-600' : 'text-gray-600'}`}>
+                  {subscription.active ? 'Активна' : 'Не активна'}
+                </span>
+              </div>
+              {subscription.activeUntil && (
+                <div className="flex justify-between items-center py-2 border-b border-gray-100">
+                  <span className="text-textSecondary">Оплачено до</span>
+                  <span className="font-medium text-textPrimary">{formatDate(subscription.activeUntil)}</span>
+                </div>
+              )}
+              {subscription.nextChargeAt && (
+                <div className="flex justify-between items-center py-2">
+                  <span className="text-textSecondary">Следующее списание</span>
+                  <span className="font-medium text-textPrimary">{formatDate(subscription.nextChargeAt)}</span>
+                </div>
+              )}
+              <div className="pt-3 mt-3 border-t border-gray-100">
+                <p className="text-sm text-textSecondary">
+                  Для отмены напишите — <a href="https://t.me/STEP0NE11" className="text-blue-600 underline">@STEP0NE11</a>
+                </p>
+              </div>
+            </div>
+          ) : (
+            <div className="space-y-2">
+              <div className="text-textSecondary text-sm">
+                Статус подписки: не подтвержден
+              </div>
+              <div className="text-textSecondary text-xs">
+                Если вы оплатили, обновите страницу через 1–2 минуты
+              </div>
             </div>
           )}
         </div>

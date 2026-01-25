@@ -96,13 +96,16 @@ export async function GET(req: NextRequest) {
       return NextResponse.json(response, { status: 500 });
     }
 
-    // Format response
+    // Format response (using new schema fields)
+    // Map current_period_end to activeUntil for backward compatibility
+    const activeUntil = subscription?.current_period_end || subscription?.active_until || null;
+    
     const result: any = {
       ok: true,
       hasSubscription: !!subscription,
       active: subscription?.status === "active" || subscription?.status === "trialing",
       status: subscription?.status || null,
-      activeUntil: subscription?.active_until || null,
+      activeUntil: activeUntil,
       nextChargeAt: subscription?.next_charge_at || null,
       planCode: subscription?.plan_code || null,
       requestId,

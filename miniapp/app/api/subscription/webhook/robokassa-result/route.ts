@@ -4,11 +4,14 @@
  * 
  * Handles Robokassa payment confirmation (server-to-server)
  * Must respond with "OK" + InvId if payment valid
+ * 
+ * CRITICAL: This is the source of truth for payment status.
+ * Success URL is only informational.
  */
 
 import { NextResponse } from "next/server";
 import { createServerSupabaseClient } from "@/lib/supabaseAdmin";
-import { verifyRobokassaResultSignature, parseShpParams } from "@/lib/robokassa";
+import { verifyRobokassaResultSignature, parseShpParams, getRobokassaConfig } from "@/lib/robokassa";
 
 export const dynamic = "force-dynamic";
 
@@ -76,127 +79,160 @@ export async function POST(req: Request) {
 
     const supabase = createServerSupabaseClient();
 
-    // Find invoice record in robokassa_invoices table (new invoices use DB-generated IDs)
-    // InvId is now a small integer (invoice.id), so we can query by id directly
-    const invIdNum = Number(invId);
-    let invoice = null;
-    let payment = null;
+    // Store raw payload for debugging
+    const providerPayload: any = {
+      outSum,
+      invId,
+      signature: signature.substring(0, 10) + "...", // Mask signature in payload
+      shpParams,
+      receivedAt: new Date().toISOString(),
+    };
+
+    // Try to get userId from Shp params or invoice
+    let userId: number | null = null;
     
-    if (Number.isFinite(invIdNum) && invIdNum > 0) {
-      // Try robokassa_invoices first (new invoices)
-      const { data: invoiceData, error: invoiceError } = await supabase
-        .from("robokassa_invoices")
-        .select("*")
-        .eq("id", invIdNum)
-        .maybeSingle();
-      
-      if (invoiceError) {
-        console.error(`[robokassa-result:${requestId}] DB error finding invoice:`, invoiceError);
-      } else if (invoiceData) {
-        invoice = invoiceData;
-      }
-    }
-    
-    // Fallback to payments table (old invoices with text inv_id)
-    if (!invoice) {
-      const { data: paymentData, error: paymentError } = await supabase
-        .from("payments")
-        .select("*")
-        .eq("inv_id", invId)
-        .maybeSingle();
-
-      if (paymentError) {
-        console.error(`[robokassa-result:${requestId}] DB error finding payment:`, paymentError);
-        return new NextResponse("ERROR: Database error", { status: 500 });
-      }
-      
-      if (paymentData) {
-        payment = paymentData;
+    // First, try to get from Shp_userId
+    if (shpParams.userId) {
+      const userIdNum = Number(shpParams.userId);
+      if (Number.isFinite(userIdNum) && userIdNum > 0) {
+        userId = userIdNum;
       }
     }
 
-    if (!invoice && !payment) {
-      console.error(`[robokassa-result:${requestId}] Invoice/Payment not found:`, invId);
-      return new NextResponse("ERROR: Payment not found", { status: 404 });
+    // If not found, try to find from robokassa_invoices table
+    if (!userId) {
+      const invIdNum = Number(invId);
+      if (Number.isFinite(invIdNum) && invIdNum > 0) {
+        const { data: invoiceData } = await supabase
+          .from("robokassa_invoices")
+          .select("user_id")
+          .eq("id", invIdNum)
+          .maybeSingle();
+        
+        if (invoiceData?.user_id) {
+          userId = invoiceData.user_id;
+        }
+      }
     }
 
-    // Check if already processed
-    const currentStatus = invoice?.status || payment?.status;
-    if (currentStatus === "paid") {
+    if (!userId) {
+      console.error(`[robokassa-result:${requestId}] Cannot determine userId from webhook`);
+      // Still return OK to Robokassa, but log the error
+      return new NextResponse(`OK${invId}`, { status: 200 });
+    }
+
+    // Parse amount
+    const amount = Number(outSum);
+    if (!Number.isFinite(amount) || amount <= 0) {
+      console.error(`[robokassa-result:${requestId}] Invalid amount: ${outSum}`);
+      return new NextResponse("ERROR: Invalid amount", { status: 400 });
+    }
+
+    // Check if payment already exists (idempotency)
+    const { data: existingPayment } = await supabase
+      .from("payments")
+      .select("id, status")
+      .eq("provider", "robokassa")
+      .eq("inv_id", invId)
+      .maybeSingle();
+
+    if (existingPayment && existingPayment.status === "paid") {
       console.log(`[robokassa-result:${requestId}] Payment already processed:`, invId);
       return new NextResponse(`OK${invId}`, { status: 200 });
     }
 
-    // Update invoice/payment status to paid
-    let updateError = null;
-    if (invoice) {
-      const result = await supabase
-        .from("robokassa_invoices")
-        .update({
-          status: "paid",
-          updated_at: new Date().toISOString(),
-        })
-        .eq("id", invoice.id);
-      
-      updateError = result.error;
-      if (updateError) {
-        console.error(`[robokassa-result:${requestId}] DB error updating invoice:`, updateError);
-        return new NextResponse("ERROR: Failed to update invoice", { status: 500 });
-      }
-    } else if (payment) {
-      const result = await supabase
-        .from("payments")
-        .update({
-          status: "paid",
-          updated_at: new Date().toISOString(),
-        })
-        .eq("id", payment.id);
-      
-      updateError = result.error;
-      if (updateError) {
-        console.error(`[robokassa-result:${requestId}] DB error updating payment:`, updateError);
-        return new NextResponse("ERROR: Failed to update payment", { status: 500 });
+    // Get subscription ID from Shp params or provider payload
+    const subscriptionId = shpParams.subscriptionId || shpParams.subscription_id || null;
+    const isRecurring = !!subscriptionId || shpParams.is_recurring === "true";
+
+    // Upsert payment (idempotent)
+    const paymentData = {
+      user_id: userId,
+      provider: "robokassa",
+      inv_id: invId,
+      amount: amount,
+      currency: "RUB",
+      status: "paid" as const,
+      is_recurring: isRecurring,
+      subscription_id: subscriptionId,
+      paid_at: new Date().toISOString(),
+      provider_payload: providerPayload,
+    };
+
+    const { data: payment, error: paymentError } = await supabase
+      .from("payments")
+      .upsert(paymentData, {
+        onConflict: "provider,inv_id",
+        ignoreDuplicates: false,
+      })
+      .select("id")
+      .single();
+
+    if (paymentError) {
+      console.error(`[robokassa-result:${requestId}] DB error upserting payment:`, paymentError);
+      // Still return OK to Robokassa to avoid retries
+      return new NextResponse(`OK${invId}`, { status: 200 });
+    }
+
+    // Calculate subscription dates
+    const now = new Date();
+    const paidAt = new Date(now);
+    
+    // If webhook provides dates, use them; otherwise infer
+    let currentPeriodStart = paidAt;
+    let currentPeriodEnd = new Date(paidAt);
+    currentPeriodEnd.setMonth(currentPeriodEnd.getMonth() + 1); // Add 1 month
+    let nextChargeAt = new Date(currentPeriodEnd);
+
+    // Try to get dates from Shp params if provided
+    if (shpParams.current_period_end) {
+      try {
+        currentPeriodEnd = new Date(shpParams.current_period_end);
+        nextChargeAt = new Date(currentPeriodEnd);
+      } catch (e) {
+        // Use inferred dates
       }
     }
 
-    // Create or update subscription
-    const userId = invoice?.user_id || payment?.user_id;
-    const planCode = invoice?.plan_code || payment?.plan_code;
-
-    // Calculate dates: 3 days from now for trial
-    const now = new Date();
-    const activeUntil = new Date(now);
-    activeUntil.setDate(activeUntil.getDate() + 3);  // 3-day trial
-    const nextChargeAt = new Date(activeUntil);  // First charge after trial ends
+    if (shpParams.next_charge_at) {
+      try {
+        nextChargeAt = new Date(shpParams.next_charge_at);
+      } catch (e) {
+        // Use inferred dates
+      }
+    }
 
     // Upsert subscription
+    const subscriptionData = {
+      user_id: userId,
+      provider: "robokassa",
+      provider_subscription_id: subscriptionId,
+      status: "active" as const,
+      started_at: existingPayment ? undefined : paidAt.toISOString(), // Only set on first payment
+      current_period_start: currentPeriodStart.toISOString(),
+      current_period_end: currentPeriodEnd.toISOString(),
+      next_charge_at: nextChargeAt.toISOString(),
+      last_payment_id: payment?.id || null,
+      updated_at: new Date().toISOString(),
+    };
+
     const { data: subscription, error: subError } = await supabase
       .from("subscriptions")
-      .upsert({
-        user_id: userId,
-        status: "trialing",
-        active_until: activeUntil.toISOString(),
-        next_charge_at: nextChargeAt.toISOString(),
-        plan_code: planCode,
-        provider: "robokassa",
-        // Store provider recurring token if available in shpParams
-        provider_customer_id: shpParams.customerId || null,
-        provider_recurring_id: shpParams.recurringId || null,
-        updated_at: new Date().toISOString(),
-      }, {
+      .upsert(subscriptionData, {
         onConflict: "user_id",
+        ignoreDuplicates: false,
       })
       .select("id")
       .single();
 
     if (subError) {
-      console.error(`[robokassa-result:${requestId}] DB error creating subscription:`, subError);
+      console.error(`[robokassa-result:${requestId}] DB error upserting subscription:`, subError);
       // Payment is already marked as paid, so we still return OK
-      // Subscription can be fixed manually if needed
     } else {
-      console.log(`[robokassa-result:${requestId}] Payment processed and subscription created:`, {
+      console.log(`[robokassa-result:${requestId}] Payment processed and subscription updated:`, {
         userId,
         invId,
+        paymentId: payment?.id,
         subscriptionId: subscription?.id,
       });
     }
@@ -205,6 +241,8 @@ export async function POST(req: Request) {
     return new NextResponse(`OK${invId}`, { status: 200 });
   } catch (error: any) {
     console.error(`[robokassa-result:${requestId}] Unexpected error:`, error);
-    return new NextResponse("ERROR: Internal server error", { status: 500 });
+    // Still return OK to avoid Robokassa retries
+    const invId = new URL(req.url).searchParams.get("InvId") || "unknown";
+    return new NextResponse(`OK${invId}`, { status: 200 });
   }
 }

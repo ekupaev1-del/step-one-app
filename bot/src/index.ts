@@ -56,8 +56,10 @@ function getMainMenuKeyboard(userId: number | null = null): any {
   const reportUrl = userId ? `${finalBaseUrl}/report?id=${userId}` : undefined;
   const profileUrl = userId ? `${finalBaseUrl}/profile?id=${userId}` : undefined;
 
-  // ЕДИНСТВЕННОЕ правильное меню - 4 кнопки с правильными URL
+  // ЕДИНСТВЕННОЕ правильное меню - 5 кнопок с правильными URL
   // Кнопки с web_app открывают Mini App напрямую
+  const subscriptionUrl = userId ? `${finalBaseUrl}/subscription?id=${userId}` : undefined;
+  
   const keyboard = {
     keyboard: [
       [
@@ -65,6 +67,9 @@ function getMainMenuKeyboard(userId: number | null = null): any {
       ],
       [
         { text: "📊 Получить отчёт", web_app: reportUrl ? { url: reportUrl } : undefined }
+      ],
+      [
+        { text: "💎 Подписка", web_app: subscriptionUrl ? { url: subscriptionUrl } : undefined }
       ],
       [
         { text: "⏰ Напомнить о приёме пищи" }
@@ -1472,9 +1477,31 @@ bot.on("text", async (ctx) => {
       }
     }
 
-    // Сохраняем в базу
+    // Get user ID from users table (not telegram_id directly)
+    // CRITICAL: diary table expects user_id to be the id from users table, not telegram_id
+    const { data: userData, error: userError } = await supabase
+      .from("users")
+      .select("id")
+      .eq("telegram_id", telegram_id)
+      .maybeSingle();
+
+    if (userError || !userData) {
+      console.error("[bot] Ошибка получения user_id для сохранения еды:", {
+        error: userError,
+        telegram_id,
+      });
+      await ctx.telegram.editMessageText(
+        ctx.chat!.id,
+        processingMsg.message_id,
+        undefined,
+        "❌ Ошибка: пользователь не найден. Используйте /start для регистрации."
+      );
+      return;
+    }
+
+    // Сохраняем в базу используя user.id (не telegram_id)
     const { error: insertError } = await supabase.from("diary").insert({
-      user_id: telegram_id,
+      user_id: userData.id, // Use user.id from users table, not telegram_id
       meal_text: mealAnalysis.description,
       calories: mealAnalysis.calories,
       protein: mealAnalysis.protein,
@@ -1483,7 +1510,15 @@ bot.on("text", async (ctx) => {
     });
 
     if (insertError) {
-      console.error("[bot] Ошибка сохранения:", insertError);
+      console.error("[bot] Ошибка сохранения в diary:", {
+        error: insertError,
+        code: insertError.code,
+        message: insertError.message,
+        details: insertError.details,
+        hint: insertError.hint,
+        user_id: userData.id,
+        telegram_id: telegram_id,
+      });
       await ctx.telegram.editMessageText(
         ctx.chat!.id,
         processingMsg.message_id,

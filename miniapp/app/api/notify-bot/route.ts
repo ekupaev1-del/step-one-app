@@ -9,6 +9,8 @@ function getMainMenuKeyboard(userId: number | null = null) {
   const reportUrl = userId ? `${BASE_URL}/report?id=${userId}` : undefined;
   const profileUrl = userId ? `${BASE_URL}/profile?id=${userId}` : undefined;
 
+  const subscriptionUrl = userId ? `${BASE_URL}/subscription?id=${userId}` : undefined;
+  
   return {
     keyboard: [
       [
@@ -18,10 +20,13 @@ function getMainMenuKeyboard(userId: number | null = null) {
         { text: "📊 Получить отчёт", web_app: reportUrl ? { url: reportUrl } : undefined }
       ],
       [
+        { text: "💎 Подписка", web_app: subscriptionUrl ? { url: subscriptionUrl } : undefined }
+      ],
+      [
         { text: "⏰ Напомнить о приёме пищи" }
       ],
       [
-        { text: "💡 Рекомендации" }
+        { text: "💬 Служба заботы" }
       ]
     ],
     resize_keyboard: true,
