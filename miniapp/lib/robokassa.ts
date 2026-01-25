@@ -177,8 +177,8 @@ export function getRobokassaConfig(): (RobokassaConfig & { debug?: RobokassaConf
     const nodeEnv = process.env.NODE_ENV || "unknown";
     const hasPassword1 = !!password1;
     const hasPassword2 = !!password2;
-    const password1Masked = hasPassword1 ? `${password1.substring(0, 6)}...${password1.substring(password1.length - 4)}` : "MISSING";
-    const password2Masked = hasPassword2 ? `${password2.substring(0, 6)}...${password2.substring(password2.length - 4)}` : "MISSING";
+    const password1Masked = password1 ? `${password1.substring(0, 6)}...${password1.substring(password1.length - 4)}` : "MISSING";
+    const password2Masked = password2 ? `${password2.substring(0, 6)}...${password2.substring(password2.length - 4)}` : "MISSING";
     
     console.log(JSON.stringify({
       event: "robokassa_config_loaded",
