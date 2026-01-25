@@ -1419,7 +1419,10 @@ bot.on("text", async (ctx) => {
     // блок рекомендаций скрыт в боте
 
 
-    console.log(`[bot] Текстовое сообщение от ${telegram_id}: ${text}`);
+    // Generate requestId for tracing
+    const requestId = `food-save-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
+    
+    console.log(`[bot:${requestId}] Текстовое сообщение от ${telegram_id}: ${text}`);
 
     // Показываем, что обрабатываем
     const processingMsg = await ctx.reply("🔍 Анализирую еду...");
@@ -1500,33 +1503,77 @@ bot.on("text", async (ctx) => {
     }
 
     // Сохраняем в базу используя user.id (не telegram_id)
-    const { error: insertError } = await supabase.from("diary").insert({
+    // Store additional metadata for debugging
+    const diaryEntry = {
       user_id: userData.id, // Use user.id from users table, not telegram_id
+      telegram_user_id: telegram_id, // Also store telegram_id for direct lookup
       meal_text: mealAnalysis.description,
       calories: mealAnalysis.calories,
       protein: mealAnalysis.protein,
       fat: mealAnalysis.fat,
-      carbs: mealAnalysis.carbs
-    });
+      carbs: mealAnalysis.carbs,
+      source: 'telegram',
+      message_id: ctx.message?.message_id || null,
+      chat_id: ctx.chat?.id || null,
+      parsed_json: mealAnalysis as any, // Store full analysis result for debugging
+    };
+
+    const { error: insertError } = await supabase.from("diary").insert(diaryEntry);
 
     if (insertError) {
-      console.error("[bot] Ошибка сохранения в diary:", {
-        error: insertError,
-        code: insertError.code,
-        message: insertError.message,
-        details: insertError.details,
-        hint: insertError.hint,
+      // Log full error details
+      const errorContext = {
+        requestId,
+        telegram_user_id: telegram_id,
         user_id: userData.id,
-        telegram_id: telegram_id,
+        input_text: text.substring(0, 100), // First 100 chars only
+        table_name: 'diary',
+        operation: 'insert',
+        supabase_error: {
+          code: insertError.code || 'UNKNOWN',
+          message: insertError.message || 'Unknown error',
+          details: insertError.details || null,
+          hint: insertError.hint || null,
+        },
+        payload_preview: {
+          user_id: diaryEntry.user_id,
+          telegram_user_id: diaryEntry.telegram_user_id,
+          meal_text_length: diaryEntry.meal_text.length,
+          has_calories: diaryEntry.calories !== undefined,
+        },
+        timestamp: new Date().toISOString(),
+      };
+
+      // Log to console (structured)
+      console.error(`[bot:${requestId}] Ошибка сохранения в diary:`, JSON.stringify(errorContext, null, 2));
+
+      // Log to app_errors table (async, don't wait)
+      supabase.from("app_errors").insert({
+        request_id: requestId,
+        context: errorContext,
+      }).catch((logError) => {
+        console.error(`[bot:${requestId}] Failed to log error to app_errors:`, logError);
       });
+
+      // Generate user-friendly error message with error code
+      const errorCode = insertError.code || 'DB_ERROR';
+      const userMessage = `❌ Не сохранилось. Код: ${errorCode}. Напиши в поддержку: @STEP0NE11`;
+      
       await ctx.telegram.editMessageText(
         ctx.chat!.id,
         processingMsg.message_id,
         undefined,
-        "❌ Ошибка сохранения в базу данных."
+        userMessage
       );
       return;
     }
+
+    // Log successful save
+    console.log(`[bot:${requestId}] ✅ Успешно сохранено в diary:`, {
+      user_id: userData.id,
+      telegram_user_id: telegram_id,
+      meal_text: mealAnalysis.description.substring(0, 50),
+    });
 
     // Получаем статистику за сегодня
     const todayMeals = await getTodayMeals(telegram_id);
@@ -2251,12 +2298,15 @@ bot.on("photo", async (ctx) => {
     // Показываем, что обрабатываем
     const processingMsg = await ctx.reply("📸 Анализирую фото еды...");
 
+    // Generate requestId for tracing
+    const requestId = `photo-save-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
+
     // Получаем фото в лучшем качестве
     const photo = ctx.message.photo[ctx.message.photo.length - 1];
     const file = await ctx.telegram.getFile(photo.file_id);
     const photoUrl = `https://api.telegram.org/file/bot${env.telegramBotToken}/${file.file_path}`;
 
-    console.log(`[bot] URL фото: ${photoUrl}`);
+    console.log(`[bot:${requestId}] URL фото: ${photoUrl}`);
 
     // Анализируем через OpenAI Vision
     const analysis = await analyzePhotoWithOpenAI(photoUrl);
@@ -2299,7 +2349,7 @@ bot.on("photo", async (ctx) => {
         .single();
 
       if (createError || !newUser) {
-        console.error("[bot] Ошибка создания пользователя:", createError);
+        console.error(`[bot:${requestId}] Ошибка создания пользователя:`, createError);
         await ctx.telegram.editMessageText(
           ctx.chat!.id,
           processingMsg.message_id,
@@ -2310,26 +2360,98 @@ bot.on("photo", async (ctx) => {
       }
     }
 
-    // Сохраняем в базу
-    const { error: insertError } = await supabase.from("diary").insert({
-      user_id: telegram_id,
-      meal_text: mealAnalysis.description,
-      calories: mealAnalysis.calories,
-      protein: mealAnalysis.protein,
-      fat: mealAnalysis.fat,
-      carbs: mealAnalysis.carbs
-    });
+    // Get user ID from users table (not telegram_id directly)
+    const { data: userData, error: userError } = await supabase
+      .from("users")
+      .select("id")
+      .eq("telegram_id", telegram_id)
+      .maybeSingle();
 
-    if (insertError) {
-      console.error("[bot] Ошибка сохранения:", insertError);
+    if (userError || !userData) {
+      console.error(`[bot:${requestId}] Ошибка получения user_id для сохранения фото:`, {
+        error: userError,
+        telegram_id,
+      });
       await ctx.telegram.editMessageText(
         ctx.chat!.id,
         processingMsg.message_id,
         undefined,
-        "❌ Ошибка сохранения в базу данных."
+        "❌ Ошибка: пользователь не найден. Используйте /start для регистрации."
       );
       return;
     }
+
+    // Сохраняем в базу используя user.id (не telegram_id)
+    const diaryEntry = {
+      user_id: userData.id, // Use user.id from users table, not telegram_id
+      telegram_user_id: telegram_id, // Also store telegram_id for direct lookup
+      meal_text: mealAnalysis.description,
+      calories: mealAnalysis.calories,
+      protein: mealAnalysis.protein,
+      fat: mealAnalysis.fat,
+      carbs: mealAnalysis.carbs,
+      source: 'telegram',
+      message_id: ctx.message?.message_id || null,
+      chat_id: ctx.chat?.id || null,
+      parsed_json: mealAnalysis as any, // Store full analysis result for debugging
+    };
+
+    const { error: insertError } = await supabase.from("diary").insert(diaryEntry);
+
+    if (insertError) {
+      // Log full error details
+      const errorContext = {
+        requestId,
+        telegram_user_id: telegram_id,
+        user_id: userData.id,
+        input_text: 'photo_analysis',
+        table_name: 'diary',
+        operation: 'insert',
+        supabase_error: {
+          code: insertError.code || 'UNKNOWN',
+          message: insertError.message || 'Unknown error',
+          details: insertError.details || null,
+          hint: insertError.hint || null,
+        },
+        payload_preview: {
+          user_id: diaryEntry.user_id,
+          telegram_user_id: diaryEntry.telegram_user_id,
+          meal_text_length: diaryEntry.meal_text.length,
+          has_calories: diaryEntry.calories !== undefined,
+        },
+        timestamp: new Date().toISOString(),
+      };
+
+      // Log to console (structured)
+      console.error(`[bot:${requestId}] Ошибка сохранения фото в diary:`, JSON.stringify(errorContext, null, 2));
+
+      // Log to app_errors table (async, don't wait)
+      supabase.from("app_errors").insert({
+        request_id: requestId,
+        context: errorContext,
+      }).catch((logError) => {
+        console.error(`[bot:${requestId}] Failed to log error to app_errors:`, logError);
+      });
+
+      // Generate user-friendly error message with error code
+      const errorCode = insertError.code || 'DB_ERROR';
+      const userMessage = `❌ Не сохранилось. Код: ${errorCode}. Напиши в поддержку: @STEP0NE11`;
+      
+      await ctx.telegram.editMessageText(
+        ctx.chat!.id,
+        processingMsg.message_id,
+        undefined,
+        userMessage
+      );
+      return;
+    }
+
+    // Log successful save
+    console.log(`[bot:${requestId}] ✅ Успешно сохранено фото в diary:`, {
+      user_id: userData.id,
+      telegram_user_id: telegram_id,
+      meal_text: mealAnalysis.description.substring(0, 50),
+    });
 
     // Получаем статистику за сегодня
     const todayMeals = await getTodayMeals(telegram_id);
