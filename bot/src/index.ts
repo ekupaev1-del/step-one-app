@@ -8,6 +8,7 @@ import { isWaterRequest, logWaterIntake, getDailyWaterSummary } from "./services
 import { createReminder, getUserReminders, deleteReminder, validateTime, type ReminderType } from "./services/reminders.js";
 import { startReminderScheduler } from "./services/reminderScheduler.js";
 import { startInactivityNotificationScheduler } from "./services/inactivityNotifications.js";
+import { logEvent, logError, generateRequestId } from "./services/logging.js";
 
 // Инициализация бота
 const bot = new Telegraf(env.telegramBotToken);
@@ -1443,7 +1444,7 @@ bot.on("text", async (ctx) => {
 
 
     // Generate requestId for tracing
-    const requestId = `food-save-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
+    const requestId = generateRequestId();
     
     // ============================================================================
     // LOG: Request start with full context
@@ -1452,6 +1453,13 @@ bot.on("text", async (ctx) => {
       telegram_id,
       text: text?.substring(0, 200),
       timestamp: new Date().toISOString(),
+    });
+    
+    await logEvent('info', 'food_save_start', {
+      requestId,
+      telegramUserId: telegram_id,
+      chatId: ctx.chat?.id,
+      payload: { text: text?.substring(0, 200) },
     });
     
     if (DEBUG_FOOD) {
@@ -1466,6 +1474,12 @@ bot.on("text", async (ctx) => {
     // STEP 1: Analyze food with OpenAI
     // ============================================================================
     console.log(`[FOOD_ANALYSIS_START:${requestId}] Calling OpenAI...`);
+    await logEvent('info', 'food_analysis_start', {
+      requestId,
+      telegramUserId: telegram_id,
+      chatId: ctx.chat?.id,
+    });
+    
     const analysis = await analyzeFoodWithOpenAI(textTrimmed);
     
     if (DEBUG_FOOD) {
@@ -1474,16 +1488,27 @@ bot.on("text", async (ctx) => {
     
     if (!analysis) {
       console.error(`[FOOD_ANALYSIS_FAILED:${requestId}] OpenAI returned null/undefined`);
+      await logError('food_analysis_failed', new Error('OpenAI returned null/undefined'), {
+        requestId,
+        telegramUserId: telegram_id,
+        chatId: ctx.chat?.id,
+      });
       await ctx.telegram.editMessageText(
         ctx.chat!.id,
         processingMsg.message_id,
         undefined,
-        "❌ Не удалось проанализировать еду. Попробуйте описать подробнее."
+        `❌ Не удалось проанализировать еду. Попробуйте описать подробнее.\n\nКод: ${requestId}`
       );
       return;
     }
     
     console.log(`[FOOD_ANALYSIS_SUCCESS:${requestId}] Analysis completed`);
+    await logEvent('info', 'food_analysis_success', {
+      requestId,
+      telegramUserId: telegram_id,
+      chatId: ctx.chat?.id,
+      payload: 'isNotFood' in analysis ? { isNotFood: true } : { description: (analysis as MealAnalysis).description },
+    });
 
     // Проверяем, про еду ли идет речь
     if ('isNotFood' in analysis && analysis.isNotFood) {
@@ -1689,12 +1714,12 @@ bot.on("text", async (ctx) => {
       console.error(`[FOOD_SAVE_ERROR:${requestId}] Supabase error hint:`, insertError.hint);
       console.error(`[FOOD_SAVE_ERROR:${requestId}] Full insertError object:`, JSON.stringify(insertError, null, 2));
 
-      // Log to app_errors table (async, don't wait)
-      supabase.from("app_errors").insert({
-        request_id: requestId,
-        context: errorContext,
-      }).catch((logError) => {
-        console.error(`[FOOD_SAVE_ERROR:${requestId}] Failed to log error to app_errors:`, logError);
+      // Log to app_logs table using new logging system
+      await logError('db_insert_diary', insertError, {
+        requestId,
+        telegramUserId: telegram_id,
+        chatId: ctx.chat?.id,
+        payload: errorContext,
       });
 
       // Generate user-friendly error message with error code
@@ -1721,6 +1746,17 @@ bot.on("text", async (ctx) => {
       timestamp: new Date().toISOString(),
     });
     
+    await logEvent('info', 'food_save_success', {
+      requestId,
+      telegramUserId: telegram_id,
+      chatId: ctx.chat?.id,
+      payload: {
+        inserted_id: insertData?.id,
+        user_id: userData.id,
+        meal_text: mealAnalysis.description.substring(0, 50),
+      },
+    });
+    
     if (DEBUG_FOOD) {
       console.log(`[DEBUG_FOOD:${requestId}] Inserted record:`, insertData);
     }
@@ -1743,14 +1779,15 @@ bot.on("text", async (ctx) => {
     // ============================================================================
     // CRITICAL: Catch-all error handler - LOG EVERYTHING
     // ============================================================================
-    const errorId = `error-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
+    const errorId = generateRequestId();
+    const telegramId = ctx.from?.id;
     
     console.error(`[FOOD_SAVE_EXCEPTION:${errorId}]`, {
       error_name: error?.name || 'Unknown',
       error_message: error?.message || 'Unknown error',
       error_stack: error?.stack || 'No stack trace',
       error_response: error?.response || null,
-      telegram_id: ctx.from?.id || 'MISSING',
+      telegram_id: telegramId || 'MISSING',
       text: ctx.message?.text?.substring(0, 100) || 'MISSING',
       timestamp: new Date().toISOString(),
     });
@@ -1758,15 +1795,26 @@ bot.on("text", async (ctx) => {
     // Log full error object
     console.error(`[FOOD_SAVE_EXCEPTION:${errorId}] Full error object:`, JSON.stringify(error, Object.getOwnPropertyNames(error), 2));
     
+    // Log to app_logs using new logging system
+    await logError('food_save_exception', error, {
+      requestId: errorId,
+      telegramUserId: telegramId,
+      chatId: ctx.chat?.id,
+      payload: {
+        text: ctx.message?.text?.substring(0, 100),
+        error_response: error?.response,
+      },
+    });
+    
     // Если пользователь заблокировал бота - просто логируем, не пытаемся отправить сообщение
     if (error?.response?.error_code === 403 && error?.response?.description?.includes("blocked")) {
-      console.warn(`[FOOD_SAVE_EXCEPTION:${errorId}] User ${ctx.from?.id} blocked bot, skipping message`);
+      console.warn(`[FOOD_SAVE_EXCEPTION:${errorId}] User ${telegramId} blocked bot, skipping message`);
       return;
     }
     
-    // Для других ошибок пытаемся отправить сообщение
+    // Для других ошибок пытаемся отправить сообщение с requestId
     try {
-      await ctx.reply("Произошла ошибка при обработке сообщения");
+      await ctx.reply(`❌ Произошла ошибка при обработке сообщения. Код: ${errorId}\n\nНапишите в поддержку: @STEP0NE11`);
     } catch (replyErr: any) {
       // Если и это не получилось (например, пользователь заблокирован) - просто логируем
       if (replyErr?.response?.error_code === 403) {
