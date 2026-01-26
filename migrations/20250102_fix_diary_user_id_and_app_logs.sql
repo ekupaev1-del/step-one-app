@@ -7,13 +7,34 @@
 -- Idempotent - safe to run multiple times
 
 -- ============================================================================
--- Step 1: Check and fix diary.user_id type (UUID -> BIGINT if needed)
+-- Step 1: Drop all RLS policies that depend on diary.user_id
+-- ============================================================================
+
+DO $$
+BEGIN
+  IF EXISTS (SELECT 1 FROM pg_tables WHERE schemaname = 'public' AND tablename = 'diary') THEN
+    -- Drop all existing policies on diary table (they will be recreated later)
+    DROP POLICY IF EXISTS "Users can view own diary" ON public.diary;
+    DROP POLICY IF EXISTS "Users can insert own diary" ON public.diary;
+    DROP POLICY IF EXISTS "Users can update own diary" ON public.diary;
+    DROP POLICY IF EXISTS "Users can delete own diary" ON public.diary;
+    DROP POLICY IF EXISTS diary_select_own ON public.diary;
+    DROP POLICY IF EXISTS diary_insert_service ON public.diary;
+    DROP POLICY IF EXISTS diary_update_service ON public.diary;
+    DROP POLICY IF EXISTS diary_delete_service ON public.diary;
+    DROP POLICY IF EXISTS diary_select_service ON public.diary;
+    
+    RAISE NOTICE 'Dropped all existing RLS policies on diary table';
+  END IF;
+END $$;
+
+-- ============================================================================
+-- Step 2: Check and fix diary.user_id type (UUID -> BIGINT if needed)
 -- ============================================================================
 
 DO $$
 DECLARE
   current_type TEXT;
-  has_uuid_column BOOLEAN := false;
 BEGIN
   -- Check if diary table exists
   IF EXISTS (SELECT 1 FROM pg_tables WHERE schemaname = 'public' AND tablename = 'diary') THEN
@@ -31,29 +52,26 @@ BEGIN
       -- Step 1: Add temporary column with BIGINT
       ALTER TABLE diary ADD COLUMN IF NOT EXISTS user_id_bigint BIGINT;
       
-      -- Step 2: Try to convert UUID to BIGINT (if possible)
-      -- Note: This will only work if UUIDs can be mapped to existing users.id
-      -- If not, we'll need to set a default or handle migration differently
+      -- Step 2: Try to map UUID to BIGINT user_id from users table
+      -- This assumes users.id is BIGINT and we can find matching records
       UPDATE diary d
-      SET user_id_bigint = u.id
-      FROM users u
-      WHERE d.user_id::text = u.id::text
-        OR (EXISTS (
-          SELECT 1 FROM users u2 
-          WHERE u2.id::text = d.user_id::text
-        ));
+      SET user_id_bigint = COALESCE(
+        (SELECT u.id FROM users u WHERE u.id::text = d.user_id::text LIMIT 1),
+        0
+      )
+      WHERE user_id_bigint IS NULL;
       
-      -- Step 3: For rows that couldn't be mapped, set to 0 or handle as needed
+      -- Step 3: For rows that couldn't be mapped, set to 0
       UPDATE diary
       SET user_id_bigint = 0
       WHERE user_id_bigint IS NULL;
       
-      -- Step 4: Make user_id_bigint NOT NULL if needed
+      -- Step 4: Make user_id_bigint NOT NULL with default
       ALTER TABLE diary ALTER COLUMN user_id_bigint SET NOT NULL;
       ALTER TABLE diary ALTER COLUMN user_id_bigint SET DEFAULT 0;
       
-      -- Step 5: Drop old UUID column
-      ALTER TABLE diary DROP COLUMN IF EXISTS user_id;
+      -- Step 5: Drop old UUID column (now safe since policies are dropped)
+      ALTER TABLE diary DROP COLUMN user_id CASCADE;
       
       -- Step 6: Rename new column to user_id
       ALTER TABLE diary RENAME COLUMN user_id_bigint TO user_id;
@@ -172,7 +190,7 @@ CREATE POLICY app_logs_select_service ON public.app_logs
   USING (auth.role() = 'service_role');
 
 -- ============================================================================
--- Step 5: Ensure diary RLS policies allow service role inserts
+-- Step 5: Recreate diary RLS policies (after column conversion)
 -- ============================================================================
 
 DO $$
@@ -180,17 +198,28 @@ BEGIN
   IF EXISTS (SELECT 1 FROM pg_tables WHERE schemaname = 'public' AND tablename = 'diary') THEN
     ALTER TABLE public.diary ENABLE ROW LEVEL SECURITY;
     
-    -- Drop and recreate policies
-    DROP POLICY IF EXISTS diary_insert_service ON public.diary;
-    DROP POLICY IF EXISTS diary_select_service ON public.diary;
-    
+    -- Service role can do everything (CRITICAL for bot writes)
     CREATE POLICY diary_insert_service ON public.diary
       FOR INSERT
       WITH CHECK (auth.role() = 'service_role');
     
-    CREATE POLICY diary_select_service ON public.diary
+    CREATE POLICY diary_update_service ON public.diary
+      FOR UPDATE
+      USING (auth.role() = 'service_role');
+    
+    CREATE POLICY diary_delete_service ON public.diary
+      FOR DELETE
+      USING (auth.role() = 'service_role');
+    
+    -- Users can read their own diary entries (by user_id as BIGINT)
+    CREATE POLICY diary_select_own ON public.diary
       FOR SELECT
-      USING (auth.role() = 'service_role' OR auth.uid()::text = user_id::text);
+      USING (
+        auth.role() = 'service_role' OR 
+        (auth.uid() IS NOT NULL AND user_id::text = auth.uid()::text)
+      );
+    
+    RAISE NOTICE 'Recreated RLS policies on diary table';
   END IF;
 END $$;
 
