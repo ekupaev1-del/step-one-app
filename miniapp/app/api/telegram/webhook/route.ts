@@ -259,12 +259,12 @@ export async function POST(req: NextRequest) {
     await logEvent("info", "telegram_webhook_received", {
       requestId,
       telegramUserId: telegramUserId,
-      chatId: chatId,
       payload: {
         update_id: updatePayload?.update_id,
         has_message: !!message,
         has_text: !!text,
         message_id: messageId,
+        chat_id: chatId, // Store in payload, not as separate column
         text_length: text?.length || 0,
       },
     });
@@ -589,13 +589,38 @@ export async function POST(req: NextRequest) {
         fullError: JSON.stringify(insertError, Object.getOwnPropertyNames(insertError)),
       };
 
+      // Log to console with full error object and requestId
+      console.error(`[DB_INSERT_ERROR:${requestId}] Full Postgres error:`, {
+        requestId,
+        postgresCode: errorDetails.code,
+        postgresMessage: errorDetails.message,
+        postgresDetails: errorDetails.details,
+        postgresHint: errorDetails.hint,
+        constraint: errorDetails.constraint,
+        table: errorDetails.table,
+        column: errorDetails.column,
+        fullErrorObject: insertError,
+      });
+      console.error(`[DB_INSERT_ERROR:${requestId}] Failed payload:`, {
+        normalizedPayload: diaryEntry,
+        rawPayload: rawDiaryEntry,
+        payloadTypes: {
+          user_id: typeof diaryEntry.user_id,
+          telegram_user_id: typeof diaryEntry.telegram_user_id,
+          source: typeof diaryEntry.source,
+          source_value: diaryEntry.source,
+          calories: typeof diaryEntry.calories,
+        },
+      });
+
+      // Log to app_logs (but don't crash if this fails)
       await logError("db_insert", insertError, {
         requestId,
         userId: userId,
         telegramUserId: telegramUserId,
-        chatId: chatId,
         payload: {
           userId,
+          telegramUserId,
           normalizedDiaryEntry: {
             user_id: diaryEntry.user_id,
             telegram_user_id: diaryEntry.telegram_user_id,
@@ -604,35 +629,21 @@ export async function POST(req: NextRequest) {
             protein: diaryEntry.protein,
             fat: diaryEntry.fat,
             carbs: diaryEntry.carbs,
+            source: diaryEntry.source,
             message_id: diaryEntry.message_id,
             chat_id: diaryEntry.chat_id,
             allTypes: {
               user_id: typeof diaryEntry.user_id,
               telegram_user_id: typeof diaryEntry.telegram_user_id,
+              source: typeof diaryEntry.source,
               calories: typeof diaryEntry.calories,
               protein: typeof diaryEntry.protein,
               fat: typeof diaryEntry.fat,
               carbs: typeof diaryEntry.carbs,
-              message_id: typeof diaryEntry.message_id,
-              chat_id: typeof diaryEntry.chat_id,
             },
           },
           postgresError: errorDetails,
         },
-      });
-
-      // Also log to console for Vercel logs with full details
-      console.error(`[DB_INSERT_ERROR:${requestId}] Postgres error:`, {
-        code: errorDetails.code,
-        message: errorDetails.message,
-        details: errorDetails.details,
-        hint: errorDetails.hint,
-        table: errorDetails.table,
-        column: errorDetails.column,
-      });
-      console.error(`[DB_INSERT_ERROR:${requestId}] Payload that failed:`, {
-        normalizedPayload: diaryEntry,
-        rawPayload: rawDiaryEntry,
       });
 
       // User-friendly error message with Postgres error code

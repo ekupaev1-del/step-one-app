@@ -1777,11 +1777,11 @@ bot.on("text", async (ctx) => {
       console.error(`[FOOD_SAVE_ERROR:${requestId}] Postgres error hint:`, insertError.hint);
       console.error(`[FOOD_SAVE_ERROR:${requestId}] Full insertError object:`, JSON.stringify(insertError, Object.getOwnPropertyNames(insertError), 2));
 
-      // Log to app_logs table using new logging system
+      // Log to app_logs table using new logging system (no chatId - not in schema)
       await logError('db_insert_diary', insertError, {
         requestId,
+        userId: userData.id,
         telegramUserId: telegram_id,
-        chatId: ctx.chat?.id,
         payload: errorContext,
       });
 
