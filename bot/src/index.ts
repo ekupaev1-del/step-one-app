@@ -9,6 +9,7 @@ import { createReminder, getUserReminders, deleteReminder, validateTime, type Re
 import { startReminderScheduler } from "./services/reminderScheduler.js";
 import { startInactivityNotificationScheduler } from "./services/inactivityNotifications.js";
 import { logEvent, logError, generateRequestId } from "./services/logging.js";
+import { normalizeDiaryEntry, logPayloadDetails } from "./services/diaryNormalize.js";
 
 // Инициализация бота
 const bot = new Telegraf(env.telegramBotToken);
@@ -1642,7 +1643,7 @@ bot.on("text", async (ctx) => {
     // ============================================================================
     // STEP 4: Prepare diary entry payload
     // ============================================================================
-    const diaryEntry = {
+    const rawDiaryEntry = {
       user_id: userData.id, // Use user.id from users table, not telegram_id
       telegram_user_id: telegram_id, // Also store telegram_id for direct lookup
       meal_text: mealAnalysis.description,
@@ -1656,16 +1657,53 @@ bot.on("text", async (ctx) => {
       parsed_json: mealAnalysis as any, // Store full analysis result for debugging
     };
     
-    console.log(`[FOOD_PAYLOAD:${requestId}]`, JSON.stringify(diaryEntry, null, 2));
+    console.log(`[FOOD_PAYLOAD:${requestId}] Raw payload types:`, {
+      user_id: { value: rawDiaryEntry.user_id, type: typeof rawDiaryEntry.user_id },
+      telegram_user_id: { value: rawDiaryEntry.telegram_user_id, type: typeof rawDiaryEntry.telegram_user_id },
+      meal_text: { value: rawDiaryEntry.meal_text?.substring(0, 50), type: typeof rawDiaryEntry.meal_text },
+      calories: { value: rawDiaryEntry.calories, type: typeof rawDiaryEntry.calories },
+      protein: { value: rawDiaryEntry.protein, type: typeof rawDiaryEntry.protein },
+      fat: { value: rawDiaryEntry.fat, type: typeof rawDiaryEntry.fat },
+      carbs: { value: rawDiaryEntry.carbs, type: typeof rawDiaryEntry.carbs },
+    });
     
     if (DEBUG_FOOD) {
-      console.log(`[DEBUG_FOOD:${requestId}] Full diary entry:`, diaryEntry);
+      console.log(`[DEBUG_FOOD:${requestId}] Full raw diary entry:`, rawDiaryEntry);
+    }
+
+    // Normalize payload to ensure correct types
+    let diaryEntry;
+    try {
+      diaryEntry = normalizeDiaryEntry(rawDiaryEntry);
+      logPayloadDetails(`DB_INSERT:${requestId}`, rawDiaryEntry, diaryEntry);
+    } catch (normalizeError: any) {
+      console.error(`[FOOD_SAVE_NORMALIZE_ERROR:${requestId}]`, normalizeError);
+      await logError('diary_normalize', normalizeError, {
+        requestId,
+        telegramUserId: telegram_id,
+        payload: { rawDiaryEntry },
+      });
+      await ctx.telegram.editMessageText(
+        ctx.chat!.id,
+        processingMsg.message_id,
+        undefined,
+        `❌ Ошибка обработки данных. Код: ${requestId}\n\nНапишите в поддержку: @STEP0NE11`
+      );
+      return;
     }
 
     // ============================================================================
     // STEP 5: Insert into Supabase diary table
     // ============================================================================
     console.log(`[DB_INSERT_START:${requestId}] Inserting into diary table...`);
+    console.log(`[DB_INSERT:${requestId}] Normalized payload types:`, {
+      user_id: { value: diaryEntry.user_id, type: typeof diaryEntry.user_id },
+      telegram_user_id: { value: diaryEntry.telegram_user_id, type: typeof diaryEntry.telegram_user_id },
+      calories: { value: diaryEntry.calories, type: typeof diaryEntry.calories },
+      protein: { value: diaryEntry.protein, type: typeof diaryEntry.protein },
+      fat: { value: diaryEntry.fat, type: typeof diaryEntry.fat },
+      carbs: { value: diaryEntry.carbs, type: typeof diaryEntry.carbs },
+    });
     
     const { data: insertData, error: insertError } = await supabase
       .from("diary")
@@ -1682,8 +1720,26 @@ bot.on("text", async (ctx) => {
 
     if (insertError) {
       // ============================================================================
-      // ERROR: Supabase insert failed - LOG EVERYTHING
+      // ERROR: Supabase insert failed - LOG EVERYTHING with FULL Postgres error details
       // ============================================================================
+      const errorDetails = {
+        code: insertError.code || 'UNKNOWN',
+        message: insertError.message || 'Unknown error',
+        details: insertError.details || null,
+        hint: insertError.hint || null,
+        // Supabase/PostgREST specific fields
+        statusCode: (insertError as any).status || null,
+        statusText: (insertError as any).statusText || null,
+        // Try to extract Postgres error details
+        where: (insertError as any).where || null,
+        schema: (insertError as any).schema || null,
+        table: (insertError as any).table || null,
+        column: (insertError as any).column || null,
+        constraint: (insertError as any).constraint || null,
+        // Full error object
+        fullError: JSON.stringify(insertError, Object.getOwnPropertyNames(insertError)),
+      };
+
       const errorContext = {
         requestId,
         telegram_user_id: telegram_id,
@@ -1691,28 +1747,35 @@ bot.on("text", async (ctx) => {
         input_text: text?.substring(0, 100) || 'MISSING',
         table_name: 'diary',
         operation: 'insert',
-        supabase_error: {
-          code: insertError.code || 'UNKNOWN',
-          message: insertError.message || 'Unknown error',
-          details: insertError.details || null,
-          hint: insertError.hint || null,
-        },
-        payload_preview: {
+        postgresError: errorDetails,
+        normalizedPayload: {
           user_id: diaryEntry.user_id,
           telegram_user_id: diaryEntry.telegram_user_id,
-          meal_text_length: diaryEntry.meal_text?.length || 0,
-          has_calories: diaryEntry.calories !== undefined,
+          meal_text: diaryEntry.meal_text?.substring(0, 50),
+          calories: diaryEntry.calories,
+          protein: diaryEntry.protein,
+          fat: diaryEntry.fat,
+          carbs: diaryEntry.carbs,
+          allTypes: {
+            user_id: typeof diaryEntry.user_id,
+            telegram_user_id: typeof diaryEntry.telegram_user_id,
+            calories: typeof diaryEntry.calories,
+            protein: typeof diaryEntry.protein,
+            fat: typeof diaryEntry.fat,
+            carbs: typeof diaryEntry.carbs,
+          },
         },
+        rawPayload: rawDiaryEntry,
         timestamp: new Date().toISOString(),
       };
 
       // CRITICAL: Log full error to console (this goes to Vercel logs)
       console.error(`[FOOD_SAVE_ERROR:${requestId}]`, JSON.stringify(errorContext, null, 2));
-      console.error(`[FOOD_SAVE_ERROR:${requestId}] Supabase error code:`, insertError.code);
-      console.error(`[FOOD_SAVE_ERROR:${requestId}] Supabase error message:`, insertError.message);
-      console.error(`[FOOD_SAVE_ERROR:${requestId}] Supabase error details:`, insertError.details);
-      console.error(`[FOOD_SAVE_ERROR:${requestId}] Supabase error hint:`, insertError.hint);
-      console.error(`[FOOD_SAVE_ERROR:${requestId}] Full insertError object:`, JSON.stringify(insertError, null, 2));
+      console.error(`[FOOD_SAVE_ERROR:${requestId}] Postgres error code:`, insertError.code);
+      console.error(`[FOOD_SAVE_ERROR:${requestId}] Postgres error message:`, insertError.message);
+      console.error(`[FOOD_SAVE_ERROR:${requestId}] Postgres error details:`, insertError.details);
+      console.error(`[FOOD_SAVE_ERROR:${requestId}] Postgres error hint:`, insertError.hint);
+      console.error(`[FOOD_SAVE_ERROR:${requestId}] Full insertError object:`, JSON.stringify(insertError, Object.getOwnPropertyNames(insertError), 2));
 
       // Log to app_logs table using new logging system
       await logError('db_insert_diary', insertError, {
