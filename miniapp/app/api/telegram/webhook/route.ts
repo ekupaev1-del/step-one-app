@@ -12,13 +12,22 @@ import { createServerSupabaseClient } from "@/lib/supabaseAdmin";
 import { logEvent, logError, generateRequestId } from "@/lib/logging";
 import OpenAI from "openai";
 
-// Initialize OpenAI client
-const openai = new OpenAI({
-  apiKey: process.env.OPENAI_API_KEY,
-});
+// Lazy initialization of OpenAI client to avoid build-time errors
+function getOpenAIClient(): OpenAI {
+  const apiKey = process.env.OPENAI_API_KEY;
+  if (!apiKey) {
+    throw new Error("OPENAI_API_KEY is not set");
+  }
+  return new OpenAI({ apiKey });
+}
 
-const TELEGRAM_BOT_TOKEN = process.env.TELEGRAM_BOT_TOKEN;
-const TELEGRAM_API_URL = `https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}`;
+function getTelegramApiUrl(): string {
+  const token = process.env.TELEGRAM_BOT_TOKEN;
+  if (!token) {
+    throw new Error("TELEGRAM_BOT_TOKEN is not set");
+  }
+  return `https://api.telegram.org/bot${token}`;
+}
 
 interface MealAnalysis {
   description: string;
@@ -63,6 +72,8 @@ async function analyzeFoodWithOpenAI(
       requestId,
       payload: { inputLength: userInput.length },
     });
+
+    const openai = getOpenAIClient();
 
     const prompt = `Проанализируй текст пользователя и определи:
 
@@ -153,7 +164,8 @@ async function sendTelegramMessage(
   requestId: string
 ): Promise<boolean> {
   try {
-    const response = await fetch(`${TELEGRAM_API_URL}/sendMessage`, {
+    const telegramApiUrl = getTelegramApiUrl();
+    const response = await fetch(`${telegramApiUrl}/sendMessage`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
@@ -195,7 +207,8 @@ async function sendTelegramEditMessage(
   requestId: string
 ): Promise<boolean> {
   try {
-    const response = await fetch(`${TELEGRAM_API_URL}/editMessageText`, {
+    const telegramApiUrl = getTelegramApiUrl();
+    const response = await fetch(`${telegramApiUrl}/editMessageText`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
@@ -300,7 +313,8 @@ export async function POST(req: NextRequest) {
     });
 
     // STEP 2: Send "Analyzing..." message
-    const processingMessage = await fetch(`${TELEGRAM_API_URL}/sendMessage`, {
+    const telegramApiUrl = getTelegramApiUrl();
+    const processingMessage = await fetch(`${telegramApiUrl}/sendMessage`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
@@ -556,7 +570,7 @@ export async function POST(req: NextRequest) {
     try {
       const message = updatePayload?.message;
       const chatId = message?.chat?.id;
-      if (chatId && TELEGRAM_BOT_TOKEN) {
+      if (chatId && process.env.TELEGRAM_BOT_TOKEN) {
         await sendTelegramMessage(
           chatId,
           `❌ Произошла ошибка при обработке сообщения. Код: ${requestId}\n\nНапишите в поддержку: @STEP0NE11`,
