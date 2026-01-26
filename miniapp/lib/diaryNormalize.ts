@@ -19,7 +19,8 @@ export interface NormalizedDiaryEntry {
   protein: number;
   fat: number;
   carbs: number;
-  source: string;
+  source: string; // Content type: 'text', 'photo', or 'audio'
+  channel?: string; // Communication channel: 'telegram', 'webapp', 'admin', 'api'
   message_id: number | null;
   chat_id: number | null;
   parsed_json: any;
@@ -117,7 +118,8 @@ export function normalizeDiaryEntry(input: {
   protein: any;
   fat: any;
   carbs: any;
-  source?: any;
+  source?: any; // Content type: 'text', 'photo', 'audio'
+  channel?: any; // Communication channel: 'telegram', 'webapp', 'admin', 'api'
   message_id?: any;
   chat_id?: any;
   parsed_json?: any;
@@ -131,6 +133,10 @@ export function normalizeDiaryEntry(input: {
     throw new Error('meal_text must be a non-empty string');
   }
 
+  // Normalize source to ensure it's one of: 'text', 'photo', 'audio'
+  const sourceValue = input.source ? String(input.source).toLowerCase() : 'text';
+  const validSource = ['text', 'photo', 'audio'].includes(sourceValue) ? sourceValue : 'text';
+
   // Normalize all numeric fields
   const normalized: NormalizedDiaryEntry = {
     user_id: safeParseInteger(input.user_id, 'user_id', false) || 0,
@@ -140,7 +146,8 @@ export function normalizeDiaryEntry(input: {
     protein: safeParseNumber(input.protein, 'protein', 0),
     fat: safeParseNumber(input.fat, 'fat', 0),
     carbs: safeParseNumber(input.carbs, 'carbs', 0),
-    source: input.source ? String(input.source) : 'telegram',
+    source: validSource, // Content type: 'text', 'photo', or 'audio'
+    channel: input.channel ? String(input.channel) : 'telegram', // Default to 'telegram' if not specified
     message_id: input.message_id ? safeParseInteger(input.message_id, 'message_id', true) : null,
     chat_id: input.chat_id ? safeParseInteger(input.chat_id, 'chat_id', true) : null,
     parsed_json: input.parsed_json || null,

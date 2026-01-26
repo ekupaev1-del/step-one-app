@@ -245,6 +245,16 @@ export async function POST(req: NextRequest) {
     const chatId = message?.chat?.id;
     const messageId = message?.message_id;
     const text = message?.text?.trim();
+    
+    // Determine message type (source): text, photo, or audio
+    let messageSource: 'text' | 'photo' | 'audio' = 'text'; // Default fallback
+    if (message?.photo && message.photo.length > 0) {
+      messageSource = 'photo';
+    } else if (message?.voice || message?.audio) {
+      messageSource = 'audio';
+    } else if (text) {
+      messageSource = 'text';
+    }
 
     // Log received update with diagnostic info
     console.log(`[TELEGRAM_WEBHOOK:${requestId}] Received update:`, {
@@ -493,7 +503,8 @@ export async function POST(req: NextRequest) {
       protein: mealAnalysis.protein,
       fat: mealAnalysis.fat,
       carbs: mealAnalysis.carbs,
-      source: "telegram",
+      source: messageSource, // Content type: 'text', 'photo', or 'audio'
+      channel: 'telegram', // Communication channel
       message_id: messageId || null,
       chat_id: chatId || null,
       parsed_json: mealAnalysis,

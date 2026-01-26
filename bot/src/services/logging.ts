@@ -15,6 +15,7 @@ export interface LogEventOptions {
   requestId?: string;
   userId?: number; // BIGINT user_id from users table
   telegramUserId?: string | number;
+  chatId?: string | number;
   payload?: any;
   errorMessage?: string;
   errorStack?: string;
@@ -29,6 +30,7 @@ export async function logEvent(
     requestId,
     userId,
     telegramUserId,
+    chatId,
     payload,
     errorMessage,
     errorStack,
@@ -37,15 +39,17 @@ export async function logEvent(
   // Normalize telegramUserId to BIGINT (number)
   const telegramUserIdNum = telegramUserId ? (typeof telegramUserId === 'number' ? telegramUserId : parseInt(String(telegramUserId), 10)) : null;
 
-  // Prepare log entry with BIGINT types (NO chat_id - not in schema)
+  // Prepare log entry with BIGINT types (including chat_id as TEXT)
+  const chatIdStr = chatId ? String(chatId) : null;
   const logEntry: any = {
     level,
     source,
     request_id: requestId || null,
     user_id: userId || null, // BIGINT
     telegram_user_id: (telegramUserIdNum && !isNaN(telegramUserIdNum)) ? telegramUserIdNum : null, // BIGINT
+    chat_id: chatIdStr, // TEXT (as per schema)
     message: errorMessage || null,
-    meta: payload ? JSON.parse(JSON.stringify(payload)) : {}, // Store in meta JSONB
+    payload: payload ? JSON.parse(JSON.stringify(payload)) : {}, // Store in payload JSONB
   };
 
   // Always log to console first (for Vercel logs)

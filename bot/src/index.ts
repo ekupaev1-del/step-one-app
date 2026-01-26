@@ -1651,7 +1651,8 @@ bot.on("text", async (ctx) => {
       protein: mealAnalysis.protein,
       fat: mealAnalysis.fat,
       carbs: mealAnalysis.carbs,
-      source: 'telegram',
+      source: 'text', // Content type: text message
+      channel: 'telegram', // Communication channel
       message_id: ctx.message?.message_id || null,
       chat_id: ctx.chat?.id || null,
       parsed_json: mealAnalysis as any, // Store full analysis result for debugging
@@ -1695,10 +1696,26 @@ bot.on("text", async (ctx) => {
     // ============================================================================
     // STEP 5: Insert into Supabase diary table
     // ============================================================================
-    console.log(`[DB_INSERT_START:${requestId}] Inserting into diary table...`);
+    console.log(`[DB_INSERT_START:${requestId}] Inserting into diary table...`, {
+      messageKind: 'text',
+      userId: userData.id,
+      telegramUserId: telegram_id,
+      source: diaryEntry.source,
+      channel: diaryEntry.channel,
+      insertObject: {
+        user_id: diaryEntry.user_id,
+        telegram_user_id: diaryEntry.telegram_user_id,
+        source: diaryEntry.source,
+        channel: diaryEntry.channel,
+        meal_text_length: diaryEntry.meal_text?.length || 0,
+        calories: diaryEntry.calories,
+      },
+    });
     console.log(`[DB_INSERT:${requestId}] Normalized payload types:`, {
       user_id: { value: diaryEntry.user_id, type: typeof diaryEntry.user_id },
       telegram_user_id: { value: diaryEntry.telegram_user_id, type: typeof diaryEntry.telegram_user_id },
+      source: { value: diaryEntry.source, type: typeof diaryEntry.source },
+      channel: { value: diaryEntry.channel, type: typeof diaryEntry.channel },
       calories: { value: diaryEntry.calories, type: typeof diaryEntry.calories },
       protein: { value: diaryEntry.protein, type: typeof diaryEntry.protein },
       fat: { value: diaryEntry.fat, type: typeof diaryEntry.fat },
@@ -2953,7 +2970,8 @@ bot.on("voice", async (ctx) => {
       protein: mealAnalysis.protein,
       fat: mealAnalysis.fat,
       carbs: mealAnalysis.carbs,
-      source: 'telegram', // CRITICAL: Must match CHECK constraint
+      source: 'audio', // Content type: voice/audio message
+      channel: 'telegram', // Communication channel
       message_id: ctx.message?.message_id || null,
       chat_id: ctx.chat?.id || null,
       parsed_json: mealAnalysis as any,
@@ -2976,10 +2994,19 @@ bot.on("voice", async (ctx) => {
 
     // Log before insert
     console.log(`[VOICE_DB_INSERT:${requestId}] Inserting:`, {
-      user_id: diaryEntry.user_id,
-      telegram_user_id: diaryEntry.telegram_user_id,
+      messageKind: 'audio',
+      userId: userData.id,
+      telegramUserId: telegram_id,
       source: diaryEntry.source,
-      meal_text_length: diaryEntry.meal_text?.length || 0,
+      channel: diaryEntry.channel,
+      insertObject: {
+        user_id: diaryEntry.user_id,
+        telegram_user_id: diaryEntry.telegram_user_id,
+        source: diaryEntry.source,
+        channel: diaryEntry.channel,
+        meal_text_length: diaryEntry.meal_text?.length || 0,
+        calories: diaryEntry.calories,
+      },
     });
 
     const { error: insertError } = await supabase.from("diary").insert(diaryEntry);
