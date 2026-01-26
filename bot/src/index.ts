@@ -2676,7 +2676,31 @@ bot.on("photo", async (ctx) => {
     const { error: insertError } = await supabase.from("diary").insert(diaryEntry);
 
     if (insertError) {
-      // Log full error details
+      // CRITICAL: Log full error with Postgres details
+      const errorDetails = {
+        code: insertError.code || 'UNKNOWN',
+        message: insertError.message || 'Unknown error',
+        details: insertError.details || null,
+        hint: insertError.hint || null,
+        constraint: (insertError as any).constraint || null,
+        table: (insertError as any).table || null,
+        column: (insertError as any).column || null,
+      };
+
+      console.error(`[PHOTO_DB_INSERT_ERROR:${requestId}] Full Postgres error:`, {
+        requestId,
+        postgresCode: errorDetails.code,
+        postgresMessage: errorDetails.message,
+        postgresDetails: errorDetails.details,
+        constraint: errorDetails.constraint,
+        failedPayload: {
+          user_id: diaryEntry.user_id,
+          telegram_user_id: diaryEntry.telegram_user_id,
+          source: diaryEntry.source,
+          source_type: typeof diaryEntry.source,
+        },
+      });
+
       const errorContext = {
         requestId,
         telegram_user_id: telegram_id,
@@ -2684,20 +2708,23 @@ bot.on("photo", async (ctx) => {
         input_text: 'photo_analysis',
         table_name: 'diary',
         operation: 'insert',
-        supabase_error: {
-          code: insertError.code || 'UNKNOWN',
-          message: insertError.message || 'Unknown error',
-          details: insertError.details || null,
-          hint: insertError.hint || null,
-        },
+        postgresError: errorDetails,
         payload_preview: {
           user_id: diaryEntry.user_id,
           telegram_user_id: diaryEntry.telegram_user_id,
+          source: diaryEntry.source,
           meal_text_length: diaryEntry.meal_text.length,
           has_calories: diaryEntry.calories !== undefined,
         },
         timestamp: new Date().toISOString(),
       };
+
+      await logError('db_insert_diary_photo', insertError, {
+        requestId,
+        userId: userData.id,
+        telegramUserId: telegram_id,
+        payload: errorContext,
+      });
 
       // Log to console (structured)
       console.error(`[bot:${requestId}] Ошибка сохранения фото в diary:`, JSON.stringify(errorContext, null, 2));
@@ -2899,23 +2926,110 @@ bot.on("voice", async (ctx) => {
       }
     }
 
-    // Сохраняем в базу
-    const { error: insertError } = await supabase.from("diary").insert({
-      user_id: telegram_id,
-      meal_text: mealAnalysis.description,
-      calories: mealAnalysis.calories,
-      protein: mealAnalysis.protein,
-      fat: mealAnalysis.fat,
-      carbs: mealAnalysis.carbs
-    });
+    // Get user_id from users table (not telegram_id directly)
+    const { data: userData, error: userError } = await supabase
+      .from("users")
+      .select("id")
+      .eq("telegram_id", telegram_id)
+      .maybeSingle();
 
-    if (insertError) {
-      console.error("[bot] Ошибка сохранения:", insertError);
+    if (userError || !userData) {
+      console.error("[bot] Ошибка получения пользователя для голосового сообщения:", userError);
       await ctx.telegram.editMessageText(
         ctx.chat!.id,
         processingMsg.message_id,
         undefined,
-        "❌ Ошибка сохранения в базу данных."
+        "❌ Ошибка: пользователь не найден. Используйте /start для регистрации."
+      );
+      return;
+    }
+
+    // Prepare diary entry with normalization
+    const rawDiaryEntry = {
+      user_id: userData.id, // Use user.id from users table, not telegram_id
+      telegram_user_id: telegram_id,
+      meal_text: mealAnalysis.description,
+      calories: mealAnalysis.calories,
+      protein: mealAnalysis.protein,
+      fat: mealAnalysis.fat,
+      carbs: mealAnalysis.carbs,
+      source: 'telegram', // CRITICAL: Must match CHECK constraint
+      message_id: ctx.message?.message_id || null,
+      chat_id: ctx.chat?.id || null,
+      parsed_json: mealAnalysis as any,
+    };
+
+    // Normalize payload
+    let diaryEntry;
+    try {
+      diaryEntry = normalizeDiaryEntry(rawDiaryEntry);
+    } catch (normalizeError: any) {
+      console.error("[bot] Ошибка нормализации для голосового сообщения:", normalizeError);
+      await ctx.telegram.editMessageText(
+        ctx.chat!.id,
+        processingMsg.message_id,
+        undefined,
+        "❌ Ошибка обработки данных."
+      );
+      return;
+    }
+
+    // Log before insert
+    console.log(`[VOICE_DB_INSERT:${requestId}] Inserting:`, {
+      user_id: diaryEntry.user_id,
+      telegram_user_id: diaryEntry.telegram_user_id,
+      source: diaryEntry.source,
+      meal_text_length: diaryEntry.meal_text?.length || 0,
+    });
+
+    const { error: insertError } = await supabase.from("diary").insert(diaryEntry);
+
+    if (insertError) {
+      // CRITICAL: Log full error with Postgres details
+      const errorDetails = {
+        code: insertError.code || 'UNKNOWN',
+        message: insertError.message || 'Unknown error',
+        details: insertError.details || null,
+        hint: insertError.hint || null,
+        constraint: (insertError as any).constraint || null,
+        table: (insertError as any).table || null,
+        column: (insertError as any).column || null,
+      };
+
+      console.error(`[VOICE_DB_INSERT_ERROR:${requestId}] Full Postgres error:`, {
+        requestId,
+        postgresCode: errorDetails.code,
+        postgresMessage: errorDetails.message,
+        postgresDetails: errorDetails.details,
+        constraint: errorDetails.constraint,
+        failedPayload: {
+          user_id: diaryEntry.user_id,
+          telegram_user_id: diaryEntry.telegram_user_id,
+          source: diaryEntry.source,
+          source_type: typeof diaryEntry.source,
+        },
+      });
+
+      await logError('db_insert_diary_voice', insertError, {
+        requestId,
+        userId: userData.id,
+        telegramUserId: telegram_id,
+        payload: {
+          postgresError: errorDetails,
+          diaryEntry: {
+            user_id: diaryEntry.user_id,
+            telegram_user_id: diaryEntry.telegram_user_id,
+            source: diaryEntry.source,
+          },
+        },
+      });
+
+      const pgCode = errorDetails.code || 'DB_ERROR';
+      await ctx.telegram.editMessageText(
+        ctx.chat!.id,
+        processingMsg.message_id,
+        undefined,
+        `❌ Не сохранилось. Код: ${pgCode}. Напиши в поддержку: @STEP0NE11`
       );
       return;
     }

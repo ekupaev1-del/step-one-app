@@ -71,7 +71,7 @@ export async function GET(req: NextRequest) {
       }, { status: 404 });
     }
 
-    // Insert test diary entry
+    // Insert test diary entry (use 'api' source for test endpoint)
     const diaryEntry = {
       user_id: userData.id,
       telegram_user_id: telegramUserIdNum,
@@ -80,7 +80,7 @@ export async function GET(req: NextRequest) {
       protein: 10,
       fat: 5,
       carbs: 10,
-      source: 'test',
+      source: 'api', // Use 'api' instead of 'test' to match CHECK constraint
       parsed_json: { test: true },
     };
 
