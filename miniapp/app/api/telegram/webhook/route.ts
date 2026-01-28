@@ -10,7 +10,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createServerSupabaseClient } from "@/lib/supabaseAdmin";
 import { logEvent, logError, generateRequestId } from "@/lib/logging";
-import { normalizeDiaryEntry, logPayloadDetails, type MealAnalysis } from "@/lib/diaryNormalize";
+import type { MealAnalysis } from "@/lib/diaryNormalize";
 import OpenAI from "openai";
 
 // Lazy initialization of OpenAI client to avoid build-time errors
@@ -392,191 +392,101 @@ export async function POST(req: NextRequest) {
 
     const mealAnalysis = analysis as MealAnalysis;
 
-    // STEP 4: Resolve user from database
+    // STEP 4: Resolve UUID user (profiles) by telegram_id
     await logEvent("info", "user_resolve_start", {
       requestId,
       telegramUserId: String(telegramUserId),
+      payload: { note: "Resolving UUID profile for Telegram user" },
     });
 
-    const { data: userData, error: userError } = await supabase
-      .from("users")
-      .select("id")
+    const { data: profile, error: profileErr } = await supabase
+      .from("profiles")
+      .select("id, telegram_id")
       .eq("telegram_id", telegramUserId)
       .maybeSingle();
 
-    if (userError) {
-      await logError("user_resolve", userError, {
+    if (profileErr) {
+      await logError("user_resolve", profileErr, {
         requestId,
         telegramUserId: String(telegramUserId),
       });
     }
 
-    let userId: number;
-    if (!userData) {
-      // Create user if doesn't exist
-      const { data: newUser, error: createError } = await supabase
-        .from("users")
+    let userId: string;
+    if (profile?.id) {
+      userId = String(profile.id);
+    } else {
+      const { data: created, error: createErr } = await supabase
+        .from("profiles")
         .upsert({ telegram_id: telegramUserId }, { onConflict: "telegram_id" })
         .select("id")
         .single();
 
-      if (createError || !newUser) {
-        await logError("user_create", createError || new Error("Failed to create user"), {
+      if (createErr || !created?.id) {
+        await logError("user_create", createErr || new Error("Failed to create profile"), {
           requestId,
           telegramUserId: String(telegramUserId),
         });
 
-        const errorMsg = `❌ Ошибка: не удалось создать пользователя. Используйте /start для регистрации.\n\nКод запроса: ${requestId}`;
+        const errorMsg = `❌ Ошибка: не удалось создать аккаунт. Код: ${requestId}`;
         if (processingMessageId) {
           await sendTelegramEditMessage(chatId, processingMessageId, errorMsg, requestId);
         } else {
           await sendTelegramMessage(chatId, errorMsg, requestId);
         }
-
-        // Update incoming message status
-        if (telegramUserId && chatId) {
-          await supabase
-            .from("incoming_messages")
-            .update({ status: "failed", error: "User creation failed" })
-            .eq("request_id", requestId);
-        }
-
         return NextResponse.json({ ok: true });
       }
 
-      userId = newUser.id;
-      console.log(`[TELEGRAM_WEBHOOK:${requestId}] User created/resolved:`, {
-        telegram_user_id: telegramUserId,
-        internal_user_id: userId,
-        user_id_type: typeof userId,
-      });
-      await logEvent("info", "user_create_success", {
-        requestId,
-        userId: userId,
-        telegramUserId: telegramUserId,
-        payload: { userId, telegramUserId },
-      });
-    } else {
-      userId = userData.id;
-      console.log(`[TELEGRAM_WEBHOOK:${requestId}] User resolved:`, {
-        telegram_user_id: telegramUserId,
-        internal_user_id: userId,
-        user_id_type: typeof userId,
-      });
-      await logEvent("info", "user_resolve_success", {
-        requestId,
-        userId: userId,
-        telegramUserId: telegramUserId,
-        payload: { userId, telegramUserId },
-      });
+      userId = String(created.id);
     }
 
-    // STEP 5: Insert into diary table
-    // CRITICAL: Log diagnostic info before insert
-    console.log(`[DB_INSERT_START:${requestId}] Preparing diary insert:`, {
+    console.log(`[TELEGRAM_WEBHOOK:${requestId}] Resolved UUID user:`, {
       telegram_user_id: telegramUserId,
-      internal_user_id: userId,
-      user_id_type: typeof userId,
-      user_id_value: userId,
-      meal_text_length: mealAnalysis.description?.length || 0,
-      calories_type: typeof mealAnalysis.calories,
-      calories_value: mealAnalysis.calories,
+      user_id: userId,
     });
 
-    await logEvent("info", "db_insert_start", {
-      requestId,
-      userId: userId,
-      telegramUserId: telegramUserId,
-      payload: { 
-        userId, 
-        telegramUserId,
-        meal_text_length: mealAnalysis.description?.length || 0,
-      },
+    // STEP 5: Insert into unified meals storage (UUID user_id)
+    const messageUnixSec = typeof message?.date === "number" ? message.date : Math.floor(Date.now() / 1000);
+    const messageDate = new Date(messageUnixSec * 1000);
+    const dateStr = messageDate.toISOString().slice(0, 10); // YYYY-MM-DD (UTC)
+
+    console.log(`[DB_INSERT_START:${requestId}] Preparing meals insert:`, {
+      user_id: userId,
+      telegram_user_id: telegramUserId,
+      source: "telegram",
+      date: dateStr,
+      input_kind: messageSource,
     });
 
-    // Prepare raw payload (before normalization)
-    const rawDiaryEntry = {
-      user_id: userId, // Should be BIGINT number
-      telegram_user_id: telegramUserId, // Should be BIGINT number
+    const insertPayload = {
+      user_id: userId,
+      date: dateStr,
+      source: "telegram",
       meal_text: mealAnalysis.description,
       calories: mealAnalysis.calories,
       protein: mealAnalysis.protein,
       fat: mealAnalysis.fat,
       carbs: mealAnalysis.carbs,
-      source: messageSource, // Content type: 'text', 'photo', or 'audio'
-      channel: 'telegram', // Communication channel
-      message_id: messageId || null,
-      chat_id: chatId || null,
-      parsed_json: mealAnalysis,
+      legacy_payload: {
+        channel: "telegram",
+        input_kind: messageSource,
+        telegram_user_id: telegramUserId,
+        chat_id: chatId,
+        message_id: messageId,
+        request_id: requestId,
+        parsed_json: mealAnalysis,
+      },
     };
 
-    // Log raw payload with types (diagnostic)
-    console.log(`[DB_INSERT:${requestId}] Raw payload types:`, {
-      user_id: { value: rawDiaryEntry.user_id, type: typeof rawDiaryEntry.user_id },
-      telegram_user_id: { value: rawDiaryEntry.telegram_user_id, type: typeof rawDiaryEntry.telegram_user_id },
-      meal_text: { value: rawDiaryEntry.meal_text?.substring(0, 50), type: typeof rawDiaryEntry.meal_text },
-      calories: { value: rawDiaryEntry.calories, type: typeof rawDiaryEntry.calories },
-      protein: { value: rawDiaryEntry.protein, type: typeof rawDiaryEntry.protein },
-      fat: { value: rawDiaryEntry.fat, type: typeof rawDiaryEntry.fat },
-      carbs: { value: rawDiaryEntry.carbs, type: typeof rawDiaryEntry.carbs },
+    console.log(`[DB_INSERT:${requestId}] Payload types:`, {
+      user_id: { value: insertPayload.user_id, type: typeof insertPayload.user_id },
+      telegram_user_id: { value: telegramUserId, type: typeof telegramUserId },
+      calories: { value: insertPayload.calories, type: typeof insertPayload.calories },
     });
 
-    // Normalize payload to ensure correct types
-    let diaryEntry;
-    try {
-      diaryEntry = normalizeDiaryEntry(rawDiaryEntry);
-      logPayloadDetails(`DB_INSERT:${requestId}`, rawDiaryEntry, diaryEntry);
-    } catch (normalizeError: any) {
-      await logError("diary_normalize", normalizeError, {
-        requestId,
-        telegramUserId: String(telegramUserId),
-        payload: { rawDiaryEntry },
-      });
-      const errorMsg = `❌ Ошибка обработки данных. Код: ${requestId}\n\nНапишите в поддержку: @STEP0NE11`;
-      if (processingMessageId) {
-        await sendTelegramEditMessage(chatId, processingMessageId, errorMsg, requestId);
-      } else {
-        await sendTelegramMessage(chatId, errorMsg, requestId);
-      }
-      return NextResponse.json({ ok: true });
-    }
-
-    // Log normalized payload (diagnostic)
-    console.log(`[DB_INSERT:${requestId}] Normalized payload types:`, {
-      user_id: { value: diaryEntry.user_id, type: typeof diaryEntry.user_id },
-      telegram_user_id: { value: diaryEntry.telegram_user_id, type: typeof diaryEntry.telegram_user_id },
-      calories: { value: diaryEntry.calories, type: typeof diaryEntry.calories },
-      protein: { value: diaryEntry.protein, type: typeof diaryEntry.protein },
-      fat: { value: diaryEntry.fat, type: typeof diaryEntry.fat },
-      carbs: { value: diaryEntry.carbs, type: typeof diaryEntry.carbs },
-    });
-
-    await logEvent("info", "db_insert_normalized", {
-      requestId,
-      userId: userId,
-      telegramUserId: telegramUserId,
-      payload: {
-        user_id: diaryEntry.user_id,
-        calories: diaryEntry.calories,
-        protein: diaryEntry.protein,
-        fat: diaryEntry.fat,
-        carbs: diaryEntry.carbs,
-        allTypes: {
-          user_id: typeof diaryEntry.user_id,
-          telegram_user_id: typeof diaryEntry.telegram_user_id,
-          calories: typeof diaryEntry.calories,
-          protein: typeof diaryEntry.protein,
-          fat: typeof diaryEntry.fat,
-          carbs: typeof diaryEntry.carbs,
-        },
-      },
-    });
-
-    // Perform insert
-    console.log(`[DB_INSERT:${requestId}] Executing Supabase insert...`);
     const { data: insertData, error: insertError } = await supabase
-      .from("diary")
-      .insert(diaryEntry)
+      .from("meals")
+      .insert(insertPayload)
       .select("id")
       .single();
 
@@ -613,46 +523,17 @@ export async function POST(req: NextRequest) {
         fullErrorObject: insertError,
       });
       console.error(`[DB_INSERT_ERROR:${requestId}] Failed payload:`, {
-        normalizedPayload: diaryEntry,
-        rawPayload: rawDiaryEntry,
-        payloadTypes: {
-          user_id: typeof diaryEntry.user_id,
-          telegram_user_id: typeof diaryEntry.telegram_user_id,
-          source: typeof diaryEntry.source,
-          source_value: diaryEntry.source,
-          calories: typeof diaryEntry.calories,
-        },
+        payload: insertPayload,
       });
 
       // Log to app_logs (but don't crash if this fails)
-      await logError("db_insert", insertError, {
+      await logError("db_insert_meals", insertError, {
         requestId,
-        userId: userId,
         telegramUserId: telegramUserId,
         payload: {
           userId,
           telegramUserId,
-          normalizedDiaryEntry: {
-            user_id: diaryEntry.user_id,
-            telegram_user_id: diaryEntry.telegram_user_id,
-            meal_text: diaryEntry.meal_text?.substring(0, 50),
-            calories: diaryEntry.calories,
-            protein: diaryEntry.protein,
-            fat: diaryEntry.fat,
-            carbs: diaryEntry.carbs,
-            source: diaryEntry.source,
-            message_id: diaryEntry.message_id,
-            chat_id: diaryEntry.chat_id,
-            allTypes: {
-              user_id: typeof diaryEntry.user_id,
-              telegram_user_id: typeof diaryEntry.telegram_user_id,
-              source: typeof diaryEntry.source,
-              calories: typeof diaryEntry.calories,
-              protein: typeof diaryEntry.protein,
-              fat: typeof diaryEntry.fat,
-              carbs: typeof diaryEntry.carbs,
-            },
-          },
+          insertPayload,
           postgresError: errorDetails,
         },
       });
@@ -666,22 +547,11 @@ export async function POST(req: NextRequest) {
         await sendTelegramMessage(chatId, errorMsg, requestId);
       }
 
-      // Update incoming message status
-      if (telegramUserId && chatId) {
-        await supabase
-          .from("incoming_messages")
-          .update({
-            status: "failed",
-            error: `DB insert failed: ${insertError.message}`,
-          })
-          .eq("request_id", requestId);
-      }
-
       return NextResponse.json({ ok: true });
     }
 
     // STEP 6: Success - send confirmation
-    console.log(`[DB_INSERT_SUCCESS:${requestId}] Diary entry saved:`, {
+    console.log(`[DB_INSERT_SUCCESS:${requestId}] Meal saved:`, {
       inserted_id: insertData?.id,
       user_id: userId,
       telegram_user_id: telegramUserId,
@@ -689,7 +559,6 @@ export async function POST(req: NextRequest) {
 
     await logEvent("info", "db_insert_success", {
       requestId,
-      userId: userId,
       telegramUserId: telegramUserId,
       payload: { insertedId: insertData?.id, userId, telegramUserId },
     });

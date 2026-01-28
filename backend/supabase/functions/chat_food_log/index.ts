@@ -77,23 +77,25 @@ serve(async (req) => {
 
     const { text, userId: rawUserId, timezone, date, imageBase64, audioBase64 } = body
 
-    // Конвертируем userId в number (может быть Int64 из Swift, который приходит как строка или число)
-    const userId = typeof rawUserId === 'string' ? parseInt(rawUserId, 10) : Number(rawUserId)
+    // UUID-first: iOS userId is UUID string. NEVER parse Telegram user.id as UUID.
+    const userId = typeof rawUserId === 'string' ? rawUserId.trim() : String(rawUserId ?? '').trim()
 
     console.log('[chat_food_log] Получен запрос:', {
       rawUserId,
       userId,
       userIdType: typeof rawUserId,
-      hasUserId: !!userId && !isNaN(userId),
+      hasUserId: !!userId,
       hasText: !!text && typeof text === 'string' && text.trim().length > 0,
       hasImage: !!imageBase64 && typeof imageBase64 === 'string' && imageBase64.trim().length > 0,
       hasAudio: !!audioBase64 && typeof audioBase64 === 'string' && audioBase64.trim().length > 0,
       imageBase64Length: imageBase64 ? (typeof imageBase64 === 'string' ? imageBase64.length : 'not a string') : 0
     })
 
-    if (!userId || isNaN(userId) || userId === 0 || userId < 1) {
+    // Basic UUID format validation (RFC4122 v1-v5)
+    const uuidRe = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i
+    if (!userId || !uuidRe.test(userId)) {
       return new Response(
-        JSON.stringify({ error: `Missing or invalid userId. Received: ${rawUserId} (type: ${typeof rawUserId}), parsed: ${userId}` }),
+        JSON.stringify({ error: `Missing or invalid userId (expected UUID). Received: ${rawUserId} (type: ${typeof rawUserId}), parsed: ${userId}` }),
         { status: 400, headers: { 'Content-Type': 'application/json' } }
       )
     }
@@ -114,30 +116,23 @@ serve(async (req) => {
     // We validate userId directly from the database instead of JWT
     const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY)
 
-    // Get user profile for daily norms and telegram_id
+    // Ensure profile exists (UUID-first account identity)
     const { data: userProfile, error: userError } = await supabase
-      .from('users')
-      .select('telegram_id, calories, protein, fat, carbs')
-      .eq('id', userId)
+      .from('profiles')
+      .upsert({ id: userId }, { onConflict: 'id' })
+      .select('id, telegram_id')
       .single()
 
     if (userError || !userProfile) {
       return new Response(
-        JSON.stringify({ error: 'User not found' }),
-        { status: 404, headers: { 'Content-Type': 'application/json' } }
+        JSON.stringify({ error: 'Failed to resolve user profile' }),
+        { status: 500, headers: { 'Content-Type': 'application/json' } }
       )
     }
 
-    // КРИТИЧНО: Получаем telegram_id для использования в diary (бот использует telegram_id как user_id)
-    // Если telegram_id нет, используем id (для iOS пользователей без Telegram)
-    // Это гарантирует, что записи будут видны и в боте, и в iOS/miniapp
-    const diaryUserId = userProfile.telegram_id || userId
-
-    console.log('[chat_food_log] Пользователь:', {
+    console.log('[chat_food_log] Пользователь (profiles):', {
       id: userId,
-      telegram_id: userProfile.telegram_id,
-      diaryUserId,
-      'Используется для БД': diaryUserId === userProfile.telegram_id ? 'telegram_id' : 'id'
+      telegram_id: userProfile.telegram_id ?? null
     })
     // #region agent log
     fetch('http://127.0.0.1:7242/ingest/43e8883f-375d-4d43-af6f-fef79b5ebbe3',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'backend/supabase/functions/chat_food_log/index.ts:136',message:'HYP-A: Edge Function user data',data:{userId,userProfileId:userProfile.id,telegramId:userProfile.telegram_id,diaryUserId},timestamp:Date.now(),sessionId:'debug-sync',runId:'run1',hypothesisId:'A'})}).catch(()=>{});
@@ -433,14 +428,14 @@ serve(async (req) => {
       : (date || mealDate.toISOString().split('T')[0])
     const timeStr = mealDate.toTimeString().split(' ')[0].substring(0, 5)
 
-    // Save to diary (используем telegram_id если есть, иначе id)
+    // Save to unified meals storage (UUID user_id)
     const mealText = parsed.description || analyzedText || text || 'Еда'
 
     console.log('[chat_food_log] ========== СОХРАНЕНИЕ ЗАПИСИ ==========')
     console.log('[chat_food_log] userId (из запроса):', userId)
     console.log('[chat_food_log] =========================================')
-    console.log('[chat_food_log] СОЗДАНИЕ ЗАПИСИ В БД:')
-    console.log('[chat_food_log]   user_id (для БД):', diaryUserId, `(${diaryUserId === userProfile.telegram_id ? 'telegram_id' : 'id из users'})`)
+    console.log('[chat_food_log] СОЗДАНИЕ ЗАПИСИ В БД (meals):')
+    console.log('[chat_food_log]   user_id (UUID):', userId)
     console.log('[chat_food_log]   meal_text:', mealText)
     console.log('[chat_food_log]   calories:', parsed.calories || 0)
     console.log('[chat_food_log]   protein:', parsed.protein || 0)
@@ -450,18 +445,22 @@ serve(async (req) => {
     console.log('[chat_food_log]   date (для ответа):', dateStr)
     console.log('[chat_food_log] =========================================')
     
-    // КРИТИЧНО: Используем diaryUserId (telegram_id если есть, иначе id)
-    // Это гарантирует единый формат записи, который будет виден и в боте, и в miniapp
     const { data: meal, error: mealError } = await supabase
-      .from('diary')
+      .from('meals')
       .insert({
-        user_id: diaryUserId,  // КРИТИЧНО: telegram_id || id - единый формат для всех клиентов
+        user_id: userId,
+        date: dateStr,
+        source: 'ios',
         meal_text: mealText,
         calories: parsed.calories || 0,
         protein: parsed.protein || 0,
         fat: parsed.fat || 0,
         carbs: parsed.carbs || 0,
-        created_at: createdAtIndexDB
+        created_at: createdAtIndexDB,
+        legacy_payload: {
+          channel: 'ios',
+          timezone: timezone ?? null
+        }
       })
       .select()
       .single()
@@ -474,7 +473,7 @@ serve(async (req) => {
       )
     }
 
-    console.log('[chat_food_log] ✅ Запись успешно сохранена в БД:')
+    console.log('[chat_food_log] ✅ Запись успешно сохранена в БД (meals):')
     console.log('[chat_food_log]   meal.id:', meal.id)
     console.log('[chat_food_log]   meal.user_id:', meal.user_id)
     console.log('[chat_food_log]   meal.created_at (из БД):', meal.created_at)
@@ -485,13 +484,12 @@ serve(async (req) => {
     const endOfDay = new Date(mealDate)
     endOfDay.setHours(23, 59, 59, 999)
 
-    // Получаем сегодняшние записи используя diaryUserId
+    // Получаем сегодняшние записи используя UUID user_id + date
     const { data: todayMeals, error: mealsError } = await supabase
-      .from('diary')
+      .from('meals')
       .select('calories, protein, fat, carbs')
-      .eq('user_id', diaryUserId)
-      .gte('created_at', startOfDay.toISOString())
-      .lte('created_at', endOfDay.toISOString())
+      .eq('user_id', userId)
+      .eq('date', dateStr)
 
     if (mealsError) {
       console.error('[chat_food_log] Error getting today meals:', mealsError)
@@ -504,11 +502,13 @@ serve(async (req) => {
       carbs: acc.carbs + (m.carbs || 0)
     }), { calories: 0, protein: 0, fat: 0, carbs: 0 }) || { calories: 0, protein: 0, fat: 0, carbs: 0 }
 
+    // UUID-first profiles table does not store daily norms yet.
+    // We keep response shape stable; dailyNorm = 0 means "unknown".
     const dailyNorm = {
-      calories: userProfile.calories || 0,
-      protein: userProfile.protein || 0,
-      fat: userProfile.fat || 0,
-      carbs: userProfile.carbs || 0
+      calories: 0,
+      protein: 0,
+      fat: 0,
+      carbs: 0
     }
 
     const remainingToday = {

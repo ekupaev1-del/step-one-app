@@ -1841,6 +1841,70 @@ bot.on("text", async (ctx) => {
       console.log(`[DEBUG_FOOD:${requestId}] Inserted record:`, insertData);
     }
 
+    // ----------------------------------------------------------------------------
+    // UUID-first sync write (profiles/meals) for iOS + Telegram unified diary
+    // IMPORTANT: this must NEVER break the bot flow (best-effort).
+    // ----------------------------------------------------------------------------
+    try {
+      const { data: profile, error: profileErr } = await supabase
+        .from("profiles")
+        .select("id")
+        .eq("telegram_id", telegram_id)
+        .maybeSingle();
+
+      if (profileErr) {
+        console.error(`[UUID_SYNC:${requestId}] Failed to resolve profile:`, profileErr);
+      } else {
+        let uuidUserId: string | null = profile?.id ? String(profile.id) : null;
+
+        if (!uuidUserId) {
+          const { data: created, error: createErr } = await supabase
+            .from("profiles")
+            .upsert({ telegram_id }, { onConflict: "telegram_id" })
+            .select("id")
+            .single();
+
+          if (createErr) {
+            console.error(`[UUID_SYNC:${requestId}] Failed to create profile:`, createErr);
+          } else {
+            uuidUserId = created?.id ? String(created.id) : null;
+          }
+        }
+
+        if (uuidUserId) {
+          const dateStr = new Date().toISOString().slice(0, 10);
+          const { error: mealsErr } = await supabase.from("meals").insert({
+            user_id: uuidUserId,
+            date: dateStr,
+            source: "telegram",
+            meal_text: mealAnalysis.description,
+            calories: mealAnalysis.calories,
+            protein: mealAnalysis.protein,
+            fat: mealAnalysis.fat,
+            carbs: mealAnalysis.carbs,
+            legacy_payload: {
+              request_id: requestId,
+              channel: "telegram",
+              telegram_user_id: telegram_id,
+              diary_id: insertData?.id ?? null,
+            },
+          });
+
+          if (mealsErr) {
+            console.error(`[UUID_SYNC:${requestId}] Failed to insert into meals:`, mealsErr);
+          } else {
+            console.log(`[UUID_SYNC:${requestId}] Wrote meal to UUID diary`, {
+              user_id: uuidUserId,
+              telegram_id,
+              date: dateStr,
+            });
+          }
+        }
+      }
+    } catch (e: any) {
+      console.error(`[UUID_SYNC:${requestId}] Unexpected error:`, e?.message || e);
+    }
+
     // Получаем статистику за сегодня
     const todayMeals = await getTodayMeals(telegram_id);
     const dailyNorm = await getUserDailyNorm(telegram_id);
@@ -2341,7 +2405,7 @@ bot.command("отчет", async (ctx) => {
     // Сначала ищем по diaryUserId (telegram_id если есть, иначе id)
     const { data: mealsByDiaryUserId, error: errorByDiaryUserId } = await supabase
       .from("diary")
-      .select("meal_text, calories, protein, fat, carbs, created_at, user_id")
+      .select("id, meal_text, calories, protein, fat, carbs, created_at, user_id")
       .eq("user_id", diaryUserId)
       .gte("created_at", todayISO)
       .lte("created_at", endOfDayISO)
@@ -2371,7 +2435,7 @@ bot.command("отчет", async (ctx) => {
       console.log(`[bot] /отчет: Дополнительный поиск по id=${user.id} (для записей iOS, созданных с user_id=id)`);
       const { data: mealsById, error: errorById } = await supabase
         .from("diary")
-        .select("meal_text, calories, protein, fat, carbs, created_at, user_id")
+        .select("id, meal_text, calories, protein, fat, carbs, created_at, user_id")
         .eq("user_id", user.id)
         .gte("created_at", todayISO)
         .lte("created_at", endOfDayISO)
@@ -2746,13 +2810,18 @@ bot.on("photo", async (ctx) => {
       // Log to console (structured)
       console.error(`[bot:${requestId}] Ошибка сохранения фото в diary:`, JSON.stringify(errorContext, null, 2));
 
-      // Log to app_errors table (async, don't wait)
-      supabase.from("app_errors").insert({
-        request_id: requestId,
-        context: errorContext,
-      }).catch((logError) => {
-        console.error(`[bot:${requestId}] Failed to log error to app_errors:`, logError);
-      });
+      // Log to app_errors table (best-effort; never throw)
+      try {
+        const { error: appErr } = await supabase.from("app_errors").insert({
+          request_id: requestId,
+          context: errorContext,
+        });
+        if (appErr) {
+          console.error(`[bot:${requestId}] Failed to log error to app_errors:`, appErr);
+        }
+      } catch (logErr: any) {
+        console.error(`[bot:${requestId}] Failed to log error to app_errors:`, logErr);
+      }
 
       // Generate user-friendly error message with error code
       const errorCode = insertError.code || 'DB_ERROR';
@@ -2773,6 +2842,61 @@ bot.on("photo", async (ctx) => {
       telegram_user_id: telegram_id,
       meal_text: mealAnalysis.description.substring(0, 50),
     });
+
+    // Best-effort UUID-first sync write (profiles/meals)
+    try {
+      const { data: profile, error: profileErr } = await supabase
+        .from("profiles")
+        .select("id")
+        .eq("telegram_id", telegram_id)
+        .maybeSingle();
+
+      if (profileErr) {
+        console.error(`[UUID_SYNC:${requestId}] Failed to resolve profile:`, profileErr);
+      } else {
+        let uuidUserId: string | null = profile?.id ? String(profile.id) : null;
+
+        if (!uuidUserId) {
+          const { data: created, error: createErr } = await supabase
+            .from("profiles")
+            .upsert({ telegram_id }, { onConflict: "telegram_id" })
+            .select("id")
+            .single();
+
+          if (createErr) {
+            console.error(`[UUID_SYNC:${requestId}] Failed to create profile:`, createErr);
+          } else {
+            uuidUserId = created?.id ? String(created.id) : null;
+          }
+        }
+
+        if (uuidUserId) {
+          const dateStr = new Date().toISOString().slice(0, 10);
+          const { error: mealsErr } = await supabase.from("meals").insert({
+            user_id: uuidUserId,
+            date: dateStr,
+            source: "telegram",
+            meal_text: mealAnalysis.description,
+            calories: mealAnalysis.calories,
+            protein: mealAnalysis.protein,
+            fat: mealAnalysis.fat,
+            carbs: mealAnalysis.carbs,
+            legacy_payload: {
+              request_id: requestId,
+              channel: "telegram",
+              telegram_user_id: telegram_id,
+              input_kind: "photo",
+            },
+          });
+
+          if (mealsErr) {
+            console.error(`[UUID_SYNC:${requestId}] Failed to insert into meals:`, mealsErr);
+          }
+        }
+      }
+    } catch (e: any) {
+      console.error(`[UUID_SYNC:${requestId}] Unexpected error:`, e?.message || e);
+    }
 
     // Получаем статистику за сегодня
     const todayMeals = await getTodayMeals(telegram_id);
@@ -2858,7 +2982,9 @@ bot.on("voice", async (ctx) => {
       return ctx.reply("Ошибка: не удалось определить ваш Telegram ID");
     }
 
-    console.log(`[bot] Получено голосовое сообщение от ${telegram_id}`);
+    const requestId = `voice-save-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
+
+    console.log(`[bot:${requestId}] Получено голосовое сообщение от ${telegram_id}`);
 
 
     // Показываем, что обрабатываем
@@ -2869,7 +2995,7 @@ bot.on("voice", async (ctx) => {
     const file = await ctx.telegram.getFile(voice.file_id);
     const audioUrl = `https://api.telegram.org/file/bot${env.telegramBotToken}/${file.file_path}`;
 
-    console.log(`[bot] URL аудио: ${audioUrl}`);
+    console.log(`[bot:${requestId}] URL аудио: ${audioUrl}`);
 
     // Транскрибируем через Whisper
     const transcribedText = await transcribeAudio(audioUrl);
@@ -3059,6 +3185,61 @@ bot.on("voice", async (ctx) => {
         `❌ Не сохранилось. Код: ${pgCode}. Напиши в поддержку: @STEP0NE11`
       );
       return;
+    }
+
+    // Best-effort UUID-first sync write (profiles/meals)
+    try {
+      const { data: profile, error: profileErr } = await supabase
+        .from("profiles")
+        .select("id")
+        .eq("telegram_id", telegram_id)
+        .maybeSingle();
+
+      if (profileErr) {
+        console.error(`[UUID_SYNC:${requestId}] Failed to resolve profile:`, profileErr);
+      } else {
+        let uuidUserId: string | null = profile?.id ? String(profile.id) : null;
+
+        if (!uuidUserId) {
+          const { data: created, error: createErr } = await supabase
+            .from("profiles")
+            .upsert({ telegram_id }, { onConflict: "telegram_id" })
+            .select("id")
+            .single();
+
+          if (createErr) {
+            console.error(`[UUID_SYNC:${requestId}] Failed to create profile:`, createErr);
+          } else {
+            uuidUserId = created?.id ? String(created.id) : null;
+          }
+        }
+
+        if (uuidUserId) {
+          const dateStr = new Date().toISOString().slice(0, 10);
+          const { error: mealsErr } = await supabase.from("meals").insert({
+            user_id: uuidUserId,
+            date: dateStr,
+            source: "telegram",
+            meal_text: mealAnalysis.description,
+            calories: mealAnalysis.calories,
+            protein: mealAnalysis.protein,
+            fat: mealAnalysis.fat,
+            carbs: mealAnalysis.carbs,
+            legacy_payload: {
+              request_id: requestId,
+              channel: "telegram",
+              telegram_user_id: telegram_id,
+              input_kind: "audio",
+            },
+          });
+
+          if (mealsErr) {
+            console.error(`[UUID_SYNC:${requestId}] Failed to insert into meals:`, mealsErr);
+          }
+        }
+      }
+    } catch (e: any) {
+      console.error(`[UUID_SYNC:${requestId}] Unexpected error:`, e?.message || e);
     }
 
     // Получаем статистику за сегодня
