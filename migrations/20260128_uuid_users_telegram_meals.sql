@@ -26,44 +26,23 @@ CREATE TABLE IF NOT EXISTS public.profiles (
   updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
--- updated_at trigger (shared helper)
-DO $$
+-- updated_at trigger function (create if not exists)
+CREATE OR REPLACE FUNCTION public.set_updated_at()
+RETURNS trigger
+LANGUAGE plpgsql
+AS $$
 BEGIN
-  IF NOT EXISTS (
-    SELECT 1
-    FROM pg_proc
-    WHERE proname = 'set_updated_at'
-      AND pg_function_is_visible(oid)
-  ) THEN
-    EXECUTE $fn$
-      CREATE FUNCTION public.set_updated_at()
-      RETURNS trigger
-      LANGUAGE plpgsql
-      AS $$
-      BEGIN
-        NEW.updated_at = NOW();
-        RETURN NEW;
-      END;
-      $$;
-    $fn$;
-  END IF;
-END $$;
+  NEW.updated_at = NOW();
+  RETURN NEW;
+END;
+$$;
 
-DO $$
-BEGIN
-  IF NOT EXISTS (
-    SELECT 1
-    FROM pg_trigger
-    WHERE tgname = 'profiles_set_updated_at'
-  ) THEN
-    EXECUTE $trg$
-      CREATE TRIGGER profiles_set_updated_at
-      BEFORE UPDATE ON public.profiles
-      FOR EACH ROW
-      EXECUTE FUNCTION public.set_updated_at();
-    $trg$;
-  END IF;
-END $$;
+-- updated_at trigger for profiles
+DROP TRIGGER IF EXISTS profiles_set_updated_at ON public.profiles;
+CREATE TRIGGER profiles_set_updated_at
+  BEFORE UPDATE ON public.profiles
+  FOR EACH ROW
+  EXECUTE FUNCTION public.set_updated_at();
 
 -- -----------------------------------------------------------------------------
 -- telegram_link_tokens (one-time link tokens)
@@ -127,39 +106,18 @@ CREATE INDEX IF NOT EXISTS idx_meal_items_meal_id
 -- Optional: ensure legacy users.telegram_id exists + unique index (best-effort)
 -- This is guarded to avoid breaking prod if duplicates exist.
 -- -----------------------------------------------------------------------------
-DO $$
-DECLARE
-  duplicates_count INTEGER := 0;
-BEGIN
-  IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema = 'public' AND table_name = 'users') THEN
-    -- Ensure column exists
-    IF NOT EXISTS (
-      SELECT 1 FROM information_schema.columns
-      WHERE table_schema = 'public' AND table_name = 'users' AND column_name = 'telegram_id'
-    ) THEN
-      EXECUTE 'ALTER TABLE public.users ADD COLUMN telegram_id BIGINT NULL';
-    END IF;
+-- Add telegram_id column to users if it doesn't exist
+ALTER TABLE public.users ADD COLUMN IF NOT EXISTS telegram_id BIGINT NULL;
 
-    -- Only create UNIQUE index if there are no duplicates
-    EXECUTE $q$
-      SELECT COUNT(*)::int
-      FROM (
-        SELECT telegram_id
-        FROM public.users
-        WHERE telegram_id IS NOT NULL
-        GROUP BY telegram_id
-        HAVING COUNT(*) > 1
-      ) d
-    $q$ INTO duplicates_count;
+-- Drop existing indexes if they exist
+DROP INDEX IF EXISTS idx_users_telegram_id_unique;
+DROP INDEX IF EXISTS idx_users_telegram_id;
 
-    IF duplicates_count = 0 THEN
-      EXECUTE 'CREATE UNIQUE INDEX IF NOT EXISTS idx_users_telegram_id_unique ON public.users(telegram_id) WHERE telegram_id IS NOT NULL';
-    ELSE
-      RAISE NOTICE 'Skipped UNIQUE index on public.users.telegram_id due to duplicates (count=%)', duplicates_count;
-      EXECUTE 'CREATE INDEX IF NOT EXISTS idx_users_telegram_id ON public.users(telegram_id) WHERE telegram_id IS NOT NULL';
-    END IF;
-  END IF;
-END $$;
+-- Create non-unique index (always safe, even if duplicates exist)
+CREATE INDEX IF NOT EXISTS idx_users_telegram_id ON public.users(telegram_id) WHERE telegram_id IS NOT NULL;
+
+-- Note: If you need a UNIQUE index on users.telegram_id, you must first ensure no duplicates exist,
+-- then manually run: CREATE UNIQUE INDEX idx_users_telegram_id_unique ON public.users(telegram_id) WHERE telegram_id IS NOT NULL;
 
 -- -----------------------------------------------------------------------------
 -- Reload PostgREST schema cache (Supabase)
