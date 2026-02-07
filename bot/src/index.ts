@@ -216,6 +216,19 @@ bot.start(async (ctx) => {
         routine: (selectError as any).routine,
         stack: selectError.stack,
       };
+
+      // Log with requestId for correlation
+      console.error(`[bot:${requestId}] DB_ERROR [${dbErrorDetails.code}]:`, JSON.stringify({
+        requestId,
+        operation: 'users.select',
+        telegramUserId: telegram_id,
+        errorCode: dbErrorDetails.code,
+        errorMessage: dbErrorDetails.message,
+        errorDetails: dbErrorDetails.details,
+        errorHint: dbErrorDetails.hint,
+        constraint: dbErrorDetails.constraint,
+        table: dbErrorDetails.table,
+      }));
       
       // DB failure snapshot for debugging (no secrets)
       const dbFailureSnapshot = {
@@ -285,6 +298,20 @@ bot.start(async (ctx) => {
             table: (upsertError as any).table,
             column: (upsertError as any).column,
           };
+
+          // Log with requestId for correlation
+          console.error(`[bot:${requestId}] DB_ERROR [${dbErrorDetails.code}]:`, JSON.stringify({
+            requestId,
+            operation: 'users.upsert',
+            telegramUserId: telegram_id,
+            errorCode: dbErrorDetails.code,
+            errorMessage: dbErrorDetails.message,
+            errorDetails: dbErrorDetails.detail,
+            errorHint: dbErrorDetails.hint,
+            constraint: dbErrorDetails.constraint,
+            table: dbErrorDetails.table,
+            column: dbErrorDetails.column,
+          }));
           
           // Create structured error log entry
           const errorLogEntry = {

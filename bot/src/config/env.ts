@@ -17,14 +17,15 @@ interface EnvConfig {
 
 function validateEnv(): EnvConfig {
   const telegramBotToken = process.env.TELEGRAM_BOT_TOKEN;
-  const supabaseUrl = process.env.SUPABASE_URL;
+  // Support both SUPABASE_URL and NEXT_PUBLIC_SUPABASE_URL for consistency
+  const supabaseUrl = process.env.SUPABASE_URL || process.env.NEXT_PUBLIC_SUPABASE_URL;
   const supabaseServiceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
   const openaiApiKey = process.env.OPENAI_API_KEY;
 
   const missing: string[] = [];
 
   if (!telegramBotToken) missing.push("TELEGRAM_BOT_TOKEN");
-  if (!supabaseUrl) missing.push("SUPABASE_URL");
+  if (!supabaseUrl) missing.push("SUPABASE_URL or NEXT_PUBLIC_SUPABASE_URL");
   if (!supabaseServiceRoleKey) missing.push("SUPABASE_SERVICE_ROLE_KEY");
   if (!openaiApiKey) missing.push("OPENAI_API_KEY");
 
