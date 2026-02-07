@@ -52,27 +52,32 @@ export async function logEvent(
     payload: payload ? JSON.parse(JSON.stringify(payload)) : {}, // Store in payload JSONB
   };
 
-  // Always log to console first (for Vercel logs)
+  // Always log to console as structured JSON (for Vercel logs)
+  // This ensures logs are parseable and searchable
   const consoleLog = {
     level,
     source,
-    requestId,
-    userId,
-    telegramUserId: telegramUserIdNum,
+    requestId: requestId || null,
+    userId: userId || null,
+    telegramUserId: telegramUserIdNum || null,
     timestamp: new Date().toISOString(),
-    ...(payload && { payload: typeof payload === 'object' ? JSON.stringify(payload).substring(0, 500) : String(payload).substring(0, 500) }),
+    ...(payload && { payload: typeof payload === 'object' ? JSON.stringify(payload).substring(0, 1000) : String(payload).substring(0, 1000) }),
     ...(errorMessage && { error: errorMessage }),
+    ...(errorStack && { stack: errorStack.substring(0, 2000) }),
   };
 
+  // Always output as single-line JSON for better log aggregation
+  const logLine = JSON.stringify(consoleLog);
+  
   if (level === 'error') {
-    console.error(`[${source}:${requestId || 'no-request-id'}]`, consoleLog);
-    if (errorStack) {
-      console.error(`[${source}:${requestId || 'no-request-id'}] Stack:`, errorStack);
-    }
+    console.error(logLine);
   } else if (level === 'warn') {
-    console.warn(`[${source}:${requestId || 'no-request-id'}]`, consoleLog);
+    console.warn(logLine);
   } else {
-    console.log(`[${source}:${requestId || 'no-request-id'}]`, consoleLog);
+    // Only log info level if DEBUG is enabled
+    if (process.env.DEBUG === '1' || process.env.DEBUG === 'true') {
+      console.log(logLine);
+    }
   }
 
   // Try to insert into app_logs, but NEVER crash if it fails
