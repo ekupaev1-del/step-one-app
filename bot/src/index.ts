@@ -2740,7 +2740,7 @@ bot.on("photo", async (ctx) => {
     }
 
     // Сохраняем в базу используя user.id (не telegram_id)
-    const diaryEntry = {
+    const rawDiaryEntry = {
       user_id: userData.id, // Use user.id from users table, not telegram_id
       telegram_user_id: telegram_id, // Also store telegram_id for direct lookup
       meal_text: mealAnalysis.description,
@@ -2748,11 +2748,27 @@ bot.on("photo", async (ctx) => {
       protein: mealAnalysis.protein,
       fat: mealAnalysis.fat,
       carbs: mealAnalysis.carbs,
-      source: 'telegram',
+      source: 'photo', // Content type: 'text', 'photo', or 'audio' (not 'telegram')
+      channel: 'telegram', // Communication channel
       message_id: ctx.message?.message_id || null,
       chat_id: ctx.chat?.id || null,
       parsed_json: mealAnalysis as any, // Store full analysis result for debugging
     };
+
+    // Normalize payload to ensure types match schema
+    let diaryEntry;
+    try {
+      diaryEntry = normalizeDiaryEntry(rawDiaryEntry);
+    } catch (normalizeError: any) {
+      console.error("[bot] Ошибка нормализации для фото:", normalizeError);
+      await ctx.telegram.editMessageText(
+        ctx.chat!.id,
+        processingMsg.message_id,
+        undefined,
+        "❌ Ошибка обработки данных."
+      );
+      return;
+    }
 
     const { error: insertError } = await supabase.from("diary").insert(diaryEntry);
 

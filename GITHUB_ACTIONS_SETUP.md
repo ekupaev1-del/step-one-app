@@ -1,81 +1,105 @@
-# Настройка автоматического деплоя через GitHub Actions
+# 🚀 Автоматический деплой через GitHub Actions
 
-## ✅ Что сделано
+Я создал GitHub Actions workflow для автоматического деплоя на Vercel при каждом push в репозиторий.
 
-1. ✅ Создан GitHub Actions workflow (`.github/workflows/deploy-vercel.yml`)
-2. ✅ Workflow автоматически запускается при push в ветку `main`
-3. ✅ Workflow деплоит в Vercel production
+## ✅ Что уже сделано
 
-## 🔧 Что нужно настроить
+1. ✅ Создан workflow файл: `.github/workflows/deploy-vercel.yml`
+2. ✅ Настроен автоматический деплой при push в `main`/`master`
+3. ✅ Настроен ручной запуск через GitHub Actions
 
-### 1. Получить Vercel токены и ID
+## 🔧 Что нужно настроить (один раз)
 
-1. **VERCEL_TOKEN:**
-   - Зайди на https://vercel.com/account/tokens
-   - Нажми "Create Token"
-   - Название: `GitHub Actions Deploy`
-   - Scope: Full Account
-   - Скопируй токен
+### Шаг 1: Получите токены из Vercel
 
-2. **VERCEL_ORG_ID и VERCEL_PROJECT_ID:**
-   - Зайди в Vercel Dashboard → Settings → General
-   - Скопируй **Team ID** (это VERCEL_ORG_ID)
-   - Зайди в Settings проекта → General
-   - Скопируй **Project ID** (это VERCEL_PROJECT_ID)
+1. Зайдите на https://vercel.com/account/tokens
+2. Создайте новый токен (Token Name: `github-actions`)
+3. Скопируйте токен
 
-### 2. Добавить Secrets в GitHub
+### Шаг 2: Получите ID проекта и организации
 
-1. Зайди в репозиторий: https://github.com/ekupaev1-del/step-one-app
+**Вариант A: Через Vercel CLI (если работает)**
+```bash
+cd miniapp
+vercel link
+# После связывания проверьте файл .vercel/project.json
+```
+
+**Вариант B: Через Vercel Dashboard**
+1. Зайдите в ваш проект на Vercel
+2. Settings → General
+3. Скопируйте:
+   - **Project ID** (в разделе Project ID)
+   - **Team ID** или **Org ID** (в URL или в настройках команды)
+
+### Шаг 3: Добавьте Secrets в GitHub
+
+1. Зайдите в ваш GitHub репозиторий
 2. Settings → Secrets and variables → Actions
-3. Нажми "New repository secret"
-4. Добавь следующие secrets:
+3. Добавьте следующие secrets:
 
-   - **Name:** `VERCEL_TOKEN`
-     **Value:** (токен из шага 1.1)
+| Secret Name | Значение | Где взять |
+|------------|----------|-----------|
+| `VERCEL_TOKEN` | Токен из шага 1 | Vercel → Account → Tokens |
+| `VERCEL_ORG_ID` | ID организации | Vercel Dashboard → Settings |
+| `VERCEL_PROJECT_ID` | ID проекта | Vercel Dashboard → Project Settings |
+| `NEXT_PUBLIC_SUPABASE_URL` | URL Supabase | Supabase Dashboard |
+| `NEXT_PUBLIC_SUPABASE_ANON_KEY` | Anon ключ | Supabase Dashboard |
+| `SUPABASE_SERVICE_ROLE_KEY` | Service role ключ | Supabase Dashboard |
 
-   - **Name:** `VERCEL_ORG_ID`
-     **Value:** (Team ID из шага 1.2)
+### Шаг 4: Push в репозиторий
 
-   - **Name:** `VERCEL_PROJECT_ID`
-     **Value:** (Project ID из шага 1.2)
+```bash
+git add .github/workflows/deploy-vercel.yml
+git commit -m "Add automatic Vercel deployment"
+git push
+```
 
-   - **Name:** `NEXT_PUBLIC_SUPABASE_URL` (опционально, для билда)
-     **Value:** (твой Supabase URL)
+После push GitHub Actions автоматически запустит деплой!
 
-   - **Name:** `SUPABASE_SERVICE_ROLE_KEY` (опционально, для билда)
-     **Value:** (твой Supabase service role key)
+## 🎯 Как это работает
 
-### 3. Проверить, что проект подключен к Vercel
+1. При каждом push в ветку `main`/`master` запускается workflow
+2. GitHub Actions устанавливает зависимости
+3. Собирает проект
+4. Деплоит на Vercel production
 
-1. Зайди в Vercel Dashboard
-2. Убедись, что проект `step-one-app` подключен к GitHub репозиторию
-3. Если нет - подключи через Settings → Git → Connect Git Repository
+## ✅ Проверка
 
-## 🚀 Как это работает
+После push:
+1. Зайдите в GitHub → Actions
+2. Увидите запущенный workflow "Deploy to Vercel"
+3. Дождитесь завершения (обычно 2-3 минуты)
+4. Проверьте ваш проект на Vercel
 
-1. **При push в `main`:**
-   - GitHub Actions автоматически запускается
-   - Устанавливает зависимости
-   - Собирает проект
-   - Деплоит в Vercel production
+## 🔄 Ручной запуск
 
-2. **Проверка деплоя:**
-   - Зайди в GitHub → Actions
-   - Посмотри статус последнего workflow
-   - Зайди в Vercel Dashboard → Deployments
-   - Убедись, что появился новый деплой
+Можно запустить вручную:
+1. GitHub → Actions
+2. Выберите "Deploy to Vercel"
+3. Нажмите "Run workflow"
 
-## 📝 Ручной запуск деплоя
+## 🐛 Troubleshooting
 
-Если нужно запустить деплой вручную:
+### Ошибка: "VERCEL_TOKEN not found"
+- Проверьте, что добавили все secrets в GitHub
 
-1. GitHub → Actions → "Deploy to Vercel"
-2. Нажми "Run workflow"
-3. Выбери ветку `main`
-4. Нажми "Run workflow"
+### Ошибка: "Project not found"
+- Проверьте VERCEL_PROJECT_ID и VERCEL_ORG_ID
 
-## ⚠️ Важно
+### Ошибка: "Build failed"
+- Проверьте логи в GitHub Actions
+- Убедитесь, что все переменные окружения добавлены
 
-- Workflow использует secrets из GitHub, поэтому они должны быть настроены
-- Если secrets не настроены, workflow упадет с ошибкой
-- После настройки secrets, workflow будет работать автоматически при каждом push в `main`
+## 📝 Альтернатива: Простой способ
+
+Если GitHub Actions не подходит, используйте встроенную интеграцию Vercel:
+
+1. Зайдите на https://vercel.com/new
+2. Подключите GitHub репозиторий
+3. Настройте:
+   - Root Directory: `miniapp`
+   - Добавьте переменные окружения
+4. Deploy
+
+После этого Vercel будет автоматически деплоить при каждом push!

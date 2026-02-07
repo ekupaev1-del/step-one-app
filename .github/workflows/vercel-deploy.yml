@@ -1,0 +1,14 @@
+# DISABLED: This workflow is disabled in favor of Vercel's native Git integration.
+# Vercel automatically deploys on every push to GitHub when Git integration is connected.
+# To use this workflow instead, uncomment the code below and configure GitHub Secrets.
+# However, native Git integration is recommended as it's simpler and doesn't require tokens.
+
+# name: Deploy to Vercel
+# 
+# on:
+#   workflow_dispatch: # Manual trigger only (disabled automatic triggers)
+# 
+# jobs:
+#   deploy:
+#     runs-on: ubuntu-latest
+#     # ... (workflow code disabled)

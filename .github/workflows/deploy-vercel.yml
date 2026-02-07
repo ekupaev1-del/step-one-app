@@ -4,34 +4,41 @@ on:
   push:
     branches:
       - main
-  workflow_dispatch: # Allow manual trigger
+      - master
+    paths:
+      - 'miniapp/**'
+      - '.github/workflows/deploy-vercel.yml'
+  workflow_dispatch: # Позволяет запускать вручную
 
 jobs:
   deploy:
     runs-on: ubuntu-latest
     
+    defaults:
+      run:
+        working-directory: ./miniapp
+    
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
-
+      
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
           node-version: '20'
           cache: 'npm'
           cache-dependency-path: miniapp/package-lock.json
-
+      
       - name: Install dependencies
-        working-directory: ./miniapp
         run: npm ci
-
+      
       - name: Build project
-        working-directory: ./miniapp
         run: npm run build
         env:
           NEXT_PUBLIC_SUPABASE_URL: ${{ secrets.NEXT_PUBLIC_SUPABASE_URL }}
+          NEXT_PUBLIC_SUPABASE_ANON_KEY: ${{ secrets.NEXT_PUBLIC_SUPABASE_ANON_KEY }}
           SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
-
+      
       - name: Deploy to Vercel
         uses: amondnet/vercel-action@v25
         with:
