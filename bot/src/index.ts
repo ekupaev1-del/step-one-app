@@ -10,6 +10,7 @@ import { startReminderScheduler } from "./services/reminderScheduler.js";
 import { startInactivityNotificationScheduler } from "./services/inactivityNotifications.js";
 import { logEvent, logError, generateRequestId } from "./services/logging.js";
 import { normalizeDiaryEntry, logPayloadDetails } from "./services/diaryNormalize.js";
+import { logDBError, createUserFriendlyError } from "./lib/dbLogger.js";
 
 // Инициализация бота
 const bot = new Telegraf(env.telegramBotToken);
@@ -254,7 +255,21 @@ bot.start(async (ctx) => {
       // Separate log entry for DB failure snapshot
       console.error(`[bot:${requestId}] DB_FAILURE_SNAPSHOT:`, JSON.stringify(dbFailureSnapshot, null, 2));
       
-      return ctx.reply(`Ошибка базы данных. Попробуйте позже. Код: ${requestId}`);
+      // Use shared logger for structured logging
+      logDBError(
+        {
+          requestId,
+          route: 'telegram.start',
+          telegramUserId: telegram_id,
+          operation: 'select',
+          table: 'users',
+        },
+        selectError
+      );
+      
+      // Use user-friendly error message
+      const userMessage = createUserFriendlyError(requestId, dbErrorDetails.code);
+      return ctx.reply(userMessage);
     }
 
     let userId;
@@ -1813,13 +1828,22 @@ bot.on("text", async (ctx) => {
         timestamp: new Date().toISOString(),
       };
 
-      // CRITICAL: Log full error to console (this goes to Vercel logs)
-      console.error(`[FOOD_SAVE_ERROR:${requestId}]`, JSON.stringify(errorContext, null, 2));
-      console.error(`[FOOD_SAVE_ERROR:${requestId}] Postgres error code:`, insertError.code);
-      console.error(`[FOOD_SAVE_ERROR:${requestId}] Postgres error message:`, insertError.message);
-      console.error(`[FOOD_SAVE_ERROR:${requestId}] Postgres error details:`, insertError.details);
-      console.error(`[FOOD_SAVE_ERROR:${requestId}] Postgres error hint:`, insertError.hint);
-      console.error(`[FOOD_SAVE_ERROR:${requestId}] Full insertError object:`, JSON.stringify(insertError, Object.getOwnPropertyNames(insertError), 2));
+      // Use shared logger for structured logging
+      logDBError(
+        {
+          requestId,
+          route: 'telegram.food_save',
+          telegramUserId: telegram_id,
+          userId: userData.id,
+          operation: 'insert',
+          table: 'diary',
+          payload: {
+            meal_text: diaryEntry.meal_text?.substring(0, 50),
+            calories: diaryEntry.calories,
+          },
+        },
+        insertError
+      );
 
       // Log to app_logs table using new logging system (no chatId - not in schema)
       await logError('db_insert_diary', insertError, {
@@ -1830,8 +1854,8 @@ bot.on("text", async (ctx) => {
       });
 
       // Generate user-friendly error message with error code
-      const errorCode = insertError.code || 'DB_ERROR';
-      const userMessage = `❌ Не сохранилось. Код: ${errorCode}. Напиши в поддержку: @STEP0NE11`;
+      const userMessage = createUserFriendlyError(requestId, insertError.code);
+      const errorMessage = `❌ Не сохранилось. ${userMessage}`;
       
       await ctx.telegram.editMessageText(
         ctx.chat!.id,
