@@ -18,7 +18,7 @@ import {
   logSchemaHealthCheck,
   createHealthCheckErrorMessage,
 } from "./lib/dbDiagnostics.js";
-import { getSupabaseContext, logSupabaseContext } from "../../lib/debugSupabaseContext.js";
+import { getSupabaseContext, logSupabaseContext } from "./lib/debugSupabaseContext.js";
 
 // Инициализация бота
 const bot = new Telegraf(env.telegramBotToken);
