@@ -18,6 +18,7 @@ import {
   logSchemaHealthCheck,
   createHealthCheckErrorMessage,
 } from "./lib/dbDiagnostics.js";
+import { getSupabaseContext, logSupabaseContext } from "../../lib/debugSupabaseContext.js";
 
 // Инициализация бота
 const bot = new Telegraf(env.telegramBotToken);
@@ -188,7 +189,15 @@ bot.start(async (ctx) => {
   console.log(`[bot:${requestId}] Operation: ${operationName}`);
   console.log(`[bot:${requestId}] Environment: isProduction=${isProduction}, hasSupabaseUrl=${hasSupabaseUrl}, hasSupabaseKey=${hasSupabaseKey}`);
   
-  // Run connection diagnostics
+  // Run connection diagnostics with compact logging
+  const supabaseContext = getSupabaseContext(
+    process.env.SUPABASE_URL || process.env.NEXT_PUBLIC_SUPABASE_URL,
+    process.env.SUPABASE_SERVICE_ROLE_KEY,
+    ['users', 'diary', 'water_logs', 'app_logs', 'reminders']
+  );
+  logSupabaseContext(supabaseContext);
+  
+  // Also run detailed diagnostics
   const connectionInfo = analyzeSupabaseConnection(
     process.env.SUPABASE_URL || process.env.NEXT_PUBLIC_SUPABASE_URL,
     process.env.SUPABASE_SERVICE_ROLE_KEY
@@ -293,7 +302,7 @@ bot.start(async (ctx) => {
       // Separate log entry for DB failure snapshot
       console.error(`[bot:${requestId}] DB_FAILURE_SNAPSHOT:`, JSON.stringify(dbFailureSnapshot, null, 2));
       
-      // Use shared logger for structured logging
+      // Use shared logger for structured logging with project ref
       logDBError(
         {
           requestId,
@@ -305,8 +314,22 @@ bot.start(async (ctx) => {
         selectError
       );
       
-      // Use user-friendly error message
-      const userMessage = createUserFriendlyError(requestId, dbErrorDetails.code);
+      // Enhanced error message with operation name
+      const errorCode = dbErrorDetails.code || 'UNKNOWN';
+      const userMessage = `${createUserFriendlyError(requestId, errorCode)}\nОперация: ${operationName}`;
+      
+      // Log full error context for debugging
+      console.error(`[bot:${requestId}] Full error context:`, {
+        requestId,
+        operation: operationName,
+        table: 'users',
+        projectRef: supabaseContext.projectRef || 'unknown',
+        errorCode,
+        errorMessage: dbErrorDetails.message,
+        errorDetails: dbErrorDetails.details,
+        errorHint: dbErrorDetails.hint,
+      });
+      
       return ctx.reply(userMessage);
     }
 
@@ -3403,7 +3426,15 @@ process.once("SIGTERM", () => bot.stop("SIGTERM"));
 // Run startup diagnostics
 console.log("🔍 Running startup diagnostics...");
 
-// Connection diagnostics
+// Compact connection diagnostics
+const startupContext = getSupabaseContext(
+  process.env.SUPABASE_URL || process.env.NEXT_PUBLIC_SUPABASE_URL,
+  process.env.SUPABASE_SERVICE_ROLE_KEY,
+  ['users', 'diary', 'water_logs', 'app_logs', 'reminders']
+);
+logSupabaseContext(startupContext);
+
+// Detailed connection diagnostics
 const connectionInfo = analyzeSupabaseConnection(
   process.env.SUPABASE_URL || process.env.NEXT_PUBLIC_SUPABASE_URL,
   process.env.SUPABASE_SERVICE_ROLE_KEY

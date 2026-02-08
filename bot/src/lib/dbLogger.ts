@@ -142,12 +142,31 @@ export function logDBError(
   
   console.error(diagnosticWithRef);
 
-  // Also log structured JSON with project ref
-  const contextWithRef = {
-    ...context,
+  // Log full error context as structured JSON
+  const fullContext = {
+    requestId: context.requestId,
+    route: context.route,
+    operation: context.operation,
+    table: context.table,
+    telegramUserId: context.telegramUserId,
+    userId: context.userId,
     projectRef: projectRef || undefined,
+    error: {
+      code: errorDetails.code,
+      message: errorDetails.message,
+      details: errorDetails.details,
+      hint: errorDetails.hint,
+      constraint: errorDetails.constraint,
+      table: errorDetails.table,
+      column: errorDetails.column,
+      schema: errorDetails.schema,
+    },
+    ...(durationMs !== undefined && { durationMs }),
   };
-  logDBOperation(contextWithRef, errorDetails, durationMs);
+  console.error(`[DB_ERROR] ${JSON.stringify(fullContext)}`);
+
+  // Also log via structured operation logger
+  logDBOperation(context, errorDetails, durationMs);
 }
 
 /**
