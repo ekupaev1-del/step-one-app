@@ -11,7 +11,7 @@
  */
 
 import { createClient } from "@supabase/supabase-js";
-import { getSupabaseServerConfig, logSupabaseConfig } from "../../../lib/supabase-config";
+import { getServerSupabaseEnv } from "./env";
 
 let serverClient: ReturnType<typeof createClient> | null = null;
 
@@ -20,13 +20,14 @@ export function getServerSupabaseClient() {
     return serverClient;
   }
 
-  // Use shared config module (single source of truth)
-  const config = getSupabaseServerConfig();
-  
-  // Log connection info (safe, no secrets)
-  logSupabaseConfig(config, 'supabase/server');
+  // Use single source of truth env module (validates URL and project ref)
+  const env = getServerSupabaseEnv();
 
-  serverClient = createClient(config.url, config.serviceRoleKey, {
+  if (!env.serviceKey) {
+    throw new Error("SUPABASE_SERVICE_ROLE_KEY is required for server-side Supabase client");
+  }
+
+  serverClient = createClient(env.url, env.serviceKey, {
     auth: {
       autoRefreshToken: false,
       persistSession: false,

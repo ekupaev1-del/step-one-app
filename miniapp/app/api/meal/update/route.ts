@@ -46,19 +46,22 @@ export async function POST(req: Request) {
     const mealId = Number(id);
 
     // Обновляем запись
-    // Type assertion: Supabase will validate the schema at runtime
-    const updateData = {
+    // Type-safe update data matching Supabase diary table schema
+    // Using explicit type to match Database['public']['Tables']['diary']['Update']
+    type DiaryUpdate = {
+      meal_text?: string;
+      calories?: number;
+      protein?: number;
+      fat?: number;
+      carbs?: number;
+    };
+    
+    const updateData: DiaryUpdate = {
       meal_text: String(meal_text),
       calories: Number(calories) || 0,
       protein: Number(protein) || 0,
       fat: Number(fat) || 0,
       carbs: Number(carbs) || 0
-    } as {
-      meal_text: string;
-      calories: number;
-      protein: number;
-      fat: number;
-      carbs: number;
     };
 
     const { data, error } = await supabase

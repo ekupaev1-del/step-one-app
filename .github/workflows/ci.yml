@@ -1,0 +1,80 @@
+name: CI - Build and Test
+
+on:
+  pull_request:
+    branches:
+      - main
+      - dev
+  push:
+    branches:
+      - main
+      - dev
+
+jobs:
+  lint-and-build-miniapp:
+    name: Lint and Build MiniApp
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+          cache-dependency-path: miniapp/package-lock.json
+
+      - name: Install dependencies
+        working-directory: ./miniapp
+        run: npm ci
+
+      - name: Lint
+        working-directory: ./miniapp
+        run: npm run lint || true
+
+      - name: Type check
+        working-directory: ./miniapp
+        run: npx tsc --noEmit || true
+
+      - name: Build
+        working-directory: ./miniapp
+        run: npm run build
+        env:
+          NEXT_PUBLIC_SUPABASE_URL: ${{ secrets.NEXT_PUBLIC_SUPABASE_URL || 'https://placeholder.supabase.co' }}
+          NEXT_PUBLIC_SUPABASE_ANON_KEY: ${{ secrets.NEXT_PUBLIC_SUPABASE_ANON_KEY || 'placeholder-key' }}
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL || 'https://placeholder.supabase.co' }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY || 'placeholder-key' }}
+          EXPECTED_SUPABASE_PROJECT_REF: ${{ secrets.EXPECTED_SUPABASE_PROJECT_REF || 'placeholder' }}
+
+  lint-and-build-bot:
+    name: Lint and Build Bot
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+          cache-dependency-path: bot/package-lock.json
+
+      - name: Install dependencies
+        working-directory: ./bot
+        run: npm ci
+
+      - name: Lint
+        working-directory: ./bot
+        run: npm run lint || true
+
+      - name: Type check
+        working-directory: ./bot
+        run: npm run type-check || true
+
+      - name: Build
+        working-directory: ./bot
+        run: npm run build

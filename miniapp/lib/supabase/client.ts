@@ -10,25 +10,23 @@
  */
 
 import { createClient } from "@supabase/supabase-js";
-// @ts-ignore - root lib is outside miniapp scope, use relative import
-import { getSupabaseClientConfig, logSupabaseConfig } from "../../../lib/supabase-config";
+import { getClientSupabaseEnv } from "./env";
 
 let clientInstance: ReturnType<typeof createClient> | null = null;
 
-export function getClientSupabaseClient() {
+export function getBrowserSupabaseClient() {
   if (clientInstance) {
     return clientInstance;
   }
 
-  // Use shared config module (single source of truth)
-  const config = getSupabaseClientConfig();
-  
-  // Log connection info (safe, no secrets) - only in dev
-  if (process.env.NODE_ENV !== 'production') {
-    logSupabaseConfig(config, 'supabase/client');
+  // Use single source of truth env module (validates URL and project ref)
+  const env = getClientSupabaseEnv();
+
+  if (!env.anonKey) {
+    throw new Error("NEXT_PUBLIC_SUPABASE_ANON_KEY is required for client-side Supabase client");
   }
 
-  clientInstance = createClient(config.url, config.anonKey!, {
+  clientInstance = createClient(env.url, env.anonKey, {
     auth: {
       autoRefreshToken: true,
       persistSession: true,
@@ -38,5 +36,8 @@ export function getClientSupabaseClient() {
   return clientInstance;
 }
 
+// Legacy export name for compatibility
+export const getClientSupabaseClient = getBrowserSupabaseClient;
+
 // Export a default instance for convenience
-export const supabase = getClientSupabaseClient();
+export const supabase = getBrowserSupabaseClient();

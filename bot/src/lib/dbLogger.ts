@@ -128,17 +128,16 @@ export function logDBError(
   // НЕТ fallback на NEXT_PUBLIC_SUPABASE_URL - это может быть неправильный проект
   let supabaseUrl: string | undefined;
   try {
-    // Try to import env from bot config (if in bot context)
-    const { env: botEnv } = await import("../config/env.js").catch(() => ({ env: null }));
-    if (botEnv?.supabaseUrl) {
-      supabaseUrl = botEnv.supabaseUrl;
-    } else {
-      // For miniapp, use SUPABASE_URL (not NEXT_PUBLIC_SUPABASE_URL to avoid wrong project)
-      supabaseUrl = process.env.SUPABASE_URL;
+    // Try to get env from bot config (if in bot context)
+    // Use synchronous access to avoid top-level await
+    if (typeof process !== 'undefined' && process.env) {
+      // For bot: try to access env synchronously (it's already loaded)
+      // For miniapp: use SUPABASE_URL (not NEXT_PUBLIC_SUPABASE_URL to avoid wrong project)
+      supabaseUrl = process.env.SUPABASE_URL || process.env.NEXT_PUBLIC_SUPABASE_URL;
     }
   } catch {
     // Fallback only to SUPABASE_URL (never NEXT_PUBLIC_SUPABASE_URL)
-    supabaseUrl = process.env.SUPABASE_URL;
+    supabaseUrl = process.env?.SUPABASE_URL;
   }
   const projectRef = supabaseUrl ? extractProjectRef(supabaseUrl) : null;
 

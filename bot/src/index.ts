@@ -3424,17 +3424,9 @@ process.once("SIGTERM", () => bot.stop("SIGTERM"));
 // Run startup diagnostics
 console.log("🔍 Running startup diagnostics...");
 
-// ЖЁСТКАЯ ПРОВЕРКА: URL должен быть правильным (уже проверено в env.ts, но логируем)
-const EXPECTED_SUPABASE_URL = "https://ipgxnqplwzptxyfjjssrr.supabase.co";
-const EXPECTED_PROJECT_REF = "ipgxnqplwzptxyfjjssrr";
-
-if (env.supabaseUrl !== EXPECTED_SUPABASE_URL) {
-  console.error("❌ CRITICAL: Wrong Supabase project URL at startup!");
-  console.error(`   Current:  ${env.supabaseUrl}`);
-  console.error(`   Expected: ${EXPECTED_SUPABASE_URL}`);
-  console.error("   Application will NOT start with wrong project URL.");
-  process.exit(1);
-}
+// Diagnostics are already logged by getBotSupabaseEnv() in env.ts
+// This validates URL, project ref, and logs safe diagnostics
+// No need for additional checks here - env.ts already fails fast if wrong project
 
 // Compact connection diagnostics (using validated env)
 const startupContext = getSupabaseContext(

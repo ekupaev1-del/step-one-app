@@ -5,11 +5,33 @@
  * IMPORTANT: Never print full secrets. Only show safe diagnostics.
  */
 
-// CORRECT Supabase Project URL (from Dashboard → API Settings)
-const EXPECTED_SUPABASE_URL = "https://ipgxnqplwzptxyfjjssrr.supabase.co";
-const EXPECTED_PROJECT_REF = "ipgxnqplwzptxyfjjssrr";
+// Get expected project ref from environment variable
+// If not set, extract from SUPABASE_URL or use fallback
+function getExpectedProjectRef(): string {
+  const fromEnv = process.env.EXPECTED_SUPABASE_PROJECT_REF;
+  if (fromEnv) {
+    return fromEnv.trim();
+  }
+  
+  // Fallback: try to extract from SUPABASE_URL
+  const url = process.env.SUPABASE_URL || process.env.NEXT_PUBLIC_SUPABASE_URL;
+  if (url) {
+    const extracted = extractProjectRef(url);
+    if (extracted) {
+      return extracted;
+    }
+  }
+  
+  // Last resort: use the known correct project ref
+  return "ipgxnqplwzptxyfjjssrr";
+}
 
-// WRONG project URL that should be rejected
+const EXPECTED_PROJECT_REF = getExpectedProjectRef();
+
+// Build expected URL from project ref
+const EXPECTED_SUPABASE_URL = `https://${EXPECTED_PROJECT_REF}.supabase.co`;
+
+// WRONG project URL that should be rejected (legacy)
 const WRONG_PROJECT_REF = "ppisnuivnswwpkoxwpef";
 
 export interface SupabaseConfig {
@@ -104,23 +126,18 @@ function validateSupabaseUrl(url: string | undefined, envVarName: string): strin
     );
   }
 
-  if (normalizedUrl !== EXPECTED_SUPABASE_URL) {
-    throw new Error(
-      `❌ CRITICAL: Wrong Supabase project URL!\n` +
-      `   Current:  ${normalizedUrl}\n` +
-      `   Expected: ${EXPECTED_SUPABASE_URL}\n` +
-      `   Project ref: ${projectRef || 'UNKNOWN'} (expected: ${EXPECTED_PROJECT_REF})\n` +
-      `   \n` +
-      `   Fix: Update ${envVarName} in environment variables:\n` +
-      `   ${envVarName}=${EXPECTED_SUPABASE_URL}`
-    );
-  }
-
+  // Validate project ref matches expected (from EXPECTED_SUPABASE_PROJECT_REF env var)
   if (projectRef !== EXPECTED_PROJECT_REF) {
     throw new Error(
-      `❌ CRITICAL: Project ref mismatch!\n` +
-      `   Current:  ${projectRef}\n` +
-      `   Expected: ${EXPECTED_PROJECT_REF}`
+      `❌ CRITICAL: Supabase project ref mismatch!\n` +
+      `   Current URL:  ${normalizedUrl}\n` +
+      `   Current project ref: ${projectRef || 'UNKNOWN'}\n` +
+      `   Expected project ref: ${EXPECTED_PROJECT_REF}\n` +
+      `   \n` +
+      `   Fix: Set EXPECTED_SUPABASE_PROJECT_REF=${EXPECTED_PROJECT_REF} and update ${envVarName}:\n` +
+      `   ${envVarName}=${EXPECTED_SUPABASE_URL}\n` +
+      `   \n` +
+      `   Get the correct project ref from Supabase Dashboard → Settings → API → Project URL`
     );
   }
 

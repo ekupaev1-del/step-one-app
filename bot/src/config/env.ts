@@ -1,8 +1,7 @@
 import * as dotenv from "dotenv";
 import { fileURLToPath } from "url";
 import { dirname, join } from "path";
-// @ts-ignore - root lib is outside bot scope
-import { getSupabaseServerConfig, logSupabaseConfig } from "../../../lib/supabase-config";
+import { getBotSupabaseEnv } from "../lib/supabase/env.js";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
@@ -16,8 +15,6 @@ interface EnvConfig {
   supabaseServiceRoleKey: string;
   openaiApiKey: string;
 }
-
-// Validation is now handled by shared config module
 
 function validateEnv(): EnvConfig {
   const telegramBotToken = process.env.TELEGRAM_BOT_TOKEN;
@@ -35,10 +32,9 @@ function validateEnv(): EnvConfig {
     process.exit(1);
   }
 
-  // Use shared config module (single source of truth)
-  // This validates URL and key, and logs safe diagnostics
-  const supabaseConfig = getSupabaseServerConfig();
-  logSupabaseConfig(supabaseConfig, 'bot');
+  // Use single source of truth from lib/supabase/env
+  // This validates URL, project ref, and logs safe diagnostics
+  const supabaseEnv = getBotSupabaseEnv();
 
   // Проверяем, что ключи не заглушки
   if (openaiApiKey === "sk-your-openai-api-key-here") {
@@ -55,8 +51,8 @@ function validateEnv(): EnvConfig {
 
   return {
     telegramBotToken: telegramBotToken!,
-    supabaseUrl: supabaseConfig.url,
-    supabaseServiceRoleKey: supabaseConfig.serviceRoleKey,
+    supabaseUrl: supabaseEnv.url,
+    supabaseServiceRoleKey: supabaseEnv.serviceKey,
     openaiApiKey: openaiApiKey!,
   };
 }

@@ -43,6 +43,15 @@ jobs:
           OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
       
+      - name: Verify build output
+        working-directory: ./miniapp
+        run: |
+          if [ ! -d ".next" ]; then
+            echo "❌ Build failed: .next directory not found"
+            exit 1
+          fi
+          echo "✅ Build successful: .next directory exists"
+      
       - name: Deploy to Vercel Production
         uses: amondnet/vercel-action@v25
         id: vercel-deploy
@@ -53,3 +62,13 @@ jobs:
           vercel-args: '--prod'
           working-directory: ./miniapp
           scope: ${{ secrets.VERCEL_ORG_ID }}
+      
+      - name: Deployment status
+        run: |
+          if [ "${{ steps.vercel-deploy.outcome }}" == "success" ]; then
+            echo "✅ Deployment successful!"
+            echo "Preview URL: ${{ steps.vercel-deploy.outputs.preview-url }}"
+          else
+            echo "❌ Deployment failed!"
+            exit 1
+          fi

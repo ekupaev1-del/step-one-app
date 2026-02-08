@@ -32,43 +32,33 @@ npm run build
 npm start
 ```
 
-## Деплой на Vercel
+## 🚀 Деплой на Vercel
 
-### Первоначальная настройка
+**Просто push в GitHub → автоматический деплой!**
 
-1. Подключите репозиторий к Vercel:
-   - Откройте Vercel Dashboard
-   - Нажмите "Add New Project"
-   - Выберите ваш GitHub репозиторий `step-one-app`
+### Быстрая настройка (3 минуты):
 
-2. Настройте проект:
-   - **Root Directory**: `miniapp`
-   - **Framework Preset**: Next.js
-   - **Build Command**: `npm run build` (или оставьте по умолчанию)
-   - **Output Directory**: `.next` (по умолчанию)
-   - **Install Command**: `npm install` (по умолчанию)
+1. **Vercel Dashboard** → Add New Project → выберите `step-one-app`
+2. **Root Directory**: `miniapp` ⚠️ **ВАЖНО!**
+3. **Production Branch**: `main`
+4. **Добавьте переменные окружения:**
+   ```
+   SUPABASE_URL=https://<project-ref>.supabase.co
+   SUPABASE_SERVICE_ROLE_KEY=<key>
+   EXPECTED_SUPABASE_PROJECT_REF=<project-ref>
+   NEXT_PUBLIC_SUPABASE_URL=https://<project-ref>.supabase.co
+   NEXT_PUBLIC_SUPABASE_ANON_KEY=<anon-key>
+   ```
+5. **Deploy** → готово!
 
-3. Настройте переменные окружения:
-   - В Vercel Dashboard → Settings → Environment Variables
-   - Добавьте:
-     - `NEXT_PUBLIC_SUPABASE_URL`
-     - `NEXT_PUBLIC_SUPABASE_ANON_KEY`
+### ✅ Готово! Теперь работает автоматически:
 
-4. Настройте ветки:
-   - **Production Branch**: `main`
-   - **Preview Branches**: `dev` (или все ветки кроме main)
-
-### Автоматический деплой
-
-- **main** ветка → автоматически деплоится в production
-- **dev** ветка → автоматически создает preview deployment
-
-### Ручной деплой
-
-Если нужно задеплоить вручную:
 ```bash
-npx vercel --prod
+git push origin main  # → автоматический production деплой
+git push origin dev   # → автоматический preview деплой
 ```
+
+**Подробная инструкция:** `../VERCEL_AUTO_DEPLOY.md`
 
 ## Структура проекта
 

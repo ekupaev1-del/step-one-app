@@ -1,11 +1,11 @@
-import { createClient } from "@supabase/supabase-js";
-import { env } from "../config/env.js";
+/**
+ * Bot Supabase client - uses single source of truth from lib/supabase/client
+ * This module is kept for backward compatibility with existing imports
+ */
 
-export const supabase = createClient(env.supabaseUrl, env.supabaseServiceRoleKey, {
-  auth: {
-    autoRefreshToken: false,
-    persistSession: false,
-  },
-});
+import { getBotSupabaseClient } from "../lib/supabase/client.js";
+
+// Re-export the client from the new single source of truth
+export const supabase = getBotSupabaseClient();
 
 
