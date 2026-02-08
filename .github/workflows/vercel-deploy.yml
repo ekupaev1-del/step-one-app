@@ -1,3 +1,6 @@
+# Автоматический деплой в Vercel
+# Деплоится при каждом push в main и для PR
+
 name: Deploy to Vercel
 
 on:
@@ -6,7 +9,6 @@ on:
       - main
     paths:
       - 'miniapp/**'
-      - 'supabase/migrations/**'
       - '.github/workflows/vercel-deploy.yml'
       - 'vercel.json'
       - 'miniapp/vercel.json'
@@ -15,23 +17,12 @@ on:
       - main
     paths:
       - 'miniapp/**'
-      - 'supabase/migrations/**'
       - '.github/workflows/vercel-deploy.yml'
-      - 'vercel.json'
-      - 'miniapp/vercel.json'
   workflow_dispatch: # Позволяет запускать вручную
-
-env:
-  VERCEL_ORG_ID: ${{ secrets.VERCEL_ORG_ID }}
-  VERCEL_PROJECT_ID: ${{ secrets.VERCEL_PROJECT_ID }}
 
 jobs:
   deploy:
     runs-on: ubuntu-latest
-    
-    defaults:
-      run:
-        working-directory: ./miniapp
     
     steps:
       - name: Checkout code
@@ -44,18 +35,12 @@ jobs:
           cache: 'npm'
           cache-dependency-path: miniapp/package-lock.json
       
-      - name: Install Vercel CLI
-        run: npm install --global vercel@latest
-      
-      - name: Pull Vercel Environment Information
-        run: vercel pull --yes --environment=production --token=${{ secrets.VERCEL_TOKEN }}
-        env:
-          VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
-      
       - name: Install dependencies
+        working-directory: ./miniapp
         run: npm ci
       
       - name: Build project
+        working-directory: ./miniapp
         run: npm run build
         env:
           NEXT_PUBLIC_SUPABASE_URL: ${{ secrets.NEXT_PUBLIC_SUPABASE_URL }}
@@ -66,25 +51,12 @@ jobs:
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
       
       - name: Deploy to Vercel
-        id: deploy
-        run: |
-          if [ "${{ github.event_name }}" == "pull_request" ]; then
-            vercel deploy --token=${{ secrets.VERCEL_TOKEN }} --prebuilt
-          else
-            vercel deploy --token=${{ secrets.VERCEL_TOKEN }} --prebuilt --prod
-          fi
-        env:
-          VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
-      
-      - name: Comment PR with deployment URL
-        if: github.event_name == 'pull_request'
-        uses: actions/github-script@v7
+        uses: amondnet/vercel-action@v25
         with:
-          script: |
-            const output = `${{ steps.deploy.outputs.preview-url }}`;
-            github.rest.issues.createComment({
-              issue_number: context.issue.number,
-              owner: context.repo.owner,
-              repo: context.repo.repo,
-              body: `🚀 Preview deployment ready!\n\n🔗 ${output}`
-            });
+          vercel-token: ${{ secrets.VERCEL_TOKEN }}
+          vercel-org-id: ${{ secrets.VERCEL_ORG_ID }}
+          vercel-project-id: ${{ secrets.VERCEL_PROJECT_ID }}
+          # Для main branch - production, для PR - preview
+          vercel-args: ${{ github.ref == 'refs/heads/main' && '--prod' || '--preview' }}
+          working-directory: ./miniapp
+          scope: ${{ secrets.VERCEL_ORG_ID }}
