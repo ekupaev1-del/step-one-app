@@ -3425,8 +3425,8 @@ process.once("SIGTERM", () => bot.stop("SIGTERM"));
 console.log("🔍 Running startup diagnostics...");
 
 // ЖЁСТКАЯ ПРОВЕРКА: URL должен быть правильным (уже проверено в env.ts, но логируем)
-const EXPECTED_SUPABASE_URL = "https://ipgxnqplwzptxyfjjsrr.supabase.co";
-const EXPECTED_PROJECT_REF = "ipgxnqplwzptxyfjjsrr";
+const EXPECTED_SUPABASE_URL = "https://ipgxnqplwzptxyfjjssrr.supabase.co";
+const EXPECTED_PROJECT_REF = "ipgxnqplwzptxyfjjssrr";
 
 if (env.supabaseUrl !== EXPECTED_SUPABASE_URL) {
   console.error("❌ CRITICAL: Wrong Supabase project URL at startup!");

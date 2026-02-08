@@ -6,8 +6,8 @@
  */
 
 // CORRECT Supabase Project URL (from Dashboard → API Settings)
-const EXPECTED_SUPABASE_URL = "https://ipgxnqplwzptxyfjjsrr.supabase.co";
-const EXPECTED_PROJECT_REF = "ipgxnqplwzptxyfjjsrr";
+const EXPECTED_SUPABASE_URL = "https://ipgxnqplwzptxyfjjssrr.supabase.co";
+const EXPECTED_PROJECT_REF = "ipgxnqplwzptxyfjjssrr";
 
 // WRONG project URL that should be rejected
 const WRONG_PROJECT_REF = "ppisnuivnswwpkoxwpef";

@@ -46,18 +46,19 @@ export async function POST(req: Request) {
     const mealId = Number(id);
 
     // Обновляем запись
-    const updateData: {
-      meal_text: string;
-      calories: number;
-      protein: number;
-      fat: number;
-      carbs: number;
-    } = {
+    // Type assertion: Supabase will validate the schema at runtime
+    const updateData = {
       meal_text: String(meal_text),
       calories: Number(calories) || 0,
       protein: Number(protein) || 0,
       fat: Number(fat) || 0,
       carbs: Number(carbs) || 0
+    } as {
+      meal_text: string;
+      calories: number;
+      protein: number;
+      fat: number;
+      carbs: number;
     };
 
     const { data, error } = await supabase

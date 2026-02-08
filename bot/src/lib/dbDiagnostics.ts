@@ -156,6 +156,10 @@ export async function performSchemaHealthCheck(
   };
 
   try {
+    // Log which project we're checking (extract from supabase URL if available)
+    const supabaseUrl = (supabase as any).supabaseUrl || 'unknown';
+    const projectRef = supabaseUrl.match(/https?:\/\/([a-z0-9]+)\.supabase\.co/)?.[1] || 'unknown';
+    console.log(`[schema-healthcheck] Checking schema for project: ${projectRef} (${supabaseUrl})`);
     // 1. Check database connection by trying to query users table
     // This is the simplest way to verify connection without RPC
     const { error: testError } = await supabase
