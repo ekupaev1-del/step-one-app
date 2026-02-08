@@ -1,14 +1,92 @@
-# DISABLED: This workflow is disabled in favor of Vercel's native Git integration.
-# Vercel automatically deploys on every push to GitHub when Git integration is connected.
-# To use this workflow instead, uncomment the code below and configure GitHub Secrets.
-# However, native Git integration is recommended as it's simpler and doesn't require tokens.
+name: Deploy to Vercel
 
-# name: Deploy to Vercel
-# 
-# on:
-#   workflow_dispatch: # Manual trigger only (disabled automatic triggers)
-# 
-# jobs:
-#   deploy:
-#     runs-on: ubuntu-latest
-#     # ... (workflow code disabled)
+on:
+  push:
+    branches:
+      - main
+      - master
+    paths:
+      - 'miniapp/**'
+      - 'supabase/migrations/**'
+      - '.github/workflows/vercel-deploy.yml'
+      - 'vercel.json'
+      - 'miniapp/vercel.json'
+  pull_request:
+    branches:
+      - main
+      - master
+    paths:
+      - 'miniapp/**'
+      - 'supabase/migrations/**'
+      - '.github/workflows/vercel-deploy.yml'
+      - 'vercel.json'
+      - 'miniapp/vercel.json'
+  workflow_dispatch: # Позволяет запускать вручную
+
+env:
+  VERCEL_ORG_ID: ${{ secrets.VERCEL_ORG_ID }}
+  VERCEL_PROJECT_ID: ${{ secrets.VERCEL_PROJECT_ID }}
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    
+    defaults:
+      run:
+        working-directory: ./miniapp
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+      
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+          cache-dependency-path: miniapp/package-lock.json
+      
+      - name: Install Vercel CLI
+        run: npm install --global vercel@latest
+      
+      - name: Pull Vercel Environment Information
+        run: vercel pull --yes --environment=production --token=${{ secrets.VERCEL_TOKEN }}
+        env:
+          VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
+      
+      - name: Install dependencies
+        run: npm ci
+      
+      - name: Build project
+        run: npm run build
+        env:
+          NEXT_PUBLIC_SUPABASE_URL: ${{ secrets.NEXT_PUBLIC_SUPABASE_URL }}
+          NEXT_PUBLIC_SUPABASE_ANON_KEY: ${{ secrets.NEXT_PUBLIC_SUPABASE_ANON_KEY }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+      
+      - name: Deploy to Vercel
+        id: deploy
+        run: |
+          if [ "${{ github.event_name }}" == "pull_request" ]; then
+            vercel deploy --token=${{ secrets.VERCEL_TOKEN }} --prebuilt
+          else
+            vercel deploy --token=${{ secrets.VERCEL_TOKEN }} --prebuilt --prod
+          fi
+        env:
+          VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
+      
+      - name: Comment PR with deployment URL
+        if: github.event_name == 'pull_request'
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const output = `${{ steps.deploy.outputs.preview-url }}`;
+            github.rest.issues.createComment({
+              issue_number: context.issue.number,
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              body: `🚀 Preview deployment ready!\n\n🔗 ${output}`
+            });

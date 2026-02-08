@@ -27,6 +27,42 @@ export interface DBErrorDetails {
 }
 
 /**
+ * Formats a database error into a readable diagnostic message
+ */
+export function formatDbError(
+  error: any,
+  context: { table?: string; operation?: string; requestId?: string; telegramUserId?: number }
+): string {
+  const errorCode = error?.code || 'UNKNOWN';
+  const errorMessage = error?.message || 'Unknown error';
+  const table = error?.table || context.table || 'unknown';
+  const operation = context.operation || 'unknown';
+  const requestId = context.requestId || 'unknown';
+  const telegramUserId = context.telegramUserId || null;
+
+  let diagnostic = `[DB_ERROR:${requestId}] ${operation} on ${table}`;
+  if (telegramUserId) {
+    diagnostic += ` (telegramUserId: ${telegramUserId})`;
+  }
+  diagnostic += `: [${errorCode}] ${errorMessage}`;
+
+  if (error?.constraint) {
+    diagnostic += ` (constraint: ${error.constraint})`;
+  }
+  if (error?.column) {
+    diagnostic += ` (column: ${error.column})`;
+  }
+  if (error?.details) {
+    diagnostic += ` | Details: ${error.details}`;
+  }
+  if (error?.hint) {
+    diagnostic += ` | Hint: ${error.hint}`;
+  }
+
+  return diagnostic;
+}
+
+/**
  * Logs a database operation (success or failure)
  */
 export function logDBOperation(
@@ -85,6 +121,16 @@ export function logDBError(
     schema: (error as any)?.schema,
   };
 
+  // Log formatted diagnostic message
+  const diagnostic = formatDbError(error, {
+    table: context.table,
+    operation: context.operation,
+    requestId: context.requestId,
+    telegramUserId: context.telegramUserId,
+  });
+  console.error(diagnostic);
+
+  // Also log structured JSON
   logDBOperation(context, errorDetails, durationMs);
 }
 
@@ -96,6 +142,9 @@ export function createUserFriendlyError(requestId: string, errorCode?: string): 
   if (errorCode === '42P01') {
     return `Ошибка базы данных. Таблица не найдена. Код: ${requestId}`;
   }
+  if (errorCode === '42703') {
+    return `Ошибка базы данных. Колонка не найдена. Код: ${requestId}`;
+  }
   if (errorCode === '23505') {
     return `Ошибка: дублирующая запись. Код: ${requestId}`;
   }
@@ -104,6 +153,9 @@ export function createUserFriendlyError(requestId: string, errorCode?: string): 
   }
   if (errorCode === '23514') {
     return `Ошибка: нарушение ограничения. Код: ${requestId}`;
+  }
+  if (errorCode === '42501') {
+    return `Ошибка доступа к базе данных. Код: ${requestId}`;
   }
   return `Ошибка базы данных. Попробуйте позже. Код: ${requestId}`;
 }

@@ -1,14 +1,10 @@
-name: Deploy to Vercel
+# DEPRECATED: Используйте vercel-deploy-simple.yml или настройте Vercel Git Integration
+# Этот файл оставлен для обратной совместимости
+
+name: Deploy to Vercel (Legacy)
 
 on:
-  push:
-    branches:
-      - main
-      - master
-    paths:
-      - 'miniapp/**'
-      - '.github/workflows/deploy-vercel.yml'
-  workflow_dispatch: # Позволяет запускать вручную
+  workflow_dispatch: # Только ручной запуск (отключен автоматический триггер)
 
 jobs:
   deploy:
@@ -38,6 +34,9 @@ jobs:
           NEXT_PUBLIC_SUPABASE_URL: ${{ secrets.NEXT_PUBLIC_SUPABASE_URL }}
           NEXT_PUBLIC_SUPABASE_ANON_KEY: ${{ secrets.NEXT_PUBLIC_SUPABASE_ANON_KEY }}
           SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
       
       - name: Deploy to Vercel
         uses: amondnet/vercel-action@v25

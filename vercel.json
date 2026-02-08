@@ -4,6 +4,7 @@
   "framework": "nextjs",
   "installCommand": "cd miniapp && npm install",
   "devCommand": "cd miniapp && npm run dev",
+  "rootDirectory": "miniapp",
   "crons": [
     {
       "path": "/api/cron/subscription/charge",

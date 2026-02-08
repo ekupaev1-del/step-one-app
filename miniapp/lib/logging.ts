@@ -87,6 +87,15 @@ export async function logEvent(
 
     if (error) {
       // Log to console as fallback - never throw
+      // Use formatDbError for consistent error formatting
+      const { formatDbError } = await import('./dbLogger.js');
+      const diagnostic = formatDbError(error, {
+        table: 'app_logs',
+        operation: 'insert',
+        requestId: requestId || undefined,
+        telegramUserId: telegramUserIdNum || undefined,
+      });
+      console.error(`[logEvent] ${diagnostic}`);
       console.error('[logEvent] Failed to write to app_logs:', {
         error: error.message,
         errorCode: error.code,
