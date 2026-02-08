@@ -30,10 +30,24 @@ function getExpectedProjectRef(): string {
 }
 
 /**
- * Detects key type from key string
+ * Detects key type from JWT payload role
  */
 function detectKeyType(key: string): 'service_role' | 'anon' | 'unknown' {
   if (!key) return 'unknown';
+  
+  // Try to decode JWT payload to check role
+  try {
+    const parts = key.split('.');
+    if (parts.length === 3) {
+      const payload = JSON.parse(Buffer.from(parts[1], 'base64').toString());
+      if (payload.role === 'service_role') return 'service_role';
+      if (payload.role === 'anon') return 'anon';
+    }
+  } catch {
+    // Fallback to length-based detection
+  }
+  
+  // Fallback: length-based detection
   if (key.length > 200) return 'service_role';
   if (key.length > 100 && key.length < 200) return 'anon';
   return 'unknown';
@@ -105,10 +119,12 @@ export function getBotSupabaseEnv(): SupabaseEnvConfig {
   const keyType = detectKeyType(serviceKey);
   const keySuffix = getKeySuffix(serviceKey);
   const envName = getEnvName();
+  const nodeEnv = process.env.NODE_ENV || 'not_set';
+  const vercelEnv = process.env.VERCEL_ENV;
 
   // Log diagnostics (safe: no full keys)
   console.log(
-    `[SUPABASE] env=${envName} url=${normalizedUrl} projectRef=${projectRef} keyType=${keyType} keySuffix=${keySuffix}`
+    `[SUPABASE] url=${normalizedUrl} project=${projectRef} keyRole=${keyType} env=${vercelEnv || nodeEnv}`
   );
 
   return {

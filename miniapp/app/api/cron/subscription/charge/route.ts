@@ -35,7 +35,7 @@ export async function POST(req: Request) {
     const now = new Date().toISOString();
     const { data: subscriptions, error: findError } = await supabase
       .from("subscriptions")
-      .select("*")
+      .select("id, user_id, status, next_charge_at, active_until, plan_code, provider_recurring_id, updated_at")
       .eq("status", "active")
       .lte("next_charge_at", now);
 
@@ -67,7 +67,8 @@ export async function POST(req: Request) {
     for (const subscription of subscriptions) {
       try {
         // Check if recurring token is available
-        if (!subscription.provider_recurring_id) {
+        const recurringId = (subscription as any)?.provider_recurring_id;
+        if (!recurringId) {
           console.warn(`[cron/charge:${requestId}] Subscription ${subscription.id} has no provider_recurring_id. Recurring charge not possible yet.`);
           errors.push(`Subscription ${subscription.id}: No recurring token available`);
           failed++;
@@ -79,7 +80,7 @@ export async function POST(req: Request) {
         // For now, we create a payment record and log that we need provider integration
         console.log(`[cron/charge:${requestId}] Attempting recurring charge for subscription ${subscription.id}`, {
           userId: subscription.user_id,
-          recurringId: subscription.provider_recurring_id,
+          recurringId: recurringId,
         });
 
         // Create payment record for this charge
@@ -99,7 +100,7 @@ export async function POST(req: Request) {
             provider_payload: {
               type: "recurring",
               subscriptionId: subscription.id,
-              recurringId: subscription.provider_recurring_id,
+              recurringId: recurringId,
             },
           })
           .select("id")

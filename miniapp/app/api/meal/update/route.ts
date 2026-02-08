@@ -20,10 +20,11 @@ export const dynamic = 'force-dynamic';
  * 
  * Возвращает подтверждение обновления
  */
+import { getServerSupabaseClient } from "@/lib/supabase/server";
+
 export async function POST(req: Request) {
   try {
     // Используем единый источник правды с проверкой URL
-    const { getServerSupabaseClient } = await import("@/lib/supabase/server");
     const supabase = getServerSupabaseClient();
 
     const body = await req.json();
@@ -66,7 +67,7 @@ export async function POST(req: Request) {
 
     const { data, error } = await supabase
       .from("diary")
-      .update(updateData)
+      .update(updateData as any)
       .eq("id", mealId)
       .select("id")
       .single();
