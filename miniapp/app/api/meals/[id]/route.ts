@@ -22,10 +22,9 @@ export async function PATCH(
   { params }: { params: Promise<{ id: string }> }
 ) {
   try {
-    const supabase = createClient(
-      process.env.NEXT_PUBLIC_SUPABASE_URL!,
-      process.env.SUPABASE_SERVICE_ROLE_KEY!
-    );
+    // Используем единый источник правды с проверкой URL
+    const { getServerSupabaseClient } = await import("../../../../lib/supabase/server");
+    const supabase = getServerSupabaseClient();
 
     const { id } = await params;
     const mealId = Number(id);
@@ -96,10 +95,9 @@ export async function DELETE(
   { params }: { params: Promise<{ id: string }> }
 ) {
   try {
-    const supabase = createClient(
-      process.env.NEXT_PUBLIC_SUPABASE_URL!,
-      process.env.SUPABASE_SERVICE_ROLE_KEY!
-    );
+    // Используем единый источник правды с проверкой URL
+    const { getServerSupabaseClient } = await import("../../../../lib/supabase/server");
+    const supabase = getServerSupabaseClient();
 
     const { id } = await params;
     const mealId = Number(id);

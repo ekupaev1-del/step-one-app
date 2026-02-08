@@ -82,7 +82,9 @@ export async function POST(req: Request) {
     return NextResponse.json({ ok: false, error: "userId is required" }, { status: 400 });
   }
 
-  const supabase = createClient(supabaseUrl, supabaseKey);
+  // Используем единый источник правды с проверкой URL
+  const { getServerSupabaseClient } = await import("../../../lib/supabase/server");
+  const supabase = getServerSupabaseClient();
   const { data: user, error } = await supabase
     .from("users")
     .select("id, telegram_id")

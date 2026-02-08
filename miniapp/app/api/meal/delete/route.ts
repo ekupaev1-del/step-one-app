@@ -17,10 +17,9 @@ export const dynamic = 'force-dynamic';
  */
 export async function POST(req: Request) {
   try {
-    const supabase = createClient(
-      process.env.NEXT_PUBLIC_SUPABASE_URL!,
-      process.env.SUPABASE_SERVICE_ROLE_KEY!
-    );
+    // Используем единый источник правды с проверкой URL
+    const { getServerSupabaseClient } = await import("../../../../lib/supabase/server");
+    const supabase = getServerSupabaseClient();
 
     const body = await req.json();
     const { id } = body;

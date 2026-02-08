@@ -36,10 +36,9 @@ export async function OPTIONS() {
  */
 export async function GET(req: Request) {
   try {
-    const supabase = createClient(
-      process.env.NEXT_PUBLIC_SUPABASE_URL!,
-      process.env.SUPABASE_SERVICE_ROLE_KEY!
-    );
+    // Используем единый источник правды с проверкой URL
+    const { getServerSupabaseClient } = await import("../../../lib/supabase/server");
+    const supabase = getServerSupabaseClient();
 
     const url = new URL(req.url);
     const userId = url.searchParams.get("userId");

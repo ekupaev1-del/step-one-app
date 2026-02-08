@@ -250,51 +250,70 @@ export async function performSchemaHealthCheck(
               }
             }
           } else {
-            // RPC function not available or failed - fallback to SELECT method
-            // But handle PGRST205 errors specially (table exists, cache is stale)
-            const columnsToCheck = tableSpec.requiredColumns.join(', ');
-            const { error: multiColError } = await supabase
-              .from(tableSpec.name)
-              .select(columnsToCheck)
-              .limit(0);
-            
-            if (multiColError) {
-              if (multiColError.code === 'PGRST205' || multiColError.message?.includes('schema cache')) {
-                // Schema cache is stale - columns likely exist, just cache needs reload
-                result.errors.push(`Table '${tableSpec.name}' exists but PostgREST schema cache is stale. Columns likely exist. Run: SELECT pg_notify('pgrst', 'reload schema');`);
-                // Don't mark columns as missing - they likely exist, just cache is stale
-                tableCheck.columns = tableSpec.requiredColumns; // Assume they exist
-              } else if (multiColError.code === '42703' || multiColError.message?.includes('column')) {
-                // Column missing - check individually
-                result.errors.push(`Table '${tableSpec.name}' column check failed: ${multiColError.message}`);
-                for (const col of tableSpec.requiredColumns) {
-                  const { error: colError } = await supabase
-                    .from(tableSpec.name)
-                    .select(col)
-                    .limit(0);
-                  
-                  if (colError && (colError.code === '42703' || colError.message?.includes('column'))) {
-                    tableCheck.missingColumns.push(col);
-                    result.healthy = false;
+            // RPC function not available - use exec_sql to query information_schema directly
+            try {
+              const { data: sqlResult, error: sqlError } = await supabase.rpc('exec_sql', {
+                sql_text: `SELECT column_name FROM information_schema.columns WHERE table_schema = 'public' AND table_name = '${tableSpec.name}'`,
+              });
+
+              if (!sqlError && sqlResult && Array.isArray(sqlResult) && sqlResult.length > 0) {
+                const existingColumns = sqlResult
+                  .map((row: any) => String(row.column_name || '').toLowerCase())
+                  .filter(Boolean);
+                
+                for (const requiredCol of tableSpec.requiredColumns) {
+                  const colLower = requiredCol.toLowerCase();
+                  if (existingColumns.includes(colLower)) {
+                    tableCheck.columns.push(requiredCol);
                   } else {
-                    tableCheck.columns.push(col);
+                    tableCheck.missingColumns.push(requiredCol);
+                    result.errors.push(`Table '${tableSpec.name}' missing column '${requiredCol}'`);
+                    result.healthy = false;
                   }
                 }
               } else {
-                // Other error - assume columns exist but log the error
-                result.errors.push(`Table '${tableSpec.name}' query error: ${multiColError.message}`);
-                tableCheck.columns = tableSpec.requiredColumns; // Assume they exist
+                // Fallback: try SELECT but handle PGRST205 specially
+                const columnsToCheck = tableSpec.requiredColumns.join(', ');
+                const { error: multiColError } = await supabase
+                  .from(tableSpec.name)
+                  .select(columnsToCheck)
+                  .limit(0);
+                
+                if (multiColError) {
+                  if (multiColError.code === 'PGRST205' || multiColError.message?.includes('schema cache')) {
+                    result.errors.push(`Table '${tableSpec.name}' exists but PostgREST schema cache is stale. Run: SELECT pg_notify('pgrst', 'reload schema');`);
+                    tableCheck.columns = tableSpec.requiredColumns; // Assume they exist
+                  } else if (multiColError.code === '42703' || multiColError.message?.includes('column')) {
+                    result.errors.push(`Table '${tableSpec.name}' column check failed: ${multiColError.message}`);
+                    for (const col of tableSpec.requiredColumns) {
+                      const { error: colError } = await supabase
+                        .from(tableSpec.name)
+                        .select(col)
+                        .limit(0);
+                      
+                      if (colError && (colError.code === '42703' || colError.message?.includes('column'))) {
+                        tableCheck.missingColumns.push(col);
+                        result.healthy = false;
+                      } else {
+                        tableCheck.columns.push(col);
+                      }
+                    }
+                  } else {
+                    result.errors.push(`Table '${tableSpec.name}' query error: ${multiColError.message}`);
+                    tableCheck.columns = tableSpec.requiredColumns;
+                  }
+                } else {
+                  tableCheck.columns = tableSpec.requiredColumns;
+                }
               }
-            } else {
-              // All columns accessible - mark all as verified
-              tableCheck.columns = tableSpec.requiredColumns;
+            } catch (sqlErr: any) {
+              result.errors.push(`Table '${tableSpec.name}' exec_sql error: ${sqlErr?.message || String(sqlErr)}`);
+              tableCheck.columns = tableSpec.requiredColumns; // Assume they exist
             }
           }
         } catch (err: any) {
-          // If column check fails, assume columns exist (they're visible in UI)
-          // The issue is likely PostgREST schema cache, not missing columns
           result.errors.push(`Table '${tableSpec.name}' column check exception: ${err?.message || String(err)}`);
-          tableCheck.columns = tableSpec.requiredColumns; // Assume they exist based on UI
+          tableCheck.columns = tableSpec.requiredColumns; // Assume they exist
         }
       }
 

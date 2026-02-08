@@ -182,25 +182,23 @@ bot.start(async (ctx) => {
   const operationName = "createUserOnStart";
   
   // Log environment status (boolean only, no secrets)
-  const hasSupabaseUrl = !!process.env.SUPABASE_URL;
-  const hasSupabaseKey = !!process.env.SUPABASE_SERVICE_ROLE_KEY;
   const isProduction = process.env.NODE_ENV === "production" || process.env.VERCEL_ENV === "production";
   
   console.log(`[bot:${requestId}] Operation: ${operationName}`);
-  console.log(`[bot:${requestId}] Environment: isProduction=${isProduction}, hasSupabaseUrl=${hasSupabaseUrl}, hasSupabaseKey=${hasSupabaseKey}`);
+  console.log(`[bot:${requestId}] Environment: isProduction=${isProduction}`);
   
-  // Run connection diagnostics with compact logging
+  // Run connection diagnostics with compact logging (using validated env)
   const supabaseContext = getSupabaseContext(
-    process.env.SUPABASE_URL || process.env.NEXT_PUBLIC_SUPABASE_URL,
-    process.env.SUPABASE_SERVICE_ROLE_KEY,
+    env.supabaseUrl,
+    env.supabaseServiceRoleKey,
     ['users', 'diary', 'water_logs', 'app_logs', 'reminders']
   );
   logSupabaseContext(supabaseContext);
   
   // Also run detailed diagnostics
   const connectionInfo = analyzeSupabaseConnection(
-    process.env.SUPABASE_URL || process.env.NEXT_PUBLIC_SUPABASE_URL,
-    process.env.SUPABASE_SERVICE_ROLE_KEY
+    env.supabaseUrl,
+    env.supabaseServiceRoleKey
   );
   logConnectionDiagnostics(connectionInfo);
   
@@ -3426,18 +3424,30 @@ process.once("SIGTERM", () => bot.stop("SIGTERM"));
 // Run startup diagnostics
 console.log("🔍 Running startup diagnostics...");
 
-// Compact connection diagnostics
+// ЖЁСТКАЯ ПРОВЕРКА: URL должен быть правильным (уже проверено в env.ts, но логируем)
+const EXPECTED_SUPABASE_URL = "https://ipgxnqplwzptxyfjjsrr.supabase.co";
+const EXPECTED_PROJECT_REF = "ipgxnqplwzptxyfjjsrr";
+
+if (env.supabaseUrl !== EXPECTED_SUPABASE_URL) {
+  console.error("❌ CRITICAL: Wrong Supabase project URL at startup!");
+  console.error(`   Current:  ${env.supabaseUrl}`);
+  console.error(`   Expected: ${EXPECTED_SUPABASE_URL}`);
+  console.error("   Application will NOT start with wrong project URL.");
+  process.exit(1);
+}
+
+// Compact connection diagnostics (using validated env)
 const startupContext = getSupabaseContext(
-  process.env.SUPABASE_URL || process.env.NEXT_PUBLIC_SUPABASE_URL,
-  process.env.SUPABASE_SERVICE_ROLE_KEY,
+  env.supabaseUrl,
+  env.supabaseServiceRoleKey,
   ['users', 'diary', 'water_logs', 'app_logs', 'reminders']
 );
 logSupabaseContext(startupContext);
 
 // Detailed connection diagnostics
 const connectionInfo = analyzeSupabaseConnection(
-  process.env.SUPABASE_URL || process.env.NEXT_PUBLIC_SUPABASE_URL,
-  process.env.SUPABASE_SERVICE_ROLE_KEY
+  env.supabaseUrl,
+  env.supabaseServiceRoleKey
 );
 logConnectionDiagnostics(connectionInfo);
 
