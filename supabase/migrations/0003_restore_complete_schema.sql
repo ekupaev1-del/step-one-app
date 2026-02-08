@@ -1,22 +1,23 @@
 -- ============================================================================
--- INITIAL SCHEMA MIGRATION
+-- COMPLETE SCHEMA RESTORATION MIGRATION
 -- ============================================================================
--- This migration creates the complete database schema for a fresh Supabase project.
--- It is idempotent and safe to run multiple times.
+-- This migration ensures ALL tables and columns exist as expected by the code.
+-- It is idempotent and safe to run on a fresh Supabase project or existing one.
 --
 -- Run this in Supabase SQL Editor or via Supabase CLI:
 --   supabase db push
 --
--- Design Decisions:
--- 1. All user IDs use BIGINT (not UUID) for consistency
--- 2. diary.source = content type ('text', 'photo', 'audio')
--- 3. diary.channel = communication channel ('telegram', 'webapp', 'admin', 'api')
--- 4. RLS policies allow service_role full access (required for bot/API)
--- 5. All tables have proper indexes for performance
+-- This migration fixes:
+-- 1. users table with ALL columns (calories, goal, etc.)
+-- 2. reminders table (required for scheduler)
+-- 3. app_logs table with chat_id column (TEXT)
+-- 4. diary table with correct constraints
+-- 5. water_logs table
+-- 6. All other required tables
 -- ============================================================================
 
 -- ============================================================================
--- TABLE 1: users
+-- TABLE 1: users (with ALL columns used by code)
 -- ============================================================================
 
 CREATE TABLE IF NOT EXISTS users (
@@ -32,9 +33,9 @@ CREATE TABLE IF NOT EXISTS users (
   activity TEXT CHECK (activity IN ('sedentary', 'light', 'moderate', 'active', 'very_active')),
   goal TEXT CHECK (goal IN ('lose', 'maintain', 'gain')),
   calories INTEGER DEFAULT 0 CHECK (calories >= 0),
-  protein NUMERIC(6, 2) CHECK (protein >= 0),
-  fat NUMERIC(6, 2) CHECK (fat >= 0),
-  carbs NUMERIC(6, 2) CHECK (carbs >= 0),
+  protein NUMERIC(6, 2) DEFAULT 0 CHECK (protein >= 0),
+  fat NUMERIC(6, 2) DEFAULT 0 CHECK (fat >= 0),
+  carbs NUMERIC(6, 2) DEFAULT 0 CHECK (carbs >= 0),
   water_goal_ml INTEGER CHECK (water_goal_ml > 0 AND water_goal_ml < 10000),
   avatar_url TEXT,
   privacy_accepted BOOLEAN DEFAULT false,
@@ -44,6 +45,103 @@ CREATE TABLE IF NOT EXISTS users (
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
+
+-- Add missing columns if table exists but columns are missing
+DO $$
+BEGIN
+  -- calories with DEFAULT 0
+  IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema = 'public' AND table_name = 'users' AND column_name = 'calories') THEN
+    ALTER TABLE users ADD COLUMN calories INTEGER DEFAULT 0 CHECK (calories >= 0);
+  ELSE
+    -- Ensure DEFAULT exists
+    ALTER TABLE users ALTER COLUMN calories SET DEFAULT 0;
+  END IF;
+
+  -- goal
+  IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema = 'public' AND table_name = 'users' AND column_name = 'goal') THEN
+    ALTER TABLE users ADD COLUMN goal TEXT CHECK (goal IN ('lose', 'maintain', 'gain'));
+  END IF;
+
+  -- name
+  IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema = 'public' AND table_name = 'users' AND column_name = 'name') THEN
+    ALTER TABLE users ADD COLUMN name TEXT;
+  END IF;
+
+  -- phone
+  IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema = 'public' AND table_name = 'users' AND column_name = 'phone') THEN
+    ALTER TABLE users ADD COLUMN phone TEXT;
+  END IF;
+
+  -- email
+  IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema = 'public' AND table_name = 'users' AND column_name = 'email') THEN
+    ALTER TABLE users ADD COLUMN email TEXT;
+  END IF;
+
+  -- All other columns...
+  IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema = 'public' AND table_name = 'users' AND column_name = 'gender') THEN
+    ALTER TABLE users ADD COLUMN gender TEXT CHECK (gender IN ('male', 'female', 'other'));
+  END IF;
+
+  IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema = 'public' AND table_name = 'users' AND column_name = 'age') THEN
+    ALTER TABLE users ADD COLUMN age INTEGER CHECK (age > 0 AND age < 150);
+  END IF;
+
+  IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema = 'public' AND table_name = 'users' AND column_name = 'weight') THEN
+    ALTER TABLE users ADD COLUMN weight NUMERIC(5, 2) CHECK (weight > 0 AND weight < 1000);
+  END IF;
+
+  IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema = 'public' AND table_name = 'users' AND column_name = 'height') THEN
+    ALTER TABLE users ADD COLUMN height INTEGER CHECK (height > 0 AND height < 300);
+  END IF;
+
+  IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema = 'public' AND table_name = 'users' AND column_name = 'activity') THEN
+    ALTER TABLE users ADD COLUMN activity TEXT CHECK (activity IN ('sedentary', 'light', 'moderate', 'active', 'very_active'));
+  END IF;
+
+  IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema = 'public' AND table_name = 'users' AND column_name = 'protein') THEN
+    ALTER TABLE users ADD COLUMN protein NUMERIC(6, 2) DEFAULT 0 CHECK (protein >= 0);
+  END IF;
+
+  IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema = 'public' AND table_name = 'users' AND column_name = 'fat') THEN
+    ALTER TABLE users ADD COLUMN fat NUMERIC(6, 2) DEFAULT 0 CHECK (fat >= 0);
+  END IF;
+
+  IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema = 'public' AND table_name = 'users' AND column_name = 'carbs') THEN
+    ALTER TABLE users ADD COLUMN carbs NUMERIC(6, 2) DEFAULT 0 CHECK (carbs >= 0);
+  END IF;
+
+  IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema = 'public' AND table_name = 'users' AND column_name = 'water_goal_ml') THEN
+    ALTER TABLE users ADD COLUMN water_goal_ml INTEGER CHECK (water_goal_ml > 0 AND water_goal_ml < 10000);
+  END IF;
+
+  IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema = 'public' AND table_name = 'users' AND column_name = 'avatar_url') THEN
+    ALTER TABLE users ADD COLUMN avatar_url TEXT;
+  END IF;
+
+  IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema = 'public' AND table_name = 'users' AND column_name = 'privacy_accepted') THEN
+    ALTER TABLE users ADD COLUMN privacy_accepted BOOLEAN DEFAULT false;
+  END IF;
+
+  IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema = 'public' AND table_name = 'users' AND column_name = 'privacy_accepted_at') THEN
+    ALTER TABLE users ADD COLUMN privacy_accepted_at TIMESTAMPTZ;
+  END IF;
+
+  IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema = 'public' AND table_name = 'users' AND column_name = 'terms_accepted') THEN
+    ALTER TABLE users ADD COLUMN terms_accepted BOOLEAN DEFAULT false;
+  END IF;
+
+  IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema = 'public' AND table_name = 'users' AND column_name = 'terms_accepted_at') THEN
+    ALTER TABLE users ADD COLUMN terms_accepted_at TIMESTAMPTZ;
+  END IF;
+
+  IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema = 'public' AND table_name = 'users' AND column_name = 'created_at') THEN
+    ALTER TABLE users ADD COLUMN created_at TIMESTAMPTZ NOT NULL DEFAULT NOW();
+  END IF;
+
+  IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema = 'public' AND table_name = 'users' AND column_name = 'updated_at') THEN
+    ALTER TABLE users ADD COLUMN updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW();
+  END IF;
+END $$;
 
 CREATE INDEX IF NOT EXISTS idx_users_telegram_id ON users(telegram_id) WHERE telegram_id IS NOT NULL;
 CREATE INDEX IF NOT EXISTS idx_users_email ON users(email) WHERE email IS NOT NULL;
@@ -69,6 +167,30 @@ CREATE TABLE IF NOT EXISTS diary (
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
+-- Fix source constraint if it exists with wrong values
+DO $$
+BEGIN
+  -- Drop existing constraint if it doesn't match
+  IF EXISTS (
+    SELECT 1 FROM pg_constraint 
+    WHERE conrelid = 'public.diary'::regclass 
+    AND conname = 'diary_source_check'
+  ) THEN
+    ALTER TABLE public.diary DROP CONSTRAINT diary_source_check;
+  END IF;
+  
+  -- Add correct constraint
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_constraint 
+    WHERE conrelid = 'public.diary'::regclass 
+    AND conname = 'diary_source_check'
+  ) THEN
+    ALTER TABLE public.diary 
+      ADD CONSTRAINT diary_source_check 
+      CHECK (source IN ('text', 'photo', 'audio'));
+  END IF;
+END $$;
+
 CREATE INDEX IF NOT EXISTS idx_diary_user_id ON diary(user_id);
 CREATE INDEX IF NOT EXISTS idx_diary_telegram_user_id ON diary(telegram_user_id) WHERE telegram_user_id IS NOT NULL;
 CREATE INDEX IF NOT EXISTS idx_diary_created_at ON diary(created_at DESC);
@@ -76,7 +198,88 @@ CREATE INDEX IF NOT EXISTS idx_diary_channel ON diary(channel) WHERE channel IS 
 CREATE INDEX IF NOT EXISTS idx_diary_source ON diary(source);
 
 -- ============================================================================
--- TABLE 3: subscriptions
+-- TABLE 3: reminders (CRITICAL for scheduler)
+-- ============================================================================
+
+CREATE TABLE IF NOT EXISTS reminders (
+  id BIGSERIAL PRIMARY KEY,
+  user_id BIGINT NOT NULL,
+  type TEXT NOT NULL CHECK (type IN ('food', 'water')),
+  time TEXT NOT NULL CHECK (time ~ '^([0-1][0-9]|2[0-3]):[0-5][0-9]$'),
+  is_active BOOLEAN NOT NULL DEFAULT true,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+-- Add missing columns if table exists
+DO $$
+BEGIN
+  IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema = 'public' AND table_name = 'reminders' AND column_name = 'is_active') THEN
+    ALTER TABLE reminders ADD COLUMN is_active BOOLEAN NOT NULL DEFAULT true;
+  END IF;
+END $$;
+
+CREATE INDEX IF NOT EXISTS idx_reminders_user_id ON reminders(user_id);
+CREATE INDEX IF NOT EXISTS idx_reminders_type ON reminders(type);
+CREATE INDEX IF NOT EXISTS idx_reminders_time ON reminders(time);
+CREATE INDEX IF NOT EXISTS idx_reminders_active ON reminders(is_active) WHERE is_active = true;
+
+-- ============================================================================
+-- TABLE 4: app_logs (CRITICAL for logging)
+-- ============================================================================
+
+CREATE TABLE IF NOT EXISTS app_logs (
+  id BIGSERIAL PRIMARY KEY,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  level TEXT NOT NULL CHECK (level IN ('info', 'warn', 'error')),
+  source TEXT NOT NULL,
+  request_id TEXT,
+  user_id BIGINT,
+  telegram_user_id BIGINT,
+  chat_id TEXT,  -- TEXT (not BIGINT) as per code expectations
+  message TEXT,
+  payload JSONB DEFAULT '{}'::jsonb
+);
+
+-- Ensure chat_id is TEXT (not BIGINT)
+DO $$
+BEGIN
+  IF EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema = 'public' AND table_name = 'app_logs' AND column_name = 'chat_id') THEN
+    -- Check if it's not TEXT, alter it
+    IF (SELECT data_type FROM information_schema.columns WHERE table_schema = 'public' AND table_name = 'app_logs' AND column_name = 'chat_id') != 'text' THEN
+      ALTER TABLE app_logs ALTER COLUMN chat_id TYPE TEXT USING chat_id::TEXT;
+    END IF;
+  ELSE
+    ALTER TABLE app_logs ADD COLUMN chat_id TEXT;
+  END IF;
+END $$;
+
+CREATE INDEX IF NOT EXISTS idx_app_logs_created_at ON app_logs(created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_app_logs_level ON app_logs(level);
+CREATE INDEX IF NOT EXISTS idx_app_logs_source ON app_logs(source);
+CREATE INDEX IF NOT EXISTS idx_app_logs_request_id ON app_logs(request_id) WHERE request_id IS NOT NULL;
+CREATE INDEX IF NOT EXISTS idx_app_logs_user_id ON app_logs(user_id) WHERE user_id IS NOT NULL;
+CREATE INDEX IF NOT EXISTS idx_app_logs_telegram_user_id ON app_logs(telegram_user_id) WHERE telegram_user_id IS NOT NULL;
+CREATE INDEX IF NOT EXISTS idx_app_logs_chat_id ON app_logs(chat_id) WHERE chat_id IS NOT NULL;
+
+-- ============================================================================
+-- TABLE 5: water_logs
+-- ============================================================================
+
+CREATE TABLE IF NOT EXISTS water_logs (
+  id BIGSERIAL PRIMARY KEY,
+  user_id BIGINT NOT NULL,
+  amount_ml INTEGER NOT NULL CHECK (amount_ml > 0 AND amount_ml < 5000),
+  logged_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  source TEXT NOT NULL CHECK (source IN ('telegram', 'miniapp')),
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS idx_water_logs_user_id ON water_logs(user_id);
+CREATE INDEX IF NOT EXISTS idx_water_logs_logged_at ON water_logs(logged_at);
+
+-- ============================================================================
+-- TABLE 6: subscriptions
 -- ============================================================================
 
 CREATE TABLE IF NOT EXISTS subscriptions (
@@ -98,7 +301,7 @@ CREATE INDEX IF NOT EXISTS idx_subscriptions_user_id ON subscriptions(user_id);
 CREATE INDEX IF NOT EXISTS idx_subscriptions_status ON subscriptions(status);
 
 -- ============================================================================
--- TABLE 4: payments
+-- TABLE 7: payments
 -- ============================================================================
 
 CREATE TABLE IF NOT EXISTS payments (
@@ -118,66 +321,6 @@ CREATE TABLE IF NOT EXISTS payments (
 
 CREATE UNIQUE INDEX IF NOT EXISTS payments_provider_inv_id_unique ON payments(provider, inv_id);
 CREATE INDEX IF NOT EXISTS idx_payments_user_id ON payments(user_id);
-
--- ============================================================================
--- TABLE 5: reminders
--- ============================================================================
-
-CREATE TABLE IF NOT EXISTS reminders (
-  id BIGSERIAL PRIMARY KEY,
-  user_id BIGINT NOT NULL,
-  type TEXT NOT NULL CHECK (type IN ('food', 'water')),
-  time TEXT NOT NULL CHECK (time ~ '^([0-1][0-9]|2[0-3]):[0-5][0-9]$'),
-  is_active BOOLEAN NOT NULL DEFAULT true,
-  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
-);
-
-CREATE INDEX IF NOT EXISTS idx_reminders_user_id ON reminders(user_id);
-CREATE INDEX IF NOT EXISTS idx_reminders_type ON reminders(type);
-CREATE INDEX IF NOT EXISTS idx_reminders_time ON reminders(time);
-CREATE INDEX IF NOT EXISTS idx_reminders_active ON reminders(is_active) WHERE is_active = true;
-
--- ============================================================================
--- TABLE 6: water_logs
--- ============================================================================
-
-CREATE TABLE IF NOT EXISTS water_logs (
-  id BIGSERIAL PRIMARY KEY,
-  user_id BIGINT NOT NULL,
-  amount_ml INTEGER NOT NULL CHECK (amount_ml > 0 AND amount_ml < 5000),
-  logged_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-  source TEXT NOT NULL CHECK (source IN ('telegram', 'miniapp')),
-  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
-);
-
-CREATE INDEX IF NOT EXISTS idx_water_logs_user_id ON water_logs(user_id);
-CREATE INDEX IF NOT EXISTS idx_water_logs_logged_at ON water_logs(logged_at);
-
--- ============================================================================
--- TABLE 7: app_logs
--- ============================================================================
-
-CREATE TABLE IF NOT EXISTS app_logs (
-  id BIGSERIAL PRIMARY KEY,
-  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-  level TEXT NOT NULL CHECK (level IN ('info', 'warn', 'error')),
-  source TEXT NOT NULL,
-  request_id TEXT,
-  user_id BIGINT,
-  telegram_user_id BIGINT,
-  chat_id TEXT,
-  message TEXT,
-  payload JSONB DEFAULT '{}'::jsonb
-);
-
-CREATE INDEX IF NOT EXISTS idx_app_logs_created_at ON app_logs(created_at DESC);
-CREATE INDEX IF NOT EXISTS idx_app_logs_level ON app_logs(level);
-CREATE INDEX IF NOT EXISTS idx_app_logs_source ON app_logs(source);
-CREATE INDEX IF NOT EXISTS idx_app_logs_request_id ON app_logs(request_id) WHERE request_id IS NOT NULL;
-CREATE INDEX IF NOT EXISTS idx_app_logs_user_id ON app_logs(user_id) WHERE user_id IS NOT NULL;
-CREATE INDEX IF NOT EXISTS idx_app_logs_telegram_user_id ON app_logs(telegram_user_id) WHERE telegram_user_id IS NOT NULL;
-CREATE INDEX IF NOT EXISTS idx_app_logs_chat_id ON app_logs(chat_id) WHERE chat_id IS NOT NULL;
 
 -- ============================================================================
 -- TABLE 8: robokassa_invoices
@@ -377,7 +520,7 @@ CREATE POLICY robokassa_invoices_update_service ON robokassa_invoices FOR UPDATE
 CREATE POLICY robokassa_invoices_select_service ON robokassa_invoices FOR SELECT USING (auth.role() = 'service_role');
 
 -- ============================================================================
--- RELOAD POSTGREST SCHEMA CACHE
+-- RELOAD POSTGREST SCHEMA CACHE (CRITICAL)
 -- ============================================================================
 
 SELECT pg_notify('pgrst', 'reload schema');
