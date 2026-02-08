@@ -3422,11 +3422,12 @@ process.once("SIGINT", () => bot.stop("SIGINT"));
 process.once("SIGTERM", () => bot.stop("SIGTERM"));
 
 // Run startup diagnostics
-console.log("🔍 Running startup diagnostics...");
-
+console.log("═══════════════════════════════════════════════════════");
+console.log("🔍 DB_DIAGNOSTICS - Supabase Connection");
+console.log("═══════════════════════════════════════════════════════");
 // Diagnostics are already logged by getBotSupabaseEnv() in env.ts
 // This validates URL, project ref, and logs safe diagnostics
-// No need for additional checks here - env.ts already fails fast if wrong project
+// Format: [SUPABASE] url=... project=... keyRole=... env=...
 
 // Compact connection diagnostics (using validated env)
 const startupContext = getSupabaseContext(

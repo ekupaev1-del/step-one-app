@@ -5,13 +5,23 @@
  * Provides safe diagnostics (never logs full keys)
  */
 
-import { extractProjectRef } from "../../../../lib/supabase-config";
-
 export interface SupabaseEnvConfig {
   url: string;
   serviceKey: string;
   projectRef: string;
   envName: string;
+}
+
+/**
+ * Extracts project reference from Supabase URL
+ */
+function extractProjectRef(url: string): string | null {
+  try {
+    const match = url.match(/https?:\/\/([a-z0-9]+)\.supabase\.co/);
+    return match ? match[1] : null;
+  } catch {
+    return null;
+  }
 }
 
 /**

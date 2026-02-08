@@ -67,10 +67,12 @@ export async function POST(req: Request) {
     for (const subscription of subscriptions) {
       try {
         // Check if recurring token is available
-        const recurringId = (subscription as any)?.provider_recurring_id;
+        // Type assertion needed because select result may not include all fields in type
+        const sub = subscription as any;
+        const recurringId = sub?.provider_recurring_id;
         if (!recurringId) {
-          console.warn(`[cron/charge:${requestId}] Subscription ${subscription.id} has no provider_recurring_id. Recurring charge not possible yet.`);
-          errors.push(`Subscription ${subscription.id}: No recurring token available`);
+          console.warn(`[cron/charge:${requestId}] Subscription ${sub.id} has no provider_recurring_id. Recurring charge not possible yet.`);
+          errors.push(`Subscription ${sub.id}: No recurring token available`);
           failed++;
           continue;
         }
@@ -78,28 +80,28 @@ export async function POST(req: Request) {
         // Attempt recurring charge
         // NOTE: Actual recurring charge implementation depends on Robokassa API
         // For now, we create a payment record and log that we need provider integration
-        console.log(`[cron/charge:${requestId}] Attempting recurring charge for subscription ${subscription.id}`, {
-          userId: subscription.user_id,
+        console.log(`[cron/charge:${requestId}] Attempting recurring charge for subscription ${sub.id}`, {
+          userId: sub.user_id,
           recurringId: recurringId,
         });
 
         // Create payment record for this charge
-        const invId = `recurring-${Date.now()}-${subscription.id}`;
+        const invId = `recurring-${Date.now()}-${sub.id}`;
         const { data: payment, error: paymentError } = await supabase
           .from("payments")
           .insert({
-            user_id: subscription.user_id,
+            user_id: sub.user_id,
             provider: "robokassa",
             inv_id: invId,
             method: "card",  // Recurring charges are always card
-            plan_code: subscription.plan_code,
+            plan_code: sub.plan_code,
             amount: Number(monthlyAmount),
             currency: "RUB",
             status: "created",  // Will be updated when webhook confirms
             out_sum: Number(monthlyAmount),
             provider_payload: {
               type: "recurring",
-              subscriptionId: subscription.id,
+              subscriptionId: sub.id,
               recurringId: recurringId,
             },
           })
@@ -124,7 +126,7 @@ export async function POST(req: Request) {
         });
 
         // Update subscription: extend active_until by 1 month
-        const activeUntil = new Date(subscription.active_until || now);
+        const activeUntil = new Date(sub.active_until || now);
         activeUntil.setMonth(activeUntil.getMonth() + 1);
         
         const nextChargeAt = new Date(activeUntil);
@@ -138,18 +140,18 @@ export async function POST(req: Request) {
             status: "active",
             updated_at: new Date().toISOString(),
           })
-          .eq("id", subscription.id);
+          .eq("id", sub.id);
 
         if (updateError) {
           console.error(`[cron/charge:${requestId}] Failed to update subscription:`, updateError);
-          errors.push(`Subscription ${subscription.id}: Failed to update subscription`);
+          errors.push(`Subscription ${sub.id}: Failed to update subscription`);
           failed++;
         } else {
           processed++;
         }
       } catch (error: any) {
-        console.error(`[cron/charge:${requestId}] Error processing subscription ${subscription.id}:`, error);
-        errors.push(`Subscription ${subscription.id}: ${error?.message || "Unknown error"}`);
+        console.error(`[cron/charge:${requestId}] Error processing subscription ${sub.id}:`, error);
+        errors.push(`Subscription ${sub.id}: ${error?.message || "Unknown error"}`);
         failed++;
       }
     }

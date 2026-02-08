@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { createClient } from "@supabase/supabase-js";
+import { getServerSupabaseClient } from "@/lib/supabase/server";
 
 export const dynamic = 'force-dynamic';
 
@@ -20,7 +20,6 @@ export const dynamic = 'force-dynamic';
  * 
  * Возвращает подтверждение обновления
  */
-import { getServerSupabaseClient } from "@/lib/supabase/server";
 
 export async function POST(req: Request) {
   try {

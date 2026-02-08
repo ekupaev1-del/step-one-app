@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
-import { createClient } from "@supabase/supabase-js";
 import { calculateMacros } from "../../../lib/macroCalculator";
+import { getServerSupabaseClient } from "@/lib/supabase/server";
 
 export const dynamic = 'force-dynamic';
 
@@ -9,27 +9,6 @@ export const dynamic = 'force-dynamic';
 // Это гарантирует единую логику через sendMainMenu()
 
 export async function POST(req: Request) {
-  const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
-  const supabaseKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
-
-  if (!supabaseUrl) {
-    console.error("[/api/save] NEXT_PUBLIC_SUPABASE_URL не установлен");
-    return NextResponse.json(
-      { ok: false, error: "supabaseUrl is required. Please configure NEXT_PUBLIC_SUPABASE_URL in Vercel environment variables." },
-      { status: 500 }
-    );
-  }
-
-  if (!supabaseKey) {
-    console.error("[/api/save] SUPABASE_SERVICE_ROLE_KEY не установлен");
-    return NextResponse.json(
-      { ok: false, error: "Supabase service key is required. Please configure SUPABASE_SERVICE_ROLE_KEY in Vercel environment variables." },
-      { status: 500 }
-    );
-  }
-
-import { getServerSupabaseClient } from "@/lib/supabase/server";
-
   // Используем единый источник правды с проверкой URL
   const supabase = getServerSupabaseClient();
 
