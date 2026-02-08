@@ -23,7 +23,7 @@ export async function PATCH(
 ) {
   try {
     // Используем единый источник правды с проверкой URL
-    const { getServerSupabaseClient } = await import("../../../../lib/supabase/server");
+    const { getServerSupabaseClient } = await import("@/lib/supabase/server");
     const supabase = getServerSupabaseClient();
 
     const { id } = await params;
@@ -96,7 +96,7 @@ export async function DELETE(
 ) {
   try {
     // Используем единый источник правды с проверкой URL
-    const { getServerSupabaseClient } = await import("../../../../lib/supabase/server");
+    const { getServerSupabaseClient } = await import("@/lib/supabase/server");
     const supabase = getServerSupabaseClient();
 
     const { id } = await params;

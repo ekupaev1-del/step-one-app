@@ -10,7 +10,7 @@ export async function OPTIONS() {
 
 export async function POST(req: Request) {
   // Используем единый источник правды с проверкой URL
-  const { getServerSupabaseClient } = await import("../../../../lib/supabase/server");
+  const { getServerSupabaseClient } = await import("@/lib/supabase/server");
   const supabase = getServerSupabaseClient();
 
   try {

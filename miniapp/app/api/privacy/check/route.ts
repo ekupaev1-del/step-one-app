@@ -5,7 +5,7 @@ export const dynamic = 'force-dynamic';
 
 export async function GET(req: Request) {
   // Используем единый источник правды с проверкой URL
-  const { getServerSupabaseClient } = await import("../../../../lib/supabase/server");
+  const { getServerSupabaseClient } = await import("@/lib/supabase/server");
   const supabase = getServerSupabaseClient();
 
   const url = new URL(req.url);

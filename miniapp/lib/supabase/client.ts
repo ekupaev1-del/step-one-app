@@ -10,50 +10,8 @@
  */
 
 import { createClient } from "@supabase/supabase-js";
-
-// ПРАВИЛЬНЫЙ Supabase Project URL (из Dashboard → API Settings)
-const EXPECTED_SUPABASE_URL = "https://ipgxnqplwzptxyfjjsrr.supabase.co";
-const EXPECTED_PROJECT_REF = "ipgxnqplwzptxyfjjsrr";
-
-/**
- * Extracts project reference from Supabase URL
- */
-function extractProjectRef(url: string): string | null {
-  try {
-    const match = url.match(/https?:\/\/([a-z0-9]+)\.supabase\.co/);
-    return match ? match[1] : null;
-  } catch {
-    return null;
-  }
-}
-
-/**
- * Validates Supabase URL matches expected project
- */
-function validateSupabaseUrl(url: string | undefined): string {
-  if (!url) {
-    throw new Error(
-      "NEXT_PUBLIC_SUPABASE_URL is not set. Set it in Vercel environment variables."
-    );
-  }
-
-  // Normalize URL (remove trailing slash)
-  const normalizedUrl = url.trim().replace(/\/$/, '');
-  const projectRef = extractProjectRef(normalizedUrl);
-
-  if (normalizedUrl !== EXPECTED_SUPABASE_URL) {
-    console.error("❌ CRITICAL: Wrong Supabase project URL!");
-    console.error(`   Current:  ${normalizedUrl}`);
-    console.error(`   Expected: ${EXPECTED_SUPABASE_URL}`);
-    console.error(`   Project ref: ${projectRef || 'UNKNOWN'} (expected: ${EXPECTED_PROJECT_REF})`);
-    throw new Error(
-      `Wrong Supabase project URL. Current: ${normalizedUrl}, Expected: ${EXPECTED_SUPABASE_URL}. ` +
-      `Update NEXT_PUBLIC_SUPABASE_URL in Vercel environment variables.`
-    );
-  }
-
-  return normalizedUrl;
-}
+// @ts-ignore - root lib is outside miniapp scope, use relative import
+import { getSupabaseClientConfig, logSupabaseConfig } from "../../../lib/supabase-config";
 
 let clientInstance: ReturnType<typeof createClient> | null = null;
 
@@ -62,26 +20,15 @@ export function getClientSupabaseClient() {
     return clientInstance;
   }
 
-  const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
-  const anonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
-
-  if (!url || !anonKey) {
-    throw new Error(
-      "Missing Supabase credentials. Ensure NEXT_PUBLIC_SUPABASE_URL and NEXT_PUBLIC_SUPABASE_ANON_KEY are set in environment variables."
-    );
+  // Use shared config module (single source of truth)
+  const config = getSupabaseClientConfig();
+  
+  // Log connection info (safe, no secrets) - only in dev
+  if (process.env.NODE_ENV !== 'production') {
+    logSupabaseConfig(config, 'supabase/client');
   }
 
-  // ЖЁСТКАЯ ПРОВЕРКА: URL должен быть правильным
-  const validatedUrl = validateSupabaseUrl(url);
-
-  // Runtime assertion: ensure we're using anon key (not service role)
-  if (anonKey.length > 200 || !anonKey.includes("eyJ")) {
-    throw new Error(
-      "SECURITY ERROR: NEXT_PUBLIC_SUPABASE_ANON_KEY appears to be a service role key. Anon key should be shorter and safe to expose to clients."
-    );
-  }
-
-  clientInstance = createClient(validatedUrl, anonKey, {
+  clientInstance = createClient(config.url, config.anonKey!, {
     auth: {
       autoRefreshToken: true,
       persistSession: true,

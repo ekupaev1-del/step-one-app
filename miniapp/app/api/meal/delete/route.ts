@@ -18,7 +18,7 @@ export const dynamic = 'force-dynamic';
 export async function POST(req: Request) {
   try {
     // Используем единый источник правды с проверкой URL
-    const { getServerSupabaseClient } = await import("../../../../lib/supabase/server");
+    const { getServerSupabaseClient } = await import("@/lib/supabase/server");
     const supabase = getServerSupabaseClient();
 
     const body = await req.json();
