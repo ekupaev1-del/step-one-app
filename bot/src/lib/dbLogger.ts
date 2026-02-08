@@ -2,8 +2,10 @@
  * Shared database operation logger
  * 
  * Logs all DB operations with structured JSON for Vercel logs.
- * Includes: requestId, route/handler, telegramUserId, userId, operation, table, and full error details.
+ * Includes: requestId, route/handler, telegramUserId, userId, operation, table, project ref, and full error details.
  */
+
+import { extractProjectRef } from './dbDiagnostics.js';
 
 export interface DBLogContext {
   requestId: string;
@@ -121,17 +123,31 @@ export function logDBError(
     schema: (error as any)?.schema,
   };
 
-  // Log formatted diagnostic message
+  // Extract project ref from Supabase URL for diagnostics
+  const supabaseUrl = process.env.SUPABASE_URL || process.env.NEXT_PUBLIC_SUPABASE_URL;
+  const projectRef = supabaseUrl ? extractProjectRef(supabaseUrl) : null;
+
+  // Log formatted diagnostic message with project ref
   const diagnostic = formatDbError(error, {
     table: context.table,
     operation: context.operation,
     requestId: context.requestId,
     telegramUserId: context.telegramUserId,
   });
-  console.error(diagnostic);
+  
+  // Add project ref to diagnostic if available
+  const diagnosticWithRef = projectRef 
+    ? `${diagnostic} | Project: ${projectRef}`
+    : diagnostic;
+  
+  console.error(diagnosticWithRef);
 
-  // Also log structured JSON
-  logDBOperation(context, errorDetails, durationMs);
+  // Also log structured JSON with project ref
+  const contextWithRef = {
+    ...context,
+    projectRef: projectRef || undefined,
+  };
+  logDBOperation(contextWithRef, errorDetails, durationMs);
 }
 
 /**

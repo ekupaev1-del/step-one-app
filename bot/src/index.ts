@@ -11,6 +11,13 @@ import { startInactivityNotificationScheduler } from "./services/inactivityNotif
 import { logEvent, logError, generateRequestId } from "./services/logging.js";
 import { normalizeDiaryEntry, logPayloadDetails } from "./services/diaryNormalize.js";
 import { logDBError, createUserFriendlyError } from "./lib/dbLogger.js";
+import {
+  analyzeSupabaseConnection,
+  logConnectionDiagnostics,
+  performSchemaHealthCheck,
+  logSchemaHealthCheck,
+  createHealthCheckErrorMessage,
+} from "./lib/dbDiagnostics.js";
 
 // Инициализация бота
 const bot = new Telegraf(env.telegramBotToken);
@@ -181,6 +188,32 @@ bot.start(async (ctx) => {
   console.log(`[bot:${requestId}] Operation: ${operationName}`);
   console.log(`[bot:${requestId}] Environment: isProduction=${isProduction}, hasSupabaseUrl=${hasSupabaseUrl}, hasSupabaseKey=${hasSupabaseKey}`);
   
+  // Run connection diagnostics
+  const connectionInfo = analyzeSupabaseConnection(
+    process.env.SUPABASE_URL || process.env.NEXT_PUBLIC_SUPABASE_URL,
+    process.env.SUPABASE_SERVICE_ROLE_KEY
+  );
+  logConnectionDiagnostics(connectionInfo);
+  
+  // Run schema healthcheck before processing /start
+  console.log(`[bot:${requestId}] Running schema healthcheck...`);
+  const healthCheck = await performSchemaHealthCheck(supabase);
+  logSchemaHealthCheck(healthCheck);
+  
+  if (!healthCheck.healthy) {
+    const errorMessage = createHealthCheckErrorMessage(healthCheck);
+    console.error(`[bot:${requestId}] Schema healthcheck failed:\n${errorMessage}`);
+    // Log to app_logs if possible, but don't fail the request
+    await logEvent('error', 'schema_healthcheck_failed', {
+      requestId,
+      telegramUserId: ctx.from?.id,
+      errorMessage,
+      payload: { healthCheck },
+    }).catch(() => {
+      // Ignore logging errors
+    });
+  }
+  
   try {
     const telegram_id = ctx.from?.id;
     if (!telegram_id) {
@@ -218,17 +251,22 @@ bot.start(async (ctx) => {
         stack: selectError.stack,
       };
 
+      // Extract project ref for diagnostics
+      const projectRef = connectionInfo.projectRef;
+      
       // Log with requestId for correlation
       console.error(`[bot:${requestId}] DB_ERROR [${dbErrorDetails.code}]:`, JSON.stringify({
         requestId,
         operation: 'users.select',
         telegramUserId: telegram_id,
+        projectRef: projectRef || 'unknown',
         errorCode: dbErrorDetails.code,
         errorMessage: dbErrorDetails.message,
         errorDetails: dbErrorDetails.details,
         errorHint: dbErrorDetails.hint,
         constraint: dbErrorDetails.constraint,
         table: dbErrorDetails.table,
+        column: dbErrorDetails.column,
       }));
       
       // DB failure snapshot for debugging (no secrets)
@@ -3361,6 +3399,33 @@ bot.catch((err, ctx) => {
 // Корректное завершение
 process.once("SIGINT", () => bot.stop("SIGINT"));
 process.once("SIGTERM", () => bot.stop("SIGTERM"));
+
+// Run startup diagnostics
+console.log("🔍 Running startup diagnostics...");
+
+// Connection diagnostics
+const connectionInfo = analyzeSupabaseConnection(
+  process.env.SUPABASE_URL || process.env.NEXT_PUBLIC_SUPABASE_URL,
+  process.env.SUPABASE_SERVICE_ROLE_KEY
+);
+logConnectionDiagnostics(connectionInfo);
+
+// Schema healthcheck
+console.log("🔍 Running schema healthcheck on startup...");
+performSchemaHealthCheck(supabase)
+  .then((healthCheck) => {
+    logSchemaHealthCheck(healthCheck);
+    if (!healthCheck.healthy) {
+      const errorMessage = createHealthCheckErrorMessage(healthCheck);
+      console.error("❌ Schema healthcheck failed on startup:");
+      console.error(errorMessage);
+    } else {
+      console.log("✅ Schema healthcheck passed");
+    }
+  })
+  .catch((err) => {
+    console.error("❌ Schema healthcheck error:", err);
+  });
 
 // Стартуем
 bot.launch();

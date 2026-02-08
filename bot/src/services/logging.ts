@@ -87,7 +87,7 @@ export async function logEvent(
     if (error) {
       // Log to console as fallback - never throw
       // Use formatDbError for consistent error formatting
-      const { formatDbError } = await import('../lib/dbLogger.js');
+      const { formatDbError } = await import('../lib/dbLogger');
       const diagnostic = formatDbError(error, {
         table: 'app_logs',
         operation: 'insert',
