@@ -1,31 +1,17 @@
-# Упрощенный вариант деплоя через Vercel CLI
-# Использует официальный Vercel Action для более надежного деплоя
+# Автоматический деплой в Vercel при push в main
+# Использует официальный Vercel Action
 
-name: Deploy to Vercel (Simple)
+name: Auto Deploy to Vercel
 
 on:
   push:
     branches:
       - main
-    paths:
-      - 'miniapp/**'
-      - 'supabase/migrations/**'
-      - '.github/workflows/**'
-      - 'vercel.json'
-      - 'miniapp/vercel.json'
-      - 'bot/**'
-      - 'lib/**'
-      - 'docs/**'
-  pull_request:
-    branches:
-      - main
-    paths:
-      - 'miniapp/**'
-      - 'supabase/migrations/**'
-      - '.github/workflows/**'
-      - 'vercel.json'
-      - 'miniapp/vercel.json'
-  workflow_dispatch:
+  workflow_dispatch: # Позволяет запускать вручную
+
+env:
+  VERCEL_ORG_ID: ${{ secrets.VERCEL_ORG_ID }}
+  VERCEL_PROJECT_ID: ${{ secrets.VERCEL_PROJECT_ID }}
 
 jobs:
   deploy:
@@ -57,12 +43,13 @@ jobs:
           OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
       
-      - name: Deploy to Vercel
+      - name: Deploy to Vercel Production
         uses: amondnet/vercel-action@v25
+        id: vercel-deploy
         with:
           vercel-token: ${{ secrets.VERCEL_TOKEN }}
           vercel-org-id: ${{ secrets.VERCEL_ORG_ID }}
           vercel-project-id: ${{ secrets.VERCEL_PROJECT_ID }}
-          vercel-args: ${{ github.event_name == 'pull_request' && '--preview' || '--prod' }}
+          vercel-args: '--prod'
           working-directory: ./miniapp
           scope: ${{ secrets.VERCEL_ORG_ID }}
