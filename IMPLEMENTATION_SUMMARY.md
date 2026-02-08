@@ -1,145 +1,187 @@
-# GitHub Actions Vercel Deployment - Implementation Summary
+# Implementation Summary: Database Recovery & Diagnostics
 
-## ✅ Files Created/Modified
+## What Was Fixed
 
-### Created:
-1. **`.github/workflows/vercel-deploy.yml`** - Main GitHub Actions workflow for automatic Vercel deployment
-2. **`DEPLOYMENT.md`** - Complete deployment documentation with secrets setup instructions
-3. **`DEPLOYMENT_SUMMARY.md`** - Quick reference summary
-4. **`IMPLEMENTATION_SUMMARY.md`** - This file
+### 1. Vercel Build Error ✅
+- **Fixed**: Dynamic import in `miniapp/lib/logging.ts` 
+- **Change**: Changed `import('./dbLogger.js')` to `import('./dbLogger')` (extensionless)
+- **Result**: Build now works on Vercel/Next.js/Turbopack
 
-### Modified:
-- None (all files created fresh)
+### 2. Runtime Diagnostics ✅
+- **Created**: `lib/debugSupabaseContext.ts` helper
+- **Features**:
+  - Extracts project ref from Supabase URL
+  - Detects key type (anon vs service_role) without exposing secrets
+  - Masks keys (first 6 + ... + last 4 chars)
+  - Detects environment (production/preview/development/local)
+  - Logs compact diagnostic line
 
-## 📋 Final Workflow YAML
-
-**File**: `.github/workflows/vercel-deploy.yml`
-
-```yaml
-name: Deploy to Vercel
-
-on:
-  push:
-    branches:
-      - main
-      - master
-    paths:
-      - 'miniapp/**'
-      - '.github/workflows/vercel-deploy.yml'
-  workflow_dispatch: # Allow manual trigger
-
-jobs:
-  deploy:
-    runs-on: ubuntu-latest
-    
-    defaults:
-      run:
-        working-directory: ./miniapp
-    
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
-      
-      - name: Setup Node.js
-        uses: actions/setup-node@v4
-        with:
-          node-version: '20'
-          cache: 'npm'
-          cache-dependency-path: miniapp/package-lock.json
-      
-      - name: Install dependencies
-        run: npm ci
-      
-      - name: Run linter (if exists)
-        continue-on-error: true
-        run: npm run lint || true
-      
-      - name: Run tests (if exists)
-        continue-on-error: true
-        run: npm test || npm run test || true
-      
-      - name: Install Vercel CLI
-        run: npm install --global vercel@latest
-      
-      - name: Pull Vercel Environment Information
-        continue-on-error: true
-        run: vercel pull --yes --environment=production --token=${{ secrets.VERCEL_TOKEN }}
-        env:
-          VERCEL_ORG_ID: ${{ secrets.VERCEL_ORG_ID }}
-          VERCEL_PROJECT_ID: ${{ secrets.VERCEL_PROJECT_ID }}
-      
-      - name: Deploy to Vercel Production
-        run: vercel deploy --prod --token=${{ secrets.VERCEL_TOKEN }}
-        env:
-          VERCEL_ORG_ID: ${{ secrets.VERCEL_ORG_ID }}
-          VERCEL_PROJECT_ID: ${{ secrets.VERCEL_PROJECT_ID }}
-          NEXT_PUBLIC_SUPABASE_URL: ${{ secrets.NEXT_PUBLIC_SUPABASE_URL }}
-          NEXT_PUBLIC_SUPABASE_ANON_KEY: ${{ secrets.NEXT_PUBLIC_SUPABASE_ANON_KEY }}
-          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+**Example output:**
+```
+[SUPABASE] production (VERCEL_ENV=production) | https://xxxxx.supabase.co | project=xxxxx | key=service_role(abc123) | tables=[users,diary,water_logs,app_logs,reminders]
 ```
 
-## 🔑 Required GitHub Secrets
+### 3. Database Verification ✅
+- **Created**: `scripts/verify-db.ts` script
+- **Features**:
+  - Checks all required tables exist
+  - Checks all required columns exist
+  - Uses RPC function to bypass PostgREST cache
+  - Prints exact SQL to fix issues
+  - Shows database fingerprint (database name, schema)
 
-Add these 6 secrets in GitHub → Settings → Secrets and variables → Actions:
+**Usage:**
+```bash
+export SUPABASE_URL="https://your-project.supabase.co"
+export SUPABASE_SERVICE_ROLE_KEY="your-key"
+npx tsx scripts/verify-db.ts
+```
 
-| Secret Name | Where to Find |
-|------------|---------------|
-| `VERCEL_TOKEN` | https://vercel.com/account/tokens |
-| `VERCEL_ORG_ID` | Vercel Dashboard → Settings → General → Team ID |
-| `VERCEL_PROJECT_ID` | Vercel Dashboard → Project Settings → General → Project ID |
-| `NEXT_PUBLIC_SUPABASE_URL` | Supabase Dashboard → Settings → API → Project URL |
-| `NEXT_PUBLIC_SUPABASE_ANON_KEY` | Supabase Dashboard → Settings → API → anon public key |
-| `SUPABASE_SERVICE_ROLE_KEY` | Supabase Dashboard → Settings → API → service_role secret key |
+### 4. Safe SQL Execution ✅
+- **Created**: Migration `0007_add_exec_sql_function.sql`
+- **Features**:
+  - RPC function `exec_sql(sql_text)` for introspection queries
+  - Only allows `service_role` to execute
+  - Only allows read-only introspection queries (pattern-based whitelist)
+  - Supports: `SELECT * FROM information_schema`, `current_database()`, `pg_notify`, etc.
 
-## ✅ Key Features
+**Security:**
+- Hard checks `auth.role() = 'service_role'` (raises exception otherwise)
+- Pattern-based whitelist for allowed SQL
+- Only read-only queries allowed
 
-- ✅ **Next.js app root**: `./miniapp` (detected from `package.json` and `next.config.ts`)
-- ✅ **Package manager**: npm (detected from `package-lock.json`)
-- ✅ **Official Vercel CLI**: Uses `vercel deploy --prod --token` (no third-party actions)
-- ✅ **No interactive login**: All authentication via `--token` flag
-- ✅ **Works with broken local auth**: Doesn't rely on `vercel whoami` or OIDC discovery
-- ✅ **Non-blocking tests/linter**: Uses `continue-on-error: true`
-- ✅ **Manual trigger**: Supports `workflow_dispatch` for manual runs
-- ✅ **Path filtering**: Only triggers on changes to `miniapp/**` or workflow file
-- ✅ **All secrets via GitHub Secrets**: No hardcoded values
+### 5. Schema Reconciliation ✅
+- **Verified**: All migrations ensure required tables/columns exist
+- **Migrations**:
+  - `0001_init.sql` - Base schema
+  - `0003_restore_complete_schema.sql` - Complete restoration
+  - `0004_fix_users_calories_constraint.sql` - Fix calories constraint
+  - `0005_fix_missing_columns_and_reload_cache.sql` - Add missing columns
+  - `0006_add_column_check_function.sql` - RPC for column checking
+  - `0007_add_exec_sql_function.sql` - RPC for SQL execution
 
-## 🚀 How It Works
+### 6. Error Reporting ✅
+- **Enhanced**: `bot/src/lib/dbLogger.ts`
+- **Features**:
+  - Includes project ref in all error logs
+  - Includes operation name and table
+  - Full Postgres error details (code, message, details, hint)
+  - User-friendly Telegram messages with error codes
+  - Request ID for correlation
 
-1. **Trigger**: Push to `main`/`master` branch (or manual trigger)
-2. **Setup**: Checks out code, sets up Node.js 20, caches npm dependencies
-3. **Quality Checks**: Runs linter and tests (non-blocking)
-4. **Deploy**: Installs Vercel CLI, pulls env info (optional), deploys to production
-5. **Result**: Production deployment on Vercel
+**Example error log:**
+```
+[DB_ERROR:start-1234567890-abc] select on users (telegramUserId: 123456789): [42703] column "calories" does not exist | Project: xxxxx
+[DB_ERROR] {"requestId":"start-1234567890-abc","operation":"select","table":"users","projectRef":"xxxxx","error":{"code":"42703","message":"column \"calories\" does not exist"}}
+```
 
-## 📝 Next Steps
+### 7. Bot Startup Diagnostics ✅
+- **Updated**: `bot/src/index.ts`
+- **Features**:
+  - Logs compact connection context on startup
+  - Logs detailed diagnostics on startup
+  - Logs connection context before each `/start` command
+  - Runs schema healthcheck on startup and before `/start`
 
-1. **Add secrets to GitHub**:
-   - Go to repository → Settings → Secrets and variables → Actions
-   - Add all 6 secrets listed above
+## Files Created/Modified
 
-2. **Test the workflow**:
-   - Make a test commit and push to `main`
-   - Or manually trigger via GitHub Actions → Run workflow
+### New Files:
+1. `lib/debugSupabaseContext.ts` - Debug helper for Supabase context
+2. `scripts/verify-db.ts` - Database verification script
+3. `supabase/migrations/0007_add_exec_sql_function.sql` - Safe SQL execution RPC
+4. `DB_RECOVERY.md` - Complete recovery guide
+5. `IMPLEMENTATION_SUMMARY.md` - This file
 
-3. **Verify deployment**:
-   - Check GitHub Actions logs
-   - Verify in Vercel Dashboard
-   - Test production URL
+### Modified Files:
+1. `bot/src/index.ts` - Added diagnostics on startup and /start
+2. `bot/src/lib/dbLogger.ts` - Enhanced error reporting with project ref
+3. `miniapp/lib/logging.ts` - Fixed dynamic import (removed .js extension)
 
-## 🔍 Verification
+## How to Use
 
-After setup, verify:
-- ✅ Workflow runs on push to `main`
-- ✅ All steps complete successfully
-- ✅ Deployment appears in Vercel Dashboard
-- ✅ Production URL is accessible
+### 1. Apply Migrations
 
-## 📚 Documentation
+Run in Supabase SQL Editor (in order):
+1. `0001_init.sql` (if starting fresh)
+2. `0003_restore_complete_schema.sql`
+3. `0004_fix_users_calories_constraint.sql`
+4. `0005_fix_missing_columns_and_reload_cache.sql`
+5. `0006_add_column_check_function.sql`
+6. `0007_add_exec_sql_function.sql`
 
-- **`DEPLOYMENT.md`** - Detailed setup instructions with troubleshooting
-- **`DEPLOYMENT_SUMMARY.md`** - Quick reference guide
-- **This file** - Implementation summary
+After each migration, reload schema cache:
+```sql
+SELECT pg_notify('pgrst', 'reload schema');
+```
 
----
+### 2. Verify Database
 
-**Status**: ✅ Ready for use after adding GitHub Secrets
+```bash
+export SUPABASE_URL="https://your-project.supabase.co"
+export SUPABASE_SERVICE_ROLE_KEY="your-service-role-key"
+npx tsx scripts/verify-db.ts
+```
+
+### 3. Check Runtime Diagnostics
+
+After starting the bot, you'll see:
+```
+[SUPABASE] production (VERCEL_ENV=production) | https://xxxxx.supabase.co | project=xxxxx | key=service_role(abc123) | tables=[users,diary,water_logs,app_logs,reminders]
+```
+
+This confirms:
+- Which Supabase project you're connected to
+- What environment you're running in
+- What key type is being used
+- What tables are expected
+
+## Environment Variables
+
+### Bot (server-side):
+- `SUPABASE_URL` or `NEXT_PUBLIC_SUPABASE_URL`
+- `SUPABASE_SERVICE_ROLE_KEY` ⚠️ Use service role (not anon)
+
+### Miniapp (server-side API routes):
+- `NEXT_PUBLIC_SUPABASE_URL`
+- `SUPABASE_SERVICE_ROLE_KEY` ⚠️ Use service role
+
+### Miniapp (client-side):
+- `NEXT_PUBLIC_SUPABASE_URL`
+- `NEXT_PUBLIC_SUPABASE_ANON_KEY` ✅ Use anon key (safe for client)
+
+## Key Differences
+
+| Key Type | Length | Use Case | RLS |
+|----------|--------|----------|-----|
+| **Service Role** | 200+ chars | Bot, API routes, migrations | Bypasses |
+| **Anon/Public** | 100-150 chars | Client-side code | Respects |
+
+## Troubleshooting
+
+### Error: "column does not exist" (42703)
+1. Run `scripts/verify-db.ts` to get exact SQL fixes
+2. Apply the SQL in Supabase SQL Editor
+3. Reload schema cache: `SELECT pg_notify('pgrst', 'reload schema');`
+
+### Error: "table not found in schema cache" (PGRST205)
+1. Reload schema cache: `SELECT pg_notify('pgrst', 'reload schema');`
+2. Wait 10-15 seconds
+3. Restart application
+
+### Healthcheck shows columns missing but they exist in UI
+1. Apply migration `0006_add_column_check_function.sql` (uses information_schema directly)
+2. Reload schema cache
+3. Restart application
+
+## Next Steps
+
+1. ✅ Apply all migrations in Supabase SQL Editor
+2. ✅ Run `scripts/verify-db.ts` to verify schema
+3. ✅ Check bot startup logs for connection context
+4. ✅ Test `/start` command
+5. ✅ Verify no PGRST205 or 42703 errors
+
+## Documentation
+
+- **DB_RECOVERY.md** - Complete recovery guide with all details
+- **IMPLEMENTATION_SUMMARY.md** - This file (quick reference)
