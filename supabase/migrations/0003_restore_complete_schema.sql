@@ -49,12 +49,30 @@ CREATE TABLE IF NOT EXISTS users (
 -- Add missing columns if table exists but columns are missing
 DO $$
 BEGIN
+  -- Fix calories constraint first (drop old constraint if it exists with wrong condition)
+  IF EXISTS (
+    SELECT 1 FROM pg_constraint 
+    WHERE conrelid = 'public.users'::regclass 
+    AND conname = 'users_calories_check'
+  ) THEN
+    -- Drop old constraint
+    ALTER TABLE users DROP CONSTRAINT users_calories_check;
+  END IF;
+
   -- calories with DEFAULT 0
   IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema = 'public' AND table_name = 'users' AND column_name = 'calories') THEN
     ALTER TABLE users ADD COLUMN calories INTEGER DEFAULT 0 CHECK (calories >= 0);
   ELSE
-    -- Ensure DEFAULT exists
+    -- Ensure DEFAULT exists and constraint is correct
     ALTER TABLE users ALTER COLUMN calories SET DEFAULT 0;
+    -- Add constraint if it doesn't exist
+    IF NOT EXISTS (
+      SELECT 1 FROM pg_constraint 
+      WHERE conrelid = 'public.users'::regclass 
+      AND conname = 'users_calories_check'
+    ) THEN
+      ALTER TABLE users ADD CONSTRAINT users_calories_check CHECK (calories >= 0);
+    END IF;
   END IF;
 
   -- goal
