@@ -47,15 +47,23 @@ export async function PATCH(
     }
 
     // Обновляем запись и получаем обновлённые данные
+    const updateData: {
+      meal_text: string;
+      calories: number;
+      protein: number;
+      fat: number;
+      carbs: number;
+    } = {
+      meal_text: String(meal_text),
+      calories: Number(calories) || 0,
+      protein: Number(protein) || 0,
+      fat: Number(fat) || 0,
+      carbs: Number(carbs) || 0
+    };
+
     const { data, error } = await supabase
       .from("diary")
-      .update({
-        meal_text: String(meal_text),
-        calories: Number(calories) || 0,
-        protein: Number(protein) || 0,
-        fat: Number(fat) || 0,
-        carbs: Number(carbs) || 0
-      })
+      .update(updateData)
       .eq("id", mealId)
       .select("*")
       .single();
