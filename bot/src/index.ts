@@ -10,7 +10,7 @@ import { startReminderScheduler } from "./services/reminderScheduler.js";
 import { startInactivityNotificationScheduler } from "./services/inactivityNotifications.js";
 import { logEvent, logError, generateRequestId } from "./services/logging.js";
 import { normalizeDiaryEntry, logPayloadDetails } from "./services/diaryNormalize.js";
-import { logDBError, createUserFriendlyError } from "./lib/dbLogger.js";
+import { logDBError, createUserFriendlyError } from "./lib/dbLogger";
 import {
   analyzeSupabaseConnection,
   logConnectionDiagnostics,
