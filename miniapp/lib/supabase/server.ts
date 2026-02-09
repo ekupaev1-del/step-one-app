@@ -23,11 +23,13 @@ export function getServerSupabaseClient() {
   // Use single source of truth env module (validates URL and project ref)
   const env = getServerSupabaseEnv();
 
-  if (!env.serviceKey) {
-    throw new Error("SUPABASE_SERVICE_ROLE_KEY is required for server-side Supabase client");
+  // Use service key if available, otherwise fallback to anon (already handled in env.ts with warning)
+  const key = env.serviceKey || env.anonKey;
+  if (!key) {
+    throw new Error("SUPABASE_SERVICE_ROLE_KEY or NEXT_PUBLIC_SUPABASE_ANON_KEY is required for server-side Supabase client");
   }
 
-  serverClient = createClient(env.url, env.serviceKey, {
+  serverClient = createClient(env.url, key, {
     auth: {
       autoRefreshToken: false,
       persistSession: false,

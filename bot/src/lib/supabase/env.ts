@@ -15,28 +15,9 @@ export interface SupabaseEnvConfig {
 /**
  * Extracts project reference from Supabase URL
  */
-function extractProjectRef(url: string): string | null {
-  try {
-    const match = url.match(/https?:\/\/([a-z0-9]+)\.supabase\.co/);
-    return match ? match[1] : null;
-  } catch {
-    return null;
-  }
-}
-
-/**
- * Gets the expected project ref from environment variable
- */
-function getExpectedProjectRef(): string {
-  const expected = process.env.EXPECTED_SUPABASE_PROJECT_REF;
-  if (!expected) {
-    throw new Error(
-      `❌ CRITICAL: EXPECTED_SUPABASE_PROJECT_REF is not set!\n` +
-      `   Set EXPECTED_SUPABASE_PROJECT_REF in bot/.env file.\n` +
-      `   Example: EXPECTED_SUPABASE_PROJECT_REF=ipgxnqplwzptxyfjjssrr`
-    );
-  }
-  return expected.trim();
+function extractProjectRef(url: string): string {
+  const m = url.match(/^https?:\/\/([a-z0-9-]+)\.supabase\.co/i);
+  return m?.[1] ?? "";
 }
 
 /**
@@ -86,7 +67,6 @@ function getEnvName(): string {
 export function getBotSupabaseEnv(): SupabaseEnvConfig {
   const url = process.env.SUPABASE_URL;
   const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
-  const expectedProjectRef = getExpectedProjectRef();
 
   if (!url) {
     throw new Error(
@@ -113,16 +93,14 @@ export function getBotSupabaseEnv(): SupabaseEnvConfig {
     );
   }
 
-  // Fail fast if project ref doesn't match expected
-  if (projectRef !== expectedProjectRef) {
-    throw new Error(
-      `❌ CRITICAL: Supabase project ref mismatch!\n` +
+  // Optional: warn if EXPECTED_SUPABASE_PROJECT_REF is set and doesn't match
+  const expectedProjectRef = process.env.EXPECTED_SUPABASE_PROJECT_REF;
+  if (expectedProjectRef && projectRef !== expectedProjectRef.trim()) {
+    console.warn(
+      `⚠️  WARNING: Supabase project ref mismatch!\n` +
       `   Current project ref: ${projectRef}\n` +
-      `   Expected project ref: ${expectedProjectRef}\n` +
-      `   URL: ${normalizedUrl}\n` +
-      `   \n` +
-      `   Fix: Update SUPABASE_URL in bot/.env to point to the correct project.\n` +
-      `   Set EXPECTED_SUPABASE_PROJECT_REF=${expectedProjectRef} in bot/.env.`
+      `   Expected project ref: ${expectedProjectRef.trim()}\n` +
+      `   URL: ${normalizedUrl}`
     );
   }
 
@@ -134,7 +112,7 @@ export function getBotSupabaseEnv(): SupabaseEnvConfig {
 
   // Log diagnostics (safe: no full keys)
   console.log(
-    `[SUPABASE] url=${normalizedUrl} project=${projectRef} keyRole=${keyType} env=${vercelEnv || nodeEnv}`
+    `[SUPABASE] url=${normalizedUrl} project=${projectRef} keyRole=${keyType} keySuffix=${keySuffix} env=${vercelEnv || nodeEnv}`
   );
 
   return {

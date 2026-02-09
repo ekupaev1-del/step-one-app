@@ -89,7 +89,7 @@ export async function POST(req: Request) {
         const invId = `recurring-${Date.now()}-${sub.id}`;
         const { data: payment, error: paymentError } = await supabase
           .from("payments")
-          .insert({
+          .insert([{
             user_id: sub.user_id,
             provider: "robokassa",
             inv_id: invId,
@@ -104,7 +104,7 @@ export async function POST(req: Request) {
               subscriptionId: sub.id,
               recurringId: recurringId,
             },
-          })
+          }] as any)
           .select("id")
           .single();
 

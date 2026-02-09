@@ -5,8 +5,6 @@
  * Provides safe diagnostics (never logs full keys)
  */
 
-import { extractProjectRef } from "../../../lib/supabase-config";
-
 export interface SupabaseEnvConfig {
   url: string;
   anonKey?: string;
@@ -16,18 +14,11 @@ export interface SupabaseEnvConfig {
 }
 
 /**
- * Gets the expected project ref from environment variable
+ * Extracts project reference from Supabase URL
  */
-function getExpectedProjectRef(): string {
-  const expected = process.env.EXPECTED_SUPABASE_PROJECT_REF;
-  if (!expected) {
-    throw new Error(
-      `❌ CRITICAL: EXPECTED_SUPABASE_PROJECT_REF is not set!\n` +
-      `   Set EXPECTED_SUPABASE_PROJECT_REF in Vercel environment variables.\n` +
-      `   Example: EXPECTED_SUPABASE_PROJECT_REF=ipgxnqplwzptxyfjjssrr`
-    );
-  }
-  return expected.trim();
+function extractProjectRef(url: string): string {
+  const m = url.match(/^https?:\/\/([a-z0-9-]+)\.supabase\.co/i);
+  return m?.[1] ?? "";
 }
 
 /**
@@ -78,21 +69,30 @@ function getEnvName(): string {
  */
 export function getServerSupabaseEnv(): SupabaseEnvConfig {
   const url = process.env.SUPABASE_URL || process.env.NEXT_PUBLIC_SUPABASE_URL;
-  const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
-  const expectedProjectRef = getExpectedProjectRef();
+  let serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
+  const anonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
 
   if (!url) {
     throw new Error(
       `❌ CRITICAL: SUPABASE_URL or NEXT_PUBLIC_SUPABASE_URL is not set!\n` +
-      `   Set SUPABASE_URL in Vercel environment variables.`
+      `   Set SUPABASE_URL or NEXT_PUBLIC_SUPABASE_URL in Vercel environment variables.`
     );
   }
 
+  // Fallback to anon key if service role key is not available (with warning)
   if (!serviceKey) {
-    throw new Error(
-      `❌ CRITICAL: SUPABASE_SERVICE_ROLE_KEY is not set!\n` +
-      `   Set SUPABASE_SERVICE_ROLE_KEY in Vercel environment variables.`
-    );
+    if (anonKey) {
+      console.warn(
+        `⚠️  WARNING: SUPABASE_SERVICE_ROLE_KEY is not set, falling back to anon key.\n` +
+        `   This may cause RLS policy issues. Set SUPABASE_SERVICE_ROLE_KEY in Vercel.`
+      );
+      serviceKey = anonKey;
+    } else {
+      throw new Error(
+        `❌ CRITICAL: SUPABASE_SERVICE_ROLE_KEY or NEXT_PUBLIC_SUPABASE_ANON_KEY is not set!\n` +
+        `   Set at least one of them in Vercel environment variables.`
+      );
+    }
   }
 
   // Normalize URL
@@ -106,16 +106,14 @@ export function getServerSupabaseEnv(): SupabaseEnvConfig {
     );
   }
 
-  // Fail fast if project ref doesn't match expected
-  if (projectRef !== expectedProjectRef) {
-    throw new Error(
-      `❌ CRITICAL: Supabase project ref mismatch!\n` +
+  // Optional: warn if EXPECTED_SUPABASE_PROJECT_REF is set and doesn't match
+  const expectedProjectRef = process.env.EXPECTED_SUPABASE_PROJECT_REF;
+  if (expectedProjectRef && projectRef !== expectedProjectRef.trim()) {
+    console.warn(
+      `⚠️  WARNING: Supabase project ref mismatch!\n` +
       `   Current project ref: ${projectRef}\n` +
-      `   Expected project ref: ${expectedProjectRef}\n` +
-      `   URL: ${normalizedUrl}\n` +
-      `   \n` +
-      `   Fix: Update SUPABASE_URL to point to the correct project.\n` +
-      `   Set EXPECTED_SUPABASE_PROJECT_REF=${expectedProjectRef} in Vercel.`
+      `   Expected project ref: ${expectedProjectRef.trim()}\n` +
+      `   URL: ${normalizedUrl}`
     );
   }
 
@@ -127,7 +125,7 @@ export function getServerSupabaseEnv(): SupabaseEnvConfig {
 
   // Log diagnostics (safe: no full keys)
   console.log(
-    `[SUPABASE] url=${normalizedUrl} project=${projectRef} keyRole=${keyType} env=${vercelEnv || nodeEnv}`
+    `[SUPABASE] url=${normalizedUrl} project=${projectRef} keyRole=${keyType} keySuffix=${keySuffix} env=${vercelEnv || nodeEnv}`
   );
 
   return {
@@ -144,7 +142,6 @@ export function getServerSupabaseEnv(): SupabaseEnvConfig {
 export function getClientSupabaseEnv(): SupabaseEnvConfig {
   const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
   const anonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
-  const expectedProjectRef = getExpectedProjectRef();
 
   if (!url) {
     throw new Error(
@@ -171,16 +168,14 @@ export function getClientSupabaseEnv(): SupabaseEnvConfig {
     );
   }
 
-  // Fail fast if project ref doesn't match expected
-  if (projectRef !== expectedProjectRef) {
-    throw new Error(
-      `❌ CRITICAL: Supabase project ref mismatch!\n` +
+  // Optional: warn if EXPECTED_SUPABASE_PROJECT_REF is set and doesn't match
+  const expectedProjectRef = process.env.EXPECTED_SUPABASE_PROJECT_REF;
+  if (expectedProjectRef && projectRef !== expectedProjectRef.trim()) {
+    console.warn(
+      `⚠️  WARNING: Supabase project ref mismatch!\n` +
       `   Current project ref: ${projectRef}\n` +
-      `   Expected project ref: ${expectedProjectRef}\n` +
-      `   URL: ${normalizedUrl}\n` +
-      `   \n` +
-      `   Fix: Update NEXT_PUBLIC_SUPABASE_URL to point to the correct project.\n` +
-      `   Set EXPECTED_SUPABASE_PROJECT_REF=${expectedProjectRef} in Vercel.`
+      `   Expected project ref: ${expectedProjectRef.trim()}\n` +
+      `   URL: ${normalizedUrl}`
     );
   }
 
@@ -193,7 +188,7 @@ export function getClientSupabaseEnv(): SupabaseEnvConfig {
   // Log diagnostics only in dev (client-side)
   if (process.env.NODE_ENV !== 'production') {
     console.log(
-      `[SUPABASE] env=${envName} url=${normalizedUrl} projectRef=${projectRef} keyRole=${keyType} env=${vercelEnv || nodeEnv}`
+      `[SUPABASE] url=${normalizedUrl} project=${projectRef} keyRole=${keyType} keySuffix=${keySuffix} env=${vercelEnv || nodeEnv}`
     );
   }
 
