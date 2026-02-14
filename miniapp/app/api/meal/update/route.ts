@@ -64,7 +64,7 @@ export async function POST(req: Request) {
       carbs: Number(carbs) || 0
     };
 
-    const { data, error } = await supabase
+    const { data, error } = await (supabase as any)
       .from("diary")
       .update(updateData as any)
       .eq("id", mealId)

@@ -1,7 +1,7 @@
 /**
  * Single source of truth for Supabase environment configuration in bot
  * 
- * Validates SUPABASE_URL and EXPECTED_SUPABASE_PROJECT_REF
+ * Validates SUPABASE_URL
  * Provides safe diagnostics (never logs full keys)
  */
 
@@ -16,8 +16,12 @@ export interface SupabaseEnvConfig {
  * Extracts project reference from Supabase URL
  */
 function extractProjectRef(url: string): string {
-  const m = url.match(/^https?:\/\/([a-z0-9-]+)\.supabase\.co/i);
-  return m?.[1] ?? "";
+  try {
+    const hostname = new URL(url).hostname;
+    return hostname.split('.')[0];
+  } catch {
+    return "";
+  }
 }
 
 /**
@@ -90,17 +94,6 @@ export function getBotSupabaseEnv(): SupabaseEnvConfig {
     throw new Error(
       `❌ CRITICAL: Invalid Supabase URL format: ${normalizedUrl}\n` +
       `   Expected format: https://<project-ref>.supabase.co`
-    );
-  }
-
-  // Optional: warn if EXPECTED_SUPABASE_PROJECT_REF is set and doesn't match
-  const expectedProjectRef = process.env.EXPECTED_SUPABASE_PROJECT_REF;
-  if (expectedProjectRef && projectRef !== expectedProjectRef.trim()) {
-    console.warn(
-      `⚠️  WARNING: Supabase project ref mismatch!\n` +
-      `   Current project ref: ${projectRef}\n` +
-      `   Expected project ref: ${expectedProjectRef.trim()}\n` +
-      `   URL: ${normalizedUrl}`
     );
   }
 

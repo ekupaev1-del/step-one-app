@@ -7,7 +7,7 @@
  */
 
 import { NextResponse } from "next/server";
-import { createServerSupabaseClient } from "@/lib/supabaseAdmin";
+import { getServerSupabaseClient } from "@/lib/supabase/server";
 import { getRobokassaConfig } from "@/lib/robokassa";
 
 export const dynamic = "force-dynamic";
@@ -29,7 +29,7 @@ export async function POST(req: Request) {
       );
     }
 
-    const supabase = createServerSupabaseClient();
+    const supabase = getServerSupabaseClient();
 
     // Find subscriptions due for charging
     const now = new Date().toISOString();
@@ -87,7 +87,7 @@ export async function POST(req: Request) {
 
         // Create payment record for this charge
         const invId = `recurring-${Date.now()}-${sub.id}`;
-        const { data: payment, error: paymentError } = await supabase
+        const { data: payment, error: paymentError } = await (supabase as any)
           .from("payments")
           .insert([{
             user_id: sub.user_id,

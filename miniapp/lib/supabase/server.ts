@@ -13,9 +13,9 @@
 import { createClient } from "@supabase/supabase-js";
 import { getServerSupabaseEnv } from "./env";
 
-let serverClient: ReturnType<typeof createClient> | null = null;
+let serverClient: any = null;
 
-export function getServerSupabaseClient() {
+export function getServerSupabaseClient(): any {
   if (serverClient) {
     return serverClient;
   }
@@ -29,7 +29,7 @@ export function getServerSupabaseClient() {
     throw new Error("SUPABASE_SERVICE_ROLE_KEY or NEXT_PUBLIC_SUPABASE_ANON_KEY is required for server-side Supabase client");
   }
 
-  serverClient = createClient(env.url, key, {
+  serverClient = createClient<any>(env.url, key, {
     auth: {
       autoRefreshToken: false,
       persistSession: false,
