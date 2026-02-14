@@ -541,17 +541,8 @@ bot.start(async (ctx) => {
     // Если анкета заполнена - показываем меню
     console.log("[bot] /start: отправка меню для пользователя с id:", userId);
     
-    // Используем getMainMenuKeyboard для получения меню
-    const menu = getMainMenuKeyboard(userId);
-    const welcomeMessage = "Выберите действие:";
-    
-    // Отправляем меню
-    await ctx.reply(welcomeMessage, {
-      reply_markup: {
-        ...menu,
-        replace_keyboard: true
-      }
-    });
+    // Используем sendMainMenu для единообразной отправки меню
+    await sendMainMenu(ctx, userId, "Выберите действие:");
 
     console.log(`[bot] /start успешно завершён для id: ${userId}`);
   } catch (err: any) {
@@ -660,36 +651,35 @@ async function handleQuestionnaireSaved(
   console.log("[bot] Chat ID:", chat_id);
   console.log("[bot] Telegram ID:", telegram_id);
 
-  const confirmationMessage = "Спасибо! Мы сохранили твои данные.";
+  // ШАГ 1: Отправляем подтверждение и главное меню
+  const confirmationMessage = "✅ Профиль сохранен. Что вы хотите сделать дальше?";
   const targetChatId = chat_id || telegram_id;
 
-  // ШАГ 1: Отправляем подтверждение
-  let confirmationSent = false;
   try {
-    await ctx.telegram.sendMessage(targetChatId, confirmationMessage);
-    confirmationSent = true;
-    console.log("[bot] ✅ Подтверждение отправлено через sendMessage");
-  } catch (confirmError: any) {
+    // Отправляем подтверждение и меню через sendMainMenu
+    await sendMainMenu(ctx, userIdToUse, confirmationMessage, targetChatId);
+    console.log("[bot] ✅ Подтверждение и меню отправлены через sendMainMenu");
+  } catch (menuError: any) {
     // Если пользователь заблокировал бота - просто логируем
-    if (confirmError?.response?.error_code === 403 && confirmError?.response?.description?.includes("blocked")) {
-      console.warn(`[bot] Пользователь ${telegram_id} заблокировал бота, пропускаем отправку подтверждения`);
-      return; // Выходим из функции, не пытаемся отправлять меню
+    if (menuError?.response?.error_code === 403 && menuError?.response?.description?.includes("blocked")) {
+      console.warn(`[bot] Пользователь ${telegram_id} заблокировал бота, пропускаем отправку меню`);
+      return;
     }
     
-    console.error("[bot] ❌ Ошибка отправки подтверждения:", confirmError);
+    console.error("[bot] ❌ Ошибка отправки меню:", menuError);
     console.error("[bot] Error details:", {
-      message: confirmError?.message,
-      code: confirmError?.response?.error_code,
-      description: confirmError?.response?.description
+      message: menuError?.message,
+      code: menuError?.response?.error_code,
+      description: menuError?.response?.description
     });
-  }
-  
-  // Небольшая задержка между сообщениями
-  await new Promise(resolve => setTimeout(resolve, 500));
-  
-  // Финальная проверка
-  if (!confirmationSent) {
-    console.error("[bot] ❌ КРИТИЧЕСКАЯ ОШИБКА: Не удалось отправить подтверждение!");
+    
+    // Fallback: пытаемся отправить простое сообщение
+    try {
+      await ctx.telegram.sendMessage(targetChatId, confirmationMessage);
+      console.log("[bot] ✅ Fallback: подтверждение отправлено без меню");
+    } catch (fallbackError: any) {
+      console.error("[bot] ❌ Ошибка отправки fallback сообщения:", fallbackError);
+    }
   }
 }
 
@@ -774,6 +764,43 @@ bot.command("помощь", async (ctx) => {
 Бот автоматически определит калории и Б/Ж/У! 🎯`;
 
   await ctx.reply(helpText);
+});
+
+// ░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░
+//            /menu
+// ░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░
+
+bot.command("menu", async (ctx) => {
+  try {
+    const telegram_id = ctx.from?.id;
+    if (!telegram_id) {
+      return ctx.reply("Ошибка: не удалось определить ваш Telegram ID");
+    }
+
+    // Получаем userId из базы данных
+    const { data: user, error: userError } = await supabase
+      .from("users")
+      .select("id")
+      .eq("telegram_id", telegram_id)
+      .maybeSingle();
+
+    if (userError) {
+      console.error("[bot] /menu: Ошибка получения пользователя:", userError);
+      return ctx.reply("❌ Ошибка: не удалось загрузить профиль. Используйте /start для регистрации.");
+    }
+
+    const userId = user?.id || null;
+    
+    // Отправляем главное меню
+    await sendMainMenu(ctx, userId, "Выберите действие:");
+  } catch (error: any) {
+    console.error("[bot] /menu: Ошибка:", error);
+    try {
+      await ctx.reply("❌ Произошла ошибка при загрузке меню. Попробуйте позже.");
+    } catch (replyError) {
+      // Игнорируем ошибки отправки
+    }
+  }
 });
 
 // ░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░

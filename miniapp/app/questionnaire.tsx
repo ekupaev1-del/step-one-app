@@ -457,45 +457,30 @@ export function QuestionnaireFormContent({ initialUserId }: { initialUserId?: st
         }
       };
       
-      // ВАЖНО: Ждем завершения sendData ПЕРЕД закрытием Mini App
-      // Это гарантирует, что бот получит сообщение
-      // ВАЖНО: Всегда используем fallback через /api/notify-bot для гарантии доставки
-      // sendData может "успешно" вызваться, но данные не дойдут до бота
-      console.log("[handleSubmit] Отправка уведомления боту через /api/notify-bot...");
+      // КРИТИЧЕСКИ ВАЖНО: Сначала отправляем данные через sendData
+      // Это основной способ передачи данных в бот
+      console.log("[handleSubmit] Отправка данных в бот через Telegram.WebApp.sendData...");
       
-      try {
-        const notifyResponse = await fetch("/api/notify-bot", {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-          },
-          body: JSON.stringify({ userId }),
-        });
-        
-        if (notifyResponse.ok) {
-          console.log("[handleSubmit] ✅ Уведомление отправлено успешно через /api/notify-bot");
-        } else {
-          const errorText = await notifyResponse.text();
-          console.error("[handleSubmit] ❌ Ошибка уведомления:", errorText);
-        }
-      } catch (notifyError) {
-        console.error("[handleSubmit] ❌ КРИТИЧЕСКАЯ ОШИБКА: Не удалось отправить уведомление:", notifyError);
-      }
-      
-      // Также пробуем sendData как дополнительный способ (но не полагаемся на него)
       let sendDataSuccess = false;
-      for (let attempt = 0; attempt < 2; attempt++) {
+      for (let attempt = 0; attempt < 3; attempt++) {
         sendDataSuccess = await sendDataToBot();
         if (sendDataSuccess) {
-          console.log(`[handleSubmit] ✅ sendData также отправлен с попытки ${attempt + 1}`);
+          console.log(`[handleSubmit] ✅ sendData отправлен успешно с попытки ${attempt + 1}`);
           break;
         }
-        await new Promise(resolve => setTimeout(resolve, 300));
+        if (attempt < 2) {
+          console.log(`[handleSubmit] Попытка ${attempt + 1} не удалась, повтор через 300ms...`);
+          await new Promise(resolve => setTimeout(resolve, 300));
+        }
+      }
+      
+      if (!sendDataSuccess) {
+        console.warn("[handleSubmit] ⚠️ sendData не удался, но продолжаем (бот может получить данные через API)");
       }
       
       // Дополнительная задержка перед закрытием для гарантии доставки
-      // Увеличено до 500ms для большей надежности
-      await new Promise(resolve => setTimeout(resolve, 500));
+      // Даем боту время обработать web_app_data
+      await new Promise(resolve => setTimeout(resolve, 1000));
 
       // Закрываем Mini App - используем все возможные способы
       const closeMiniApp = (attempt = 0) => {
