@@ -106,7 +106,7 @@ export async function getRemindersForTime(time: string): Promise<(Reminder & { t
   }
 
   // Получаем telegram_id для каждого пользователя
-  const userIds = [...new Set(reminders.map(r => r.user_id))];
+  const userIds = [...new Set(reminders.map((r: any) => r.user_id))];
   const { data: users, error: usersError } = await supabase
     .from("users")
     .select("id, telegram_id")
@@ -118,11 +118,11 @@ export async function getRemindersForTime(time: string): Promise<(Reminder & { t
   }
 
   // Создаем мапу user_id -> telegram_id
-  const userMap = new Map((users || []).map(u => [u.id, u.telegram_id]));
+  const userMap = new Map((users || []).map((u: any) => [u.id, u.telegram_id]));
 
   // Объединяем напоминания с telegram_id
   return reminders
-    .map(reminder => {
+    .map((reminder: any) => {
       const telegramId = userMap.get(reminder.user_id);
       if (!telegramId) {
         return null;
@@ -132,7 +132,7 @@ export async function getRemindersForTime(time: string): Promise<(Reminder & { t
         telegram_id: telegramId
       };
     })
-    .filter((r): r is Reminder & { telegram_id: number } => r !== null);
+    .filter((r: any): r is Reminder & { telegram_id: number } => r !== null);
 }
 
 /**

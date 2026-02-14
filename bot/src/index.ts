@@ -284,8 +284,8 @@ bot.start(async (ctx) => {
         userId: undefined,
         env: process.env.NODE_ENV || "unknown",
         vercelEnv: process.env.VERCEL_ENV || "unknown",
-        hasDbUrl: hasSupabaseUrl,
-        hasDbKey: hasSupabaseKey,
+        hasDbUrl: !!process.env.SUPABASE_URL,
+        hasDbKey: !!process.env.SUPABASE_SERVICE_ROLE_KEY,
         isProduction,
         payloadKeys: ["telegram_id"],
       };

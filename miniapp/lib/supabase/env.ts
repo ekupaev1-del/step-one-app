@@ -99,8 +99,9 @@ export function getServerSupabaseEnv(): SupabaseEnvConfig {
     }
   }
 
-  // Normalize URL
+  // Normalize URL (remove trailing slash) and trim keys (remove quotes/spaces)
   const normalizedUrl = url.trim().replace(/\/$/, '');
+  const trimmedServiceKey = serviceKey.trim();
   const projectRef = extractProjectRef(normalizedUrl);
 
   if (!projectRef) {
@@ -110,8 +111,8 @@ export function getServerSupabaseEnv(): SupabaseEnvConfig {
     );
   }
 
-  const keyType = detectKeyType(serviceKey);
-  const keySuffix = getKeySuffix(serviceKey);
+  const keyType = detectKeyType(trimmedServiceKey);
+  const keySuffix = getKeySuffix(trimmedServiceKey);
   const envName = getEnvName();
   const nodeEnv = process.env.NODE_ENV || 'not_set';
   const vercelEnv = process.env.VERCEL_ENV;
@@ -123,7 +124,7 @@ export function getServerSupabaseEnv(): SupabaseEnvConfig {
 
   return {
     url: normalizedUrl,
-    serviceKey,
+    serviceKey: trimmedServiceKey,
     projectRef,
     envName,
   };
@@ -150,8 +151,9 @@ export function getClientSupabaseEnv(): SupabaseEnvConfig {
     );
   }
 
-  // Normalize URL
+  // Normalize URL (remove trailing slash) and trim key (remove quotes/spaces)
   const normalizedUrl = url.trim().replace(/\/$/, '');
+  const trimmedAnonKey = anonKey.trim();
   const projectRef = extractProjectRef(normalizedUrl);
 
   if (!projectRef) {
@@ -161,8 +163,8 @@ export function getClientSupabaseEnv(): SupabaseEnvConfig {
     );
   }
 
-  const keyType = detectKeyType(anonKey);
-  const keySuffix = getKeySuffix(anonKey);
+  const keyType = detectKeyType(trimmedAnonKey);
+  const keySuffix = getKeySuffix(trimmedAnonKey);
   const envName = getEnvName();
   const nodeEnv = process.env.NODE_ENV || 'not_set';
   const vercelEnv = process.env.VERCEL_ENV;
@@ -176,7 +178,7 @@ export function getClientSupabaseEnv(): SupabaseEnvConfig {
 
   return {
     url: normalizedUrl,
-    anonKey,
+    anonKey: trimmedAnonKey,
     projectRef,
     envName,
   };

@@ -65,10 +65,13 @@ export async function POST(req: Request) {
     const errors: string[] = [];
 
     for (const subscription of subscriptions) {
+      // Extract subscription ID at top level for use in catch block
+      const subId = (subscription as any)?.id;
+      const sub = subscription as any;
+      
       try {
         // Check if recurring token is available
         // Type assertion needed because select result may not include all fields in type
-        const sub = subscription as any;
         const recurringId = sub?.provider_recurring_id;
         if (!recurringId) {
           console.warn(`[cron/charge:${requestId}] Subscription ${sub.id} has no provider_recurring_id. Recurring charge not possible yet.`);
@@ -87,30 +90,32 @@ export async function POST(req: Request) {
 
         // Create payment record for this charge
         const invId = `recurring-${Date.now()}-${sub.id}`;
+        const paymentInsert = {
+          user_id: sub.user_id,
+          provider: "robokassa",
+          inv_id: invId,
+          method: "card",  // Recurring charges are always card
+          plan_code: sub.plan_code,
+          amount: Number(monthlyAmount),
+          currency: "RUB",
+          status: "created",  // Will be updated when webhook confirms
+          out_sum: Number(monthlyAmount),
+          provider_payload: {
+            type: "recurring",
+            subscriptionId: sub.id,
+            recurringId: recurringId,
+          },
+        } as any;
+        
         const { data: payment, error: paymentError } = await (supabase as any)
           .from("payments")
-          .insert([{
-            user_id: sub.user_id,
-            provider: "robokassa",
-            inv_id: invId,
-            method: "card",  // Recurring charges are always card
-            plan_code: sub.plan_code,
-            amount: Number(monthlyAmount),
-            currency: "RUB",
-            status: "created",  // Will be updated when webhook confirms
-            out_sum: Number(monthlyAmount),
-            provider_payload: {
-              type: "recurring",
-              subscriptionId: sub.id,
-              recurringId: recurringId,
-            },
-          }] as any)
+          .insert([paymentInsert])
           .select("id")
           .single();
 
         if (paymentError) {
           console.error(`[cron/charge:${requestId}] Failed to create payment record:`, paymentError);
-          errors.push(`Subscription ${subscription.id}: Failed to create payment record`);
+          errors.push(`Subscription ${subId}: Failed to create payment record`);
           failed++;
           continue;
         }
@@ -132,14 +137,14 @@ export async function POST(req: Request) {
         const nextChargeAt = new Date(activeUntil);
         nextChargeAt.setMonth(nextChargeAt.getMonth() + 1);
 
-        const { error: updateError } = await supabase
+        const { error: updateError } = await (supabase as any)
           .from("subscriptions")
           .update({
             active_until: activeUntil.toISOString(),
             next_charge_at: nextChargeAt.toISOString(),
             status: "active",
             updated_at: new Date().toISOString(),
-          })
+          } as any)
           .eq("id", sub.id);
 
         if (updateError) {
@@ -150,8 +155,8 @@ export async function POST(req: Request) {
           processed++;
         }
       } catch (error: any) {
-        console.error(`[cron/charge:${requestId}] Error processing subscription ${sub.id}:`, error);
-        errors.push(`Subscription ${sub.id}: ${error?.message || "Unknown error"}`);
+        console.error(`[cron/charge:${requestId}] Error processing subscription ${subId}:`, error);
+        errors.push(`Subscription ${subId}: ${error?.message || "Unknown error"}`);
         failed++;
       }
     }

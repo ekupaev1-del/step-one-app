@@ -72,6 +72,11 @@ export function getBotSupabaseEnv(): SupabaseEnvConfig {
   const url = process.env.SUPABASE_URL;
   const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
 
+  // Diagnostic log: show which env keys are set (boolean, safe)
+  console.log(
+    `[ENV] SUPABASE_URL=${!!url} SUPABASE_SERVICE_ROLE_KEY=${!!serviceKey}`
+  );
+
   if (!url) {
     throw new Error(
       `❌ CRITICAL: SUPABASE_URL is not set!\n` +
@@ -86,8 +91,9 @@ export function getBotSupabaseEnv(): SupabaseEnvConfig {
     );
   }
 
-  // Normalize URL
+  // Normalize URL (remove trailing slash) and trim service key (remove quotes/spaces)
   const normalizedUrl = url.trim().replace(/\/$/, '');
+  const trimmedServiceKey = serviceKey.trim();
   const projectRef = extractProjectRef(normalizedUrl);
 
   if (!projectRef) {
@@ -97,8 +103,8 @@ export function getBotSupabaseEnv(): SupabaseEnvConfig {
     );
   }
 
-  const keyType = detectKeyType(serviceKey);
-  const keySuffix = getKeySuffix(serviceKey);
+  const keyType = detectKeyType(trimmedServiceKey);
+  const keySuffix = getKeySuffix(trimmedServiceKey);
   const envName = getEnvName();
   const nodeEnv = process.env.NODE_ENV || 'not_set';
   const vercelEnv = process.env.VERCEL_ENV;
@@ -110,7 +116,7 @@ export function getBotSupabaseEnv(): SupabaseEnvConfig {
 
   return {
     url: normalizedUrl,
-    serviceKey,
+    serviceKey: trimmedServiceKey,
     projectRef,
     envName,
   };

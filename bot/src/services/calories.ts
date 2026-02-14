@@ -58,7 +58,7 @@ export async function getDailyCaloriesSummary(
     // Не бросаем ошибку, просто возвращаем 0 для калорий
   }
 
-  const totalCalories = (meals || []).reduce((sum, meal) => sum + Number(meal.calories || 0), 0);
+  const totalCalories = (meals || []).reduce((sum: number, meal: any) => sum + Number(meal.calories || 0), 0);
 
   return {
     totalCalories,

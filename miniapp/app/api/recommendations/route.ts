@@ -127,7 +127,7 @@ export async function GET(req: Request) {
     // Группируем по дням и вычисляем средние значения
     const dailyTotals: Record<string, { calories: number; protein: number; fat: number; carbs: number; water: number }> = {};
 
-    (meals || []).forEach(meal => {
+    (meals || []).forEach((meal: any) => {
       const mealDate = new Date(meal.created_at);
       const dateKey = mealDate.toISOString().split("T")[0];
       

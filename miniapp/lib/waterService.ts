@@ -76,7 +76,7 @@ export async function getDailyWaterSummary(
     throw new Error(`Ошибка получения данных: ${logsError.message}`);
   }
 
-  const totalMl = (logs || []).reduce((sum, log) => sum + (log.amount_ml || 0), 0);
+  const totalMl = (logs || []).reduce((sum: number, log: any) => sum + (log.amount_ml || 0), 0);
 
   // Получаем норму пользователя
   const { data: user, error: userError } = await supabase

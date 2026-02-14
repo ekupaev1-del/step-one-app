@@ -137,7 +137,7 @@ export async function GET(req: Request) {
       allMealsCombined.push(...mealsByDiaryUserId);
       console.log(`[/api/report/day] Найдено записей по diaryUserId=${diaryUserId}:`, mealsByDiaryUserId.length);
       // #region agent log
-      fetch('http://127.0.0.1:7242/ingest/43e8883f-375d-4d43-af6f-fef79b5ebbe3',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'miniapp/api/report/day:137',message:'HYP-A: Found meals by diaryUserId',data:{diaryUserId,count:mealsByDiaryUserId.length,mealIds:mealsByDiaryUserId.map(m=>m.id)},timestamp:Date.now(),sessionId:'debug-sync',runId:'run1',hypothesisId:'A'})}).catch(()=>{});
+      fetch('http://127.0.0.1:7242/ingest/43e8883f-375d-4d43-af6f-fef79b5ebbe3',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'miniapp/api/report/day:137',message:'HYP-A: Found meals by diaryUserId',data:{diaryUserId,count:mealsByDiaryUserId.length,mealIds:mealsByDiaryUserId.map((m: any)=>m.id)},timestamp:Date.now(),sessionId:'debug-sync',runId:'run1',hypothesisId:'A'})}).catch(()=>{});
       // #endregion
     }
 
@@ -167,7 +167,7 @@ export async function GET(req: Request) {
         allMealsCombined.push(...mealsById);
         console.log(`[/api/report/day] Найдено дополнительных записей по id=${user.id}:`, mealsById.length);
         // #region agent log
-        fetch('http://127.0.0.1:7242/ingest/43e8883f-375d-4d43-af6f-fef79b5ebbe3',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'miniapp/api/report/day:156',message:'HYP-B: Found meals in fallback search',data:{userId:user.id,count:mealsById.length,mealIds:mealsById.map(m=>m.id)},timestamp:Date.now(),sessionId:'debug-sync',runId:'run1',hypothesisId:'B'})}).catch(()=>{});
+        fetch('http://127.0.0.1:7242/ingest/43e8883f-375d-4d43-af6f-fef79b5ebbe3',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'miniapp/api/report/day:156',message:'HYP-B: Found meals in fallback search',data:{userId:user.id,count:mealsById.length,mealIds:mealsById.map((m: any)=>m.id)},timestamp:Date.now(),sessionId:'debug-sync',runId:'run1',hypothesisId:'B'})}).catch(()=>{});
         // #endregion
       }
     }

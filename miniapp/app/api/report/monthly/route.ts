@@ -118,7 +118,7 @@ export async function GET(req: Request) {
     // Агрегируем данные по дням
     const dataByDate = new Map<string, { calories: number; protein: number; fat: number; carbs: number }>();
     
-    (meals || []).forEach(meal => {
+    (meals || []).forEach((meal: any) => {
       const mealDate = new Date(meal.created_at);
       const dayKey = mealDate.toISOString().split("T")[0]; // YYYY-MM-DD
       

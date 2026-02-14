@@ -8,9 +8,9 @@
 import { createClient } from "@supabase/supabase-js";
 import { getBotSupabaseEnv } from "./env";
 
-let botClient: ReturnType<typeof createClient> | null = null;
+let botClient: any = null;
 
-export function getBotSupabaseClient() {
+export function getBotSupabaseClient(): any {
   if (botClient) {
     return botClient;
   }
@@ -18,7 +18,7 @@ export function getBotSupabaseClient() {
   // Use single source of truth env module (validates URL and project ref)
   const env = getBotSupabaseEnv();
 
-  botClient = createClient(env.url, env.serviceKey, {
+  botClient = createClient<any>(env.url, env.serviceKey, {
     auth: {
       autoRefreshToken: false,
       persistSession: false,

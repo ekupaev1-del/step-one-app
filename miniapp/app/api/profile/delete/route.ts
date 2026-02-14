@@ -73,7 +73,7 @@ export async function DELETE(req: Request) {
         console.warn("[/api/profile/delete] Предупреждение: не удалось получить список файлов:", listError);
       } else if (files && files.length > 0) {
         // Удаляем все файлы пользователя
-        const filePaths = files.map(file => `${numericId}/${file.name}`);
+        const filePaths = files.map((file: any) => `${numericId}/${file.name}`);
         const { error: deleteError } = await supabase.storage
           .from("avatars")
           .remove(filePaths);
