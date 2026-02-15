@@ -495,11 +495,48 @@ export function QuestionnaireFormContent({ initialUserId }: { initialUserId?: st
         console.warn("[handleSubmit] ⚠️ sendData не удался, но продолжаем (бот может получить данные через API)");
       }
       
-      // Дополнительная задержка перед закрытием для гарантии доставки
+      // Дополнительная задержка перед редиректом для гарантии доставки
       // Даем боту время обработать web_app_data
       await new Promise(resolve => setTimeout(resolve, 1000));
 
-      // Закрываем Mini App - используем все возможные способы
+      // After saving, redirect to dashboard instead of closing
+      // Get user profile to get the user id for redirect
+      try {
+        const webApp = webAppRef.current || (typeof window !== "undefined" ? (window as any).Telegram?.WebApp : null);
+        if (webApp) {
+          const initData = webApp.initData;
+          if (initData) {
+            const urlParams = new URLSearchParams(initData);
+            const userParam = urlParams.get("user");
+            if (userParam) {
+              const user = JSON.parse(userParam);
+              const telegramUserId = user?.id ? Number(user.id) : null;
+              
+              // Fetch user profile to get internal user id
+              if (telegramUserId) {
+                const profileResponse = await fetch(`/api/me`, {
+                  method: "GET",
+                  headers: {
+                    "x-telegram-init-data": initData,
+                  },
+                });
+                const profileData = await profileResponse.json();
+                
+                if (profileData.exists && profileData.user && profileData.user.id) {
+                  // Redirect to dashboard
+                  console.log("[handleSubmit] Redirecting to dashboard with user id:", profileData.user.id);
+                  window.location.href = `/profile?id=${profileData.user.id}`;
+                  return;
+                }
+              }
+            }
+          }
+        }
+      } catch (redirectError) {
+        console.error("[handleSubmit] Error redirecting to dashboard:", redirectError);
+      }
+
+      // Fallback: close Mini App if redirect failed
       const closeMiniApp = (attempt = 0) => {
         try {
           // Функция для получения WebApp

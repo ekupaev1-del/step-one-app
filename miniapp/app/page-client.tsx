@@ -107,7 +107,7 @@ export default function PageClient() {
     );
   }
 
-  // Show error state
+  // Show error state with retry button
   if (status === "error") {
     return (
       <div
@@ -122,7 +122,27 @@ export default function PageClient() {
         }}
       >
         <h1>Step One</h1>
-        <p>Ошибка загрузки. Откройте приложение через Telegram бота.</p>
+        <p style={{ marginBottom: "20px", color: "#666" }}>
+          Ошибка загрузки. Откройте приложение через Telegram бота.
+        </p>
+        <button
+          onClick={() => {
+            setStatus("loading");
+            window.location.reload();
+          }}
+          style={{
+            padding: "12px 24px",
+            backgroundColor: "#8FBC8F",
+            color: "white",
+            border: "none",
+            borderRadius: "8px",
+            fontSize: "16px",
+            fontWeight: 500,
+            cursor: "pointer",
+          }}
+        >
+          Попробовать снова
+        </button>
       </div>
     );
   }

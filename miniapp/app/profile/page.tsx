@@ -1,10 +1,12 @@
 "use client";
 
-import { useSearchParams } from "next/navigation";
+import { useSearchParams, useRouter } from "next/navigation";
 import { useState, useEffect, Suspense, useRef } from "react";
 import Link from "next/link";
 import "../globals.css";
 import AppLayout from "../components/AppLayout";
+import { getCurrentTelegramUser } from "@/lib/telegram";
+import { fetchUserProfile } from "@/lib/userProfile";
 
 interface ProfileData {
   name: string | null;
@@ -57,6 +59,9 @@ function ProfilePageContent() {
   const [checkingPrivacy, setCheckingPrivacy] = useState(false);
   const [subscription, setSubscription] = useState<any>(null);
   const [subscriptionLoading, setSubscriptionLoading] = useState(false);
+  const [userCheckStatus, setUserCheckStatus] = useState<"loading" | "hasUser" | "noUser" | "error">("loading");
+  const [userCheckError, setUserCheckError] = useState<string | null>(null);
+  const router = useRouter();
 
   // Safe Telegram bootstrap - must be unconditional hook
   useEffect(() => {
@@ -69,26 +74,77 @@ function ProfilePageContent() {
   // Derive isInTelegram AFTER all hooks are declared
   const isInTelegram = !!tg;
 
-  // Инициализация userId
+  // STEP 1: Check user by telegram_id first (primary check)
   useEffect(() => {
-    if (userIdParam) {
+    const checkUserByTelegramId = async () => {
+      setUserCheckStatus("loading");
+      setUserCheckError(null);
+
+      try {
+        // Get Telegram user from WebApp
+        const telegramUser = getCurrentTelegramUser();
+        if (!telegramUser) {
+          console.warn("[ProfilePage] Telegram WebApp not available");
+          // Fallback to userIdParam if available
+          if (userIdParam) {
+            const n = Number(userIdParam);
+            if (Number.isFinite(n) && n > 0) {
+              setUserId(n);
+              setUserCheckStatus("hasUser");
+              return;
+            }
+          }
+          setUserCheckStatus("error");
+          setUserCheckError("Telegram WebApp недоступен. Откройте приложение через Telegram бота.");
+          return;
+        }
+
+        if (process.env.NODE_ENV === "development") {
+          console.log("[ProfilePage] Checking user by telegram_id:", telegramUser.telegramId);
+        }
+
+        // Fetch user profile by telegram_id
+        const userProfile = await fetchUserProfile(telegramUser.telegramId);
+
+        if (userProfile) {
+          // User exists -> show dashboard
+          if (process.env.NODE_ENV === "development") {
+            console.log("[ProfilePage] User exists, showing dashboard");
+          }
+          setUserId(userProfile.id);
+          setUserCheckStatus("hasUser");
+          setNeedsOnboarding(false);
+        } else {
+          // User doesn't exist -> show onboarding
+          if (process.env.NODE_ENV === "development") {
+            console.log("[ProfilePage] User not found, redirecting to onboarding");
+          }
+          setUserCheckStatus("noUser");
+          router.push("/registration");
+        }
+      } catch (err: any) {
+        console.error("[ProfilePage] Error checking user:", err);
+        setUserCheckStatus("error");
+        setUserCheckError(err.message || "Ошибка проверки пользователя. Попробуйте обновить страницу.");
+      }
+    };
+
+    checkUserByTelegramId();
+  }, [router]);
+
+  // STEP 2: If userIdParam is provided and we haven't checked by telegram_id yet, use it as fallback
+  useEffect(() => {
+    if (userIdParam && userCheckStatus === "loading") {
       const n = Number(userIdParam);
       if (Number.isFinite(n) && n > 0) {
         setUserId(n);
-        setError(null);
-      } else {
-        setError("Некорректный id пользователя");
-        setLoading(false);
       }
-    } else {
-      setError("ID не передан");
-      setLoading(false);
     }
-  }, [userIdParam]);
+  }, [userIdParam, userCheckStatus]);
 
-  // Unified onboarding check (consent + profile completion)
+  // STEP 3: Unified onboarding check (consent + profile completion) - only if user exists
   useEffect(() => {
-    if (!userId) return;
+    if (!userId || userCheckStatus !== "hasUser") return;
 
     const checkOnboarding = async () => {
       setCheckingPrivacy(true);
@@ -100,17 +156,17 @@ function ProfilePageContent() {
           // Only redirect if consent is missing OR profile is incomplete
           if (!data.hasConsent) {
             // Consent missing -> redirect to consent page
-            window.location.href = `/privacy/consent?id=${userId}`;
+            router.push(`/privacy/consent?id=${userId}`);
             return;
           }
           
           if (!data.profileComplete) {
             // Profile incomplete -> redirect to registration
-            window.location.href = `/registration?id=${userId}`;
+            router.push(`/registration?id=${userId}`);
             return;
           }
           
-          // Both consent and profile are complete - allow access
+          // Both consent and profile are complete - allow access to dashboard
           setNeedsOnboarding(false);
         } else {
           // If error, log but allow continue (graceful degradation)
@@ -127,7 +183,7 @@ function ProfilePageContent() {
     };
 
     checkOnboarding();
-  }, [userId]);
+  }, [userId, userCheckStatus, router]);
 
   // Загрузка данных профиля
   useEffect(() => {
@@ -359,6 +415,54 @@ function ProfilePageContent() {
     }
   };
 
+  // Show loading state while checking user
+  if (userCheckStatus === "loading") {
+    return (
+      <AppLayout>
+        <div className="min-h-screen flex items-center justify-center bg-background">
+          <div className="text-textSecondary">Загрузка...</div>
+        </div>
+      </AppLayout>
+    );
+  }
+
+  // Show error state if user check failed
+  if (userCheckStatus === "error") {
+    return (
+      <AppLayout>
+        <div className="min-h-screen flex items-center justify-center bg-background p-4">
+          <div className="max-w-md w-full bg-white rounded-2xl shadow-soft p-6 text-center">
+            <h2 className="text-xl font-semibold mb-2 text-red-600">Ошибка</h2>
+            <p className="text-textPrimary mb-4">{userCheckError || "Ошибка проверки пользователя"}</p>
+            <button
+              onClick={() => {
+                setUserCheckStatus("loading");
+                setUserCheckError(null);
+                // Retry by reloading the page
+                window.location.reload();
+              }}
+              className="px-6 py-2 bg-accent text-white font-medium rounded-lg hover:bg-accent/90 transition-colors"
+            >
+              Попробовать снова
+            </button>
+          </div>
+        </div>
+      </AppLayout>
+    );
+  }
+
+  // Redirect to onboarding if user doesn't exist (handled in useEffect, but show loading while redirecting)
+  if (userCheckStatus === "noUser") {
+    return (
+      <AppLayout>
+        <div className="min-h-screen flex items-center justify-center bg-background">
+          <div className="text-textSecondary">Перенаправление...</div>
+        </div>
+      </AppLayout>
+    );
+  }
+
+  // Show loading while fetching profile data
   if (loading || checkingPrivacy) {
     return (
       <AppLayout>
@@ -369,24 +473,32 @@ function ProfilePageContent() {
     );
   }
 
+  // Show error if profile fetch failed
   if (error && !profile) {
     return (
       <AppLayout>
         <div className="min-h-screen flex items-center justify-center bg-background p-4">
           <div className="max-w-md w-full bg-white rounded-2xl shadow-soft p-6 text-center">
             <h2 className="text-xl font-semibold mb-2 text-red-600">Ошибка</h2>
-            <p className="text-textPrimary">{error}</p>
+            <p className="text-textPrimary mb-4">{error}</p>
+            <button
+              onClick={() => window.location.reload()}
+              className="px-6 py-2 bg-accent text-white font-medium rounded-lg hover:bg-accent/90 transition-colors"
+            >
+              Обновить страницу
+            </button>
           </div>
         </div>
       </AppLayout>
     );
   }
 
+  // Show loading if profile not loaded yet
   if (!profile) {
     return (
       <AppLayout>
         <div className="min-h-screen flex items-center justify-center bg-background">
-          <div className="text-textSecondary">Профиль не найден</div>
+          <div className="text-textSecondary">Загрузка профиля...</div>
         </div>
       </AppLayout>
     );
