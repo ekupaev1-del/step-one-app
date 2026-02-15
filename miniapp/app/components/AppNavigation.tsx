@@ -2,15 +2,17 @@
 
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { memo } from "react";
+import { useUserSession } from "../providers/UserSessionProvider";
+import { withUserId } from "@/lib/user/withUserId";
 
 function AppNavigation() {
   const pathname = usePathname();
   const router = useRouter();
   const searchParams = useSearchParams();
+  const { userId, queryUserId } = useUserSession();
   
-  // Получаем userId из query параметров для сохранения при навигации
-  const userId = searchParams.get("id");
-  const userIdParam = userId ? `?id=${userId}` : "";
+  // Preserve userId from query params or context
+  const currentUserId = queryUserId || (userId ? String(userId) : null);
 
   // Определяем активный таб на основе pathname
   const isReportsActive = pathname === "/report" || pathname.startsWith("/report");
@@ -19,9 +21,9 @@ function AppNavigation() {
   const isSubscriptionActive = pathname === "/subscription" || pathname.startsWith("/subscription");
 
   const handleNavigation = (path: "/report" | "/profile" | "/recommendations" | "/subscription") => {
-    const url = `${path}${userIdParam}`;
-    // Мгновенная навигация без задержек
-    (router.push as (href: string) => void)(url);
+    // Use Next.js client routing and preserve userId
+    const url = withUserId(path, currentUserId);
+    router.push(url as any);
   };
 
   return (

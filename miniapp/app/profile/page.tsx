@@ -1,12 +1,12 @@
 "use client";
 
-import { useSearchParams, useRouter } from "next/navigation";
+import { useRouter } from "next/navigation";
 import { useState, useEffect, Suspense, useRef } from "react";
 import Link from "next/link";
 import "../globals.css";
 import AppLayout from "../components/AppLayout";
-import { getTelegramUserId, initTelegramWebApp } from "@/lib/telegram";
-import { getCachedUserCheck, setCachedUserCheck } from "@/lib/userCheck";
+import { useUserSession } from "../providers/UserSessionProvider";
+import { withUserId } from "@/lib/user/withUserId";
 
 interface ProfileData {
   name: string | null;
@@ -25,19 +25,12 @@ interface ProfileData {
 }
 
 function ProfilePageContent() {
-  // ALL HOOKS MUST BE CALLED UNCONDITIONALLY AT TOP LEVEL
-  // No early returns, no conditional hooks, no hooks in loops/conditions
-  
-  const searchParams = useSearchParams();
-  const userIdParam = searchParams.get("id");
-  
-  // Safe Telegram initialization - hooks must run regardless of Telegram availability
-  const [tg, setTg] = useState<any>(null);
-  
-  const [userId, setUserId] = useState<number | null>(null);
+  const { userId, isLoading, error, userExists } = useUserSession();
+  const router = useRouter();
+
   const [profile, setProfile] = useState<ProfileData | null>(null);
   const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
+  const [profileError, setProfileError] = useState<string | null>(null);
   const [isEditing, setIsEditing] = useState(false);
   const [saving, setSaving] = useState(false);
   const [normsExpanded, setNormsExpanded] = useState(false);
@@ -55,134 +48,23 @@ function ProfilePageContent() {
   const [editGender, setEditGender] = useState<string>("");
   const [editAge, setEditAge] = useState<string>("");
   const [deleting, setDeleting] = useState(false);
-  const [checkingPrivacy, setCheckingPrivacy] = useState(false);
   const [subscription, setSubscription] = useState<any>(null);
   const [subscriptionLoading, setSubscriptionLoading] = useState(false);
-  const [userCheckStatus, setUserCheckStatus] = useState<"loading" | "hasUser" | "noUser" | "error">("loading");
-  const [userCheckError, setUserCheckError] = useState<string | null>(null);
-  const router = useRouter();
 
-  // Safe Telegram bootstrap - must be unconditional hook
+  // Redirect to onboarding if user doesn't exist
   useEffect(() => {
-    if (typeof window !== "undefined") {
-      initTelegramWebApp(); // Initialize Telegram WebApp once
-      const tgWebApp = (window as any).Telegram?.WebApp ?? null;
-      setTg(tgWebApp);
+    if (!isLoading && !error && userId && !userExists) {
+      router.push("/registration");
     }
-  }, []);
+  }, [isLoading, error, userId, userExists, router]);
 
-  // Derive isInTelegram AFTER all hooks are declared
-  const isInTelegram = !!tg;
-
-  // STEP 1: Check user by telegram_id first (primary check) - ALWAYS re-check DB
+  // Load profile data if user exists
   useEffect(() => {
-    const checkUserByTelegramId = async () => {
-      setUserCheckStatus("loading");
-      setUserCheckError(null);
-
-      try {
-        // Get Telegram user ID using helper
-        const telegramId = getTelegramUserId();
-        
-        // Diagnostic logging
-        const tgExists = typeof window !== "undefined" && !!(window as any).Telegram;
-        const env = process.env.NODE_ENV || "unknown";
-        
-        if (process.env.NODE_ENV === "development") {
-          console.log("[ProfilePage] Diagnostics:", {
-            telegramWebApp: tgExists,
-            telegramUserId: telegramId,
-            env: env,
-          });
-        }
-
-        if (!telegramId || typeof telegramId !== "number") {
-          setUserCheckStatus("error");
-          setUserCheckError(
-            `Не удалось получить ID пользователя Telegram.\n\n` +
-            `Диагностика:\n` +
-            `- Telegram WebApp: ${tgExists ? "✅" : "❌"}\n` +
-            `- Окружение: ${env}\n\n` +
-            `Откройте приложение через Telegram бота.`
-          );
-          return;
-        }
-
-        // Check cache first (optimization only)
-        const cached = getCachedUserCheck(telegramId);
-        if (cached === true) {
-          // Cache says user exists, but we still need to fetch full profile
-          // This is just for showing loading state faster
-        }
-
-        if (process.env.NODE_ENV === "development") {
-          console.log("[ProfilePage] Checking user by telegram_id:", telegramId);
-        }
-
-        // ALWAYS re-check DB (real source of truth)
-        const response = await fetch(`/api/user/profile?telegram_id=${telegramId}`);
-        const data = await response.json();
-
-        if (!response.ok) {
-          throw new Error(data.error || "Ошибка проверки пользователя");
-        }
-
-        if (data.exists && data.user) {
-          // User exists -> show dashboard (Personal Cabinet) - NEVER show onboarding
-          if (process.env.NODE_ENV === "development") {
-            console.log("[ProfilePage] User exists, showing Personal Cabinet");
-          }
-          
-          // Update cache
-          setCachedUserCheck(telegramId, true);
-          
-          setUserId(data.user.id);
-          setUserCheckStatus("hasUser");
-          // NEVER show onboarding if user exists - user should always see cabinet
-          
-          // Store subscription info if available
-          if (data.subscription) {
-            setSubscription(data.subscription);
-          }
-        } else {
-          // User doesn't exist -> show onboarding
-          if (process.env.NODE_ENV === "development") {
-            console.log("[ProfilePage] User not found, redirecting to onboarding");
-          }
-          
-          // Update cache
-          setCachedUserCheck(telegramId, false);
-          
-          setUserCheckStatus("noUser");
-          router.push("/registration");
-        }
-      } catch (err: any) {
-        console.error("[ProfilePage] Error checking user:", err);
-        setUserCheckStatus("error");
-        setUserCheckError(err.message || "Ошибка проверки пользователя. Попробуйте обновить страницу.");
-      }
-    };
-
-    checkUserByTelegramId();
-  }, [router]);
-
-  // STEP 2: If userIdParam is provided and we haven't checked by telegram_id yet, use it as fallback
-  useEffect(() => {
-    if (userIdParam && userCheckStatus === "loading") {
-      const n = Number(userIdParam);
-      if (Number.isFinite(n) && n > 0) {
-        setUserId(n);
-      }
-    }
-  }, [userIdParam, userCheckStatus]);
-
-  // STEP 3: Load profile data if user exists (no onboarding check - user exists means show dashboard)
-  useEffect(() => {
-    if (!userId || userCheckStatus !== "hasUser") return;
+    if (!userId || !userExists) return;
 
     const loadProfile = async () => {
       setLoading(true);
-      setError(null);
+      setProfileError(null);
 
       try {
         const response = await fetch(`/api/user?userId=${userId}`);
@@ -220,15 +102,14 @@ function ProfilePageContent() {
         setEditAge(data.age?.toString() || "");
       } catch (err: any) {
         console.error("[profile] Ошибка загрузки:", err);
-        setError(err.message || "Ошибка загрузки профиля");
+        setProfileError(err.message || "Ошибка загрузки профиля");
       } finally {
         setLoading(false);
-        setCheckingPrivacy(false);
       }
     };
 
     loadProfile();
-  }, [userId, userCheckStatus]);
+  }, [userId, userExists]);
 
   // Load subscription status (if not already loaded from /api/user/profile)
   useEffect(() => {
@@ -320,7 +201,7 @@ function ProfilePageContent() {
       setProfile(prev => prev ? { ...prev, avatarUrl: avatarUrlWithCache } : prev);
     } catch (err: any) {
       console.error("[avatar] Ошибка загрузки:", err);
-      setError(err.message || "Не удалось загрузить фото");
+      setProfileError(err.message || "Не удалось загрузить фото");
     } finally {
       setUploadingAvatar(false);
       if (fileInputRef.current) fileInputRef.current.value = "";
@@ -333,7 +214,7 @@ function ProfilePageContent() {
 
     // Валидация
     if (!editWeight || !editHeight || !editGoal || !editActivity || !editGender || !editAge) {
-      setError("Все поля обязательны для заполнения");
+      setProfileError("Все поля обязательны для заполнения");
       return;
     }
 
@@ -342,22 +223,22 @@ function ProfilePageContent() {
     const ageNum = Number(editAge);
 
     if (!Number.isFinite(weightNum) || weightNum <= 0) {
-      setError("Вес должен быть положительным числом");
+      setProfileError("Вес должен быть положительным числом");
       return;
     }
 
     if (!Number.isFinite(heightNum) || heightNum <= 0) {
-      setError("Рост должен быть положительным числом");
+      setProfileError("Рост должен быть положительным числом");
       return;
     }
 
     if (!Number.isFinite(ageNum) || ageNum <= 0 || ageNum > 150) {
-      setError("Возраст должен быть числом от 1 до 150");
+      setProfileError("Возраст должен быть числом от 1 до 150");
       return;
     }
 
     setSaving(true);
-    setError(null);
+    setProfileError(null);
 
     const normalizedName = editName.trim() || null;
 
@@ -388,16 +269,16 @@ function ProfilePageContent() {
       setProfile(data.profile);
       setAvatarUrl(data.profile.avatarUrl || null);
       setIsEditing(false);
-    } catch (err: any) {
-      console.error("[profile] Ошибка сохранения:", err);
-      setError(err.message || "Ошибка сохранения профиля");
-    } finally {
+      } catch (err: any) {
+        console.error("[profile] Ошибка сохранения:", err);
+        setProfileError(err.message || "Ошибка сохранения профиля");
+      } finally {
       setSaving(false);
     }
   };
 
-  // Show loading state while checking user
-  if (userCheckStatus === "loading") {
+  // Show loading while resolving user identity
+  if (isLoading) {
     return (
       <AppLayout>
         <div className="min-h-screen flex items-center justify-center bg-background">
@@ -407,21 +288,16 @@ function ProfilePageContent() {
     );
   }
 
-  // Show error state if user check failed
-  if (userCheckStatus === "error") {
+  // Show error if user identity resolution failed
+  if (error) {
     return (
       <AppLayout>
         <div className="min-h-screen flex items-center justify-center bg-background p-4">
           <div className="max-w-md w-full bg-white rounded-2xl shadow-soft p-6 text-center">
             <h2 className="text-xl font-semibold mb-2 text-red-600">Ошибка</h2>
-            <p className="text-textPrimary mb-4">{userCheckError || "Ошибка проверки пользователя"}</p>
+            <p className="text-textPrimary mb-4 whitespace-pre-line">{error}</p>
             <button
-              onClick={() => {
-                setUserCheckStatus("loading");
-                setUserCheckError(null);
-                // Retry by reloading the page
-                window.location.reload();
-              }}
+              onClick={() => window.location.reload()}
               className="px-6 py-2 bg-accent text-white font-medium rounded-lg hover:bg-accent/90 transition-colors"
             >
               Попробовать снова
@@ -432,19 +308,8 @@ function ProfilePageContent() {
     );
   }
 
-  // Redirect to onboarding if user doesn't exist (handled in useEffect, but show loading while redirecting)
-  if (userCheckStatus === "noUser") {
-    return (
-      <AppLayout>
-        <div className="min-h-screen flex items-center justify-center bg-background">
-          <div className="text-textSecondary">Перенаправление...</div>
-        </div>
-      </AppLayout>
-    );
-  }
-
   // Show loading while fetching profile data
-  if (loading || checkingPrivacy) {
+  if (loading) {
     return (
       <AppLayout>
         <div className="min-h-screen flex items-center justify-center bg-background">
@@ -455,13 +320,13 @@ function ProfilePageContent() {
   }
 
   // Show error if profile fetch failed
-  if (error && !profile) {
+  if (profileError && !profile) {
     return (
       <AppLayout>
         <div className="min-h-screen flex items-center justify-center bg-background p-4">
           <div className="max-w-md w-full bg-white rounded-2xl shadow-soft p-6 text-center">
             <h2 className="text-xl font-semibold mb-2 text-red-600">Ошибка</h2>
-            <p className="text-textPrimary mb-4">{error}</p>
+            <p className="text-textPrimary mb-4">{profileError}</p>
             <button
               onClick={() => window.location.reload()}
               className="px-6 py-2 bg-accent text-white font-medium rounded-lg hover:bg-accent/90 transition-colors"
@@ -505,7 +370,7 @@ function ProfilePageContent() {
       window.location.href = "/";
     } catch (err: any) {
       console.error("[profile] Ошибка удаления профиля:", err);
-      setError(err.message || "Ошибка удаления профиля");
+      setProfileError(err.message || "Ошибка удаления профиля");
     } finally {
       setDeleting(false);
     }
@@ -522,10 +387,6 @@ function ProfilePageContent() {
     });
   };
 
-  // Debug panel (development only)
-  const telegramId = typeof window !== "undefined" ? getTelegramUserId() : null;
-  const tgExists = typeof window !== "undefined" && !!(window as any).Telegram;
-
   return (
     <AppLayout>
       <div className="min-h-screen bg-background p-4 py-8">
@@ -534,10 +395,8 @@ function ProfilePageContent() {
         {process.env.NODE_ENV === "development" && (
           <div className="mb-4 p-3 bg-yellow-50 border border-yellow-200 rounded-lg text-xs">
             <div className="font-semibold mb-1">🔍 Debug Info:</div>
-            <div>Telegram WebApp: {tgExists ? "✅" : "❌"}</div>
-            <div>telegramUserId: {telegramId || "null"}</div>
-            <div>userCheckStatus: {userCheckStatus}</div>
             <div>userId: {userId || "null"}</div>
+            <div>userExists: {userExists ? "✅" : "❌"}</div>
             <div>hasProfile: {profile ? "✅" : "❌"}</div>
           </div>
         )}
@@ -548,9 +407,9 @@ function ProfilePageContent() {
         </div>
 
         {/* Сообщение об ошибке (если есть) */}
-        {error && (
+        {profileError && (
           <div className="mb-4 p-4 bg-red-50 border border-red-200 rounded-xl text-red-700 text-sm">
-            {error}
+            {profileError}
           </div>
         )}
 
@@ -724,7 +583,7 @@ function ProfilePageContent() {
                     <button
                       onClick={() => {
                         setIsEditing(false);
-                        setError(null);
+                        setProfileError(null);
                         // Восстанавливаем значения из профиля
                         setEditName(profile.name || "");
                         setEditWeight(profile.weightKg?.toString() || "");
@@ -911,13 +770,13 @@ function ProfilePageContent() {
         {/* Политика конфиденциальности и Пользовательское соглашение */}
         <div className="mb-4 space-y-3">
           <Link
-            href={`/privacy${userId ? `?id=${userId}` : ''}` as any}
+            href={withUserId("/privacy", userId ? String(userId) : null) as any}
             className="block w-full px-4 py-3 bg-white border border-gray-200 text-textPrimary font-medium rounded-2xl shadow-soft hover:bg-gray-50 transition-colors text-center"
           >
             Политика конфиденциальности
           </Link>
           <Link
-            href={`/terms${userId ? `?id=${userId}` : ''}` as any}
+            href={withUserId("/terms", userId ? String(userId) : null) as any}
             className="block w-full px-4 py-3 bg-white border border-gray-200 text-textPrimary font-medium rounded-2xl shadow-soft hover:bg-gray-50 transition-colors text-center"
           >
             Пользовательское соглашение

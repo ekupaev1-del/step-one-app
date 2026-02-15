@@ -1,79 +1,46 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
-import { getTelegramUserId, initTelegramWebApp } from "@/lib/telegram";
-
-type UserStatus = "loading" | "exists" | "not_exists" | "error";
+import { useUserSession } from "./providers/UserSessionProvider";
+import { withUserId } from "@/lib/user/withUserId";
 
 export default function PageClient() {
   const router = useRouter();
   const searchParams = useSearchParams();
-  const [status, setStatus] = useState<UserStatus>("loading");
-  const [userId, setUserId] = useState<number | null>(null);
-  const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  const { userId, isLoading, error, userExists } = useUserSession();
 
   useEffect(() => {
-    initTelegramWebApp(); // Initialize Telegram WebApp once
-    
-    const checkUser = async () => {
-      try {
-        // Get Telegram user ID using helper
-        const telegramId = getTelegramUserId();
-        
-        // Diagnostics
-        const tgExists = typeof window !== "undefined" && !!(window as any).Telegram;
-        const env = process.env.NODE_ENV || "unknown";
-        
-        if (!telegramId) {
-          setStatus("error");
-          setErrorMessage(
-            `Не удалось получить ID пользователя Telegram.\n\n` +
-            `Диагностика:\n` +
-            `- Telegram WebApp: ${tgExists ? "✅" : "❌"}\n` +
-            `- Окружение: ${env}\n\n` +
-            `Откройте приложение через Telegram бота.`
-          );
-          return;
-        }
+    if (isLoading) return;
 
-        // Call API route to check if user exists
-        const response = await fetch(`/api/user/profile?telegram_id=${telegramId}`);
-        const data = await response.json();
+    // If error, don't redirect - let error UI show
+    if (error) return;
 
-        if (!response.ok) {
-          throw new Error(data.error || "Ошибка проверки пользователя");
-        }
+    // If user exists, redirect to profile
+    if (userId && userExists) {
+      const debug = searchParams.get("debug");
+      const debugKey = searchParams.get("debugKey");
+      const params = new URLSearchParams();
+      if (debug) params.set("debug", debug);
+      if (debugKey) params.set("debugKey", debugKey);
+      const queryString = params.toString();
+      const profileUrl = withUserId("/profile", userId ? String(userId) : null);
+      const finalUrl = queryString ? `${profileUrl}${profileUrl.includes("?") ? "&" : "?"}${queryString}` : profileUrl;
+      router.push(finalUrl as any);
+      return;
+    }
 
-        if (data.exists && data.user) {
-          // User exists -> redirect to profile (cabinet)
-          setUserId(data.user.id);
-          const debug = searchParams.get("debug");
-          const debugKey = searchParams.get("debugKey");
-          const params = new URLSearchParams();
-          if (debug) params.set("debug", debug);
-          if (debugKey) params.set("debugKey", debugKey);
-          const queryString = params.toString();
-          const profileUrl = `/profile${queryString ? `?${queryString}` : ""}`;
-          router.push(profileUrl as any);
-          setStatus("exists");
-        } else {
-          // User doesn't exist -> redirect to registration (onboarding)
-          setStatus("not_exists");
-          router.push("/registration");
-        }
-      } catch (error: any) {
-        console.error("[page-client] Error checking user:", error);
-        setStatus("error");
-        setErrorMessage(error?.message || "Ошибка проверки пользователя. Попробуйте обновить страницу.");
-      }
-    };
+    // If user doesn't exist, redirect to registration (onboarding)
+    if (userId && !userExists) {
+      router.push(withUserId("/registration", userId ? String(userId) : null) as any);
+      return;
+    }
 
-    checkUser();
-  }, [router, searchParams]);
+    // If no userId resolved, error will be shown
+  }, [isLoading, error, userId, userExists, router, searchParams]);
 
   // Show loading state
-  if (status === "loading") {
+  if (isLoading) {
     return (
       <div
         style={{
@@ -93,7 +60,7 @@ export default function PageClient() {
   }
 
   // Show error state with retry button and diagnostics
-  if (status === "error") {
+  if (error) {
     return (
       <div
         style={{
@@ -108,12 +75,10 @@ export default function PageClient() {
       >
         <h1>Step One</h1>
         <p style={{ marginBottom: "20px", color: "#666", whiteSpace: "pre-line" }}>
-          {errorMessage || "Ошибка загрузки. Откройте приложение через Telegram бота."}
+          {error}
         </p>
         <button
           onClick={() => {
-            setStatus("loading");
-            setErrorMessage(null);
             window.location.reload();
           }}
           style={{
@@ -134,5 +99,20 @@ export default function PageClient() {
   }
 
   // This should not be reached as we redirect, but just in case
-  return null;
+  return (
+    <div
+      style={{
+        minHeight: "100vh",
+        display: "flex",
+        alignItems: "center",
+        justifyContent: "center",
+        flexDirection: "column",
+        padding: "20px",
+        textAlign: "center",
+      }}
+    >
+      <h1>Step One</h1>
+      <p>Перенаправление...</p>
+    </div>
+  );
 }

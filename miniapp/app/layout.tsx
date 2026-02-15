@@ -6,6 +6,7 @@ import "./globals.css";
 import BuildStamp from "./components/BuildStamp";
 import { ErrorBoundaryWrapper } from "./components/ErrorBoundaryWrapper";
 import DebugOverlay from "./components/DebugOverlay";
+import { ClientProviders } from "./providers/ClientProviders";
 
 const nunito = Nunito({
   subsets: ["latin", "cyrillic"],
@@ -42,7 +43,9 @@ export default function RootLayout({
       </head>
       <body className={`${nunito.className} ${nunito.variable} bg-background text-textPrimary antialiased`}>
         <ErrorBoundaryWrapper>
-          {children}
+          <ClientProviders>
+            {children}
+          </ClientProviders>
         </ErrorBoundaryWrapper>
         {/* Build stamp for deployment verification - visible in devtools */}
         <BuildStamp />

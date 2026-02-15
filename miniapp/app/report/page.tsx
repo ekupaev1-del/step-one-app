@@ -1,10 +1,10 @@
 "use client";
 
-import { useSearchParams } from "next/navigation";
 import { useState, useEffect, Suspense, useRef, type ReactElement } from "react";
 import "../globals.css";
 import AppLayout from "../components/AppLayout";
 import DayNutritionInfographic from "../components/DayNutritionInfographic";
+import { useUserSession } from "../providers/UserSessionProvider";
 
 interface Meal {
   id: number;
@@ -59,11 +59,8 @@ function LoadingFallback() {
 }
 
 function ReportPageContent(): ReactElement {
-  const searchParams = useSearchParams();
-  const userIdParam = searchParams.get("id");
-  
-  const [userId, setUserId] = useState<number | null>(null);
-  const [error, setError] = useState<string | null>(null);
+  const { userId, isLoading, error, userExists } = useUserSession();
+  const [reportError, setReportError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
 
   // Календарь
@@ -85,82 +82,47 @@ function ReportPageContent(): ReactElement {
   // Редактирование
   const [editingMeal, setEditingMeal] = useState<Meal | null>(null);
 
-  // Проверка согласия с политикой конфиденциальности
-  const [checkingPrivacy, setCheckingPrivacy] = useState(false);
-  const [privacyAccepted, setPrivacyAccepted] = useState<boolean | null>(null);
+  // Show loading while resolving user identity
+  if (isLoading) {
+    return (
+      <AppLayout>
+        <div className="min-h-screen flex items-center justify-center bg-background">
+          <div className="text-textSecondary">Загрузка...</div>
+        </div>
+      </AppLayout>
+    );
+  }
 
-  // Инициализация userId
-  // Инициализация userId - оптимизировано для быстрой загрузки
-  useEffect(() => {
-    // Сначала пробуем получить из URL напрямую для быстрой загрузки
-    if (typeof window !== "undefined" && !userIdParam) {
-      const urlParams = new URLSearchParams(window.location.search);
-      const fallbackUserId = urlParams.get("id");
-      if (fallbackUserId) {
-        const n = Number(fallbackUserId);
-        if (Number.isFinite(n) && n > 0) {
-          setUserId(n);
-          setError(null);
-          return;
-        }
-      }
-    }
+  // Show error if user identity resolution failed
+  if (error) {
+    return (
+      <AppLayout>
+        <div className="min-h-screen flex items-center justify-center bg-background p-4">
+          <div className="max-w-md w-full bg-white rounded-2xl shadow-soft p-6 text-center">
+            <h2 className="text-xl font-semibold mb-2 text-red-600">Ошибка</h2>
+            <p className="text-textPrimary mb-4 whitespace-pre-line">{error}</p>
+            <button
+              onClick={() => window.location.reload()}
+              className="px-6 py-2 bg-accent text-white font-medium rounded-lg hover:bg-accent/90 transition-colors"
+            >
+              Попробовать снова
+            </button>
+          </div>
+        </div>
+      </AppLayout>
+    );
+  }
 
-    if (userIdParam) {
-      const n = Number(userIdParam);
-      if (Number.isFinite(n) && n > 0) {
-        setUserId(n);
-        setError(null);
-      } else {
-        setError("Некорректный id пользователя");
-      }
-    } else {
-      setError("ID не передан");
-    }
-  }, [userIdParam]);
-
-  // Unified onboarding check (consent + profile completion)
-  useEffect(() => {
-    if (!userId) return;
-
-    const checkOnboarding = async () => {
-      setCheckingPrivacy(true);
-      try {
-        const response = await fetch(`/api/onboarding/status?userId=${userId}`);
-        const data = await response.json();
-
-        if (response.ok && data.ok) {
-          // Only redirect if consent is missing OR profile is incomplete
-          if (!data.hasConsent) {
-            // Consent missing -> redirect to consent page
-            window.location.href = `/privacy/consent?id=${userId}`;
-            return;
-          }
-          
-          if (!data.profileComplete) {
-            // Profile incomplete -> redirect to registration
-            window.location.href = `/registration?id=${userId}`;
-            return;
-          }
-          
-          // Both consent and profile are complete - allow access
-          setPrivacyAccepted(true);
-        } else {
-          // If error, log but allow continue (graceful degradation)
-          console.warn("[ReportPage] Ошибка проверки онбординга:", data.error);
-          setPrivacyAccepted(true);
-        }
-      } catch (err) {
-        console.error("[ReportPage] Ошибка проверки онбординга:", err);
-        // При ошибке разрешаем продолжить
-        setPrivacyAccepted(true);
-      } finally {
-        setCheckingPrivacy(false);
-      }
-    };
-
-    checkOnboarding();
-  }, [userId]);
+  // Redirect to onboarding if user doesn't exist
+  if (!userId || !userExists) {
+    return (
+      <AppLayout>
+        <div className="min-h-screen flex items-center justify-center bg-background">
+          <div className="text-textSecondary">Перенаправление...</div>
+        </div>
+      </AppLayout>
+    );
+  }
 
   // Загрузка календаря при изменении месяца
   useEffect(() => {

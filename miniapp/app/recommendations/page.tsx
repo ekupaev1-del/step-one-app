@@ -1,9 +1,9 @@
 "use client";
 
-import { useSearchParams } from "next/navigation";
 import { useState, useEffect, Suspense, type ReactElement } from "react";
 import "../globals.css";
 import AppLayout from "../components/AppLayout";
+import { useUserSession } from "../providers/UserSessionProvider";
 
 interface Recommendation {
   type: "protein" | "fat" | "carbs" | "calories" | "water";
@@ -24,78 +24,19 @@ function LoadingFallback() {
 }
 
 function RecommendationsPageContent(): ReactElement {
-  const searchParams = useSearchParams();
-  const userIdParam = searchParams.get("id");
-  
-  const [userId, setUserId] = useState<number | null>(null);
-  const [error, setError] = useState<string | null>(null);
+  const { userId, isLoading, error, userExists } = useUserSession();
+  const [recommendationsError, setRecommendationsError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [recommendations, setRecommendations] = useState<Recommendation[]>([]);
   const [days, setDays] = useState<number>(1);
-  const [checkingPrivacy, setCheckingPrivacy] = useState(false);
 
+  // Load recommendations when userId is available
   useEffect(() => {
-    if (userIdParam) {
-      const n = Number(userIdParam);
-      if (Number.isFinite(n) && n > 0) {
-        setUserId(n);
-        setError(null);
-      } else {
-        setError("Некорректный id пользователя");
-        setLoading(false);
-      }
-    } else {
-      setError("ID не передан");
-      setLoading(false);
-    }
-  }, [userIdParam]);
-
-  // Unified onboarding check (consent + profile completion)
-  useEffect(() => {
-    if (!userId) return;
-
-    const checkOnboarding = async () => {
-      setCheckingPrivacy(true);
-      try {
-        const response = await fetch(`/api/onboarding/status?userId=${userId}`);
-        const data = await response.json();
-
-        if (response.ok && data.ok) {
-          // Only redirect if consent is missing OR profile is incomplete
-          if (!data.hasConsent) {
-            // Consent missing -> redirect to consent page
-            window.location.href = `/privacy/consent?id=${userId}`;
-            return;
-          }
-          
-          if (!data.profileComplete) {
-            // Profile incomplete -> redirect to registration
-            window.location.href = `/registration?id=${userId}`;
-            return;
-          }
-          
-          // Both consent and profile are complete - allow access
-        } else {
-          // If error, log but allow continue (graceful degradation)
-          console.warn("[RecommendationsPage] Ошибка проверки онбординга:", data.error);
-        }
-      } catch (err) {
-        console.error("[RecommendationsPage] Ошибка проверки онбординга:", err);
-        // При ошибке разрешаем продолжить
-      } finally {
-        setCheckingPrivacy(false);
-      }
-    };
-
-    checkOnboarding();
-  }, [userId]);
-
-  useEffect(() => {
-    if (!userId) return;
+    if (!userId || !userExists) return;
 
     const loadRecommendations = async () => {
       setLoading(true);
-      setError(null);
+      setRecommendationsError(null);
 
       try {
         const response = await fetch(`/api/recommendations?userId=${userId}&days=${days}`);
@@ -108,31 +49,73 @@ function RecommendationsPageContent(): ReactElement {
         setRecommendations(data.recommendations || []);
       } catch (err: any) {
         console.error("[recommendations] Ошибка:", err);
-        setError(err.message || "Ошибка загрузки рекомендаций");
+        setRecommendationsError(err.message || "Ошибка загрузки рекомендаций");
       } finally {
         setLoading(false);
       }
     };
 
     loadRecommendations();
-  }, [userId, days]);
+  }, [userId, userExists, days]);
 
-  if (checkingPrivacy) {
+  // Show loading while resolving user identity
+  if (isLoading) {
     return (
-      <div className="min-h-screen flex items-center justify-center p-4 bg-background">
-        <div className="text-textSecondary">Загрузка...</div>
-      </div>
+      <AppLayout>
+        <div className="min-h-screen flex items-center justify-center bg-background">
+          <div className="text-textSecondary">Загрузка...</div>
+        </div>
+      </AppLayout>
     );
   }
 
-  if (error && !userId) {
+  // Show error if user identity resolution failed
+  if (error) {
     return (
-      <div className="min-h-screen flex items-center justify-center p-4 bg-background">
-        <div className="max-w-md w-full bg-white rounded-2xl shadow-soft p-6 text-center">
-          <h2 className="text-xl font-semibold mb-2 text-red-600">Ошибка</h2>
-          <p className="text-textPrimary">{error}</p>
+      <AppLayout>
+        <div className="min-h-screen flex items-center justify-center bg-background p-4">
+          <div className="max-w-md w-full bg-white rounded-2xl shadow-soft p-6 text-center">
+            <h2 className="text-xl font-semibold mb-2 text-red-600">Ошибка</h2>
+            <p className="text-textPrimary mb-4 whitespace-pre-line">{error}</p>
+            <button
+              onClick={() => window.location.reload()}
+              className="px-6 py-2 bg-accent text-white font-medium rounded-lg hover:bg-accent/90 transition-colors"
+            >
+              Попробовать снова
+            </button>
+          </div>
         </div>
-      </div>
+      </AppLayout>
+    );
+  }
+
+  // Redirect to onboarding if user doesn't exist
+  if (!userId || !userExists) {
+    return (
+      <AppLayout>
+        <div className="min-h-screen flex items-center justify-center bg-background">
+          <div className="text-textSecondary">Перенаправление...</div>
+        </div>
+      </AppLayout>
+    );
+  }
+
+  if (recommendationsError) {
+    return (
+      <AppLayout>
+        <div className="min-h-screen flex items-center justify-center p-4 bg-background">
+          <div className="max-w-md w-full bg-white rounded-2xl shadow-soft p-6 text-center">
+            <h2 className="text-xl font-semibold mb-2 text-red-600">Ошибка</h2>
+            <p className="text-textPrimary">{recommendationsError}</p>
+            <button
+              onClick={() => window.location.reload()}
+              className="mt-4 px-6 py-2 bg-accent text-white font-medium rounded-lg hover:bg-accent/90 transition-colors"
+            >
+              Обновить страницу
+            </button>
+          </div>
+        </div>
+      </AppLayout>
     );
   }
 
