@@ -55,7 +55,7 @@ export async function GET(req: Request) {
     }
 
     // Get subscription if user exists
-    let subscription = null;
+    let subscription: any = null;
     try {
       const { data: subData, error: subError } = await supabase
         .from("subscriptions")

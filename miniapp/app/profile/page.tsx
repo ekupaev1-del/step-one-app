@@ -5,7 +5,8 @@ import { useState, useEffect, Suspense, useRef } from "react";
 import Link from "next/link";
 import "../globals.css";
 import AppLayout from "../components/AppLayout";
-import { getTgUser } from "@/lib/telegram";
+import { getTelegramUserId, initTelegramWebApp } from "@/lib/telegram";
+import { getCachedUserCheck, setCachedUserCheck } from "@/lib/userCheck";
 
 interface ProfileData {
   name: string | null;
@@ -54,7 +55,6 @@ function ProfilePageContent() {
   const [editGender, setEditGender] = useState<string>("");
   const [editAge, setEditAge] = useState<string>("");
   const [deleting, setDeleting] = useState(false);
-  const [needsOnboarding, setNeedsOnboarding] = useState(false);
   const [checkingPrivacy, setCheckingPrivacy] = useState(false);
   const [subscription, setSubscription] = useState<any>(null);
   const [subscriptionLoading, setSubscriptionLoading] = useState(false);
@@ -65,6 +65,7 @@ function ProfilePageContent() {
   // Safe Telegram bootstrap - must be unconditional hook
   useEffect(() => {
     if (typeof window !== "undefined") {
+      initTelegramWebApp(); // Initialize Telegram WebApp once
       const tgWebApp = (window as any).Telegram?.WebApp ?? null;
       setTg(tgWebApp);
     }
@@ -73,41 +74,52 @@ function ProfilePageContent() {
   // Derive isInTelegram AFTER all hooks are declared
   const isInTelegram = !!tg;
 
-  // STEP 1: Check user by telegram_id first (primary check)
+  // STEP 1: Check user by telegram_id first (primary check) - ALWAYS re-check DB
   useEffect(() => {
     const checkUserByTelegramId = async () => {
       setUserCheckStatus("loading");
       setUserCheckError(null);
 
       try {
-        // Get Telegram user using helper
-        const tgUser = getTgUser();
+        // Get Telegram user ID using helper
+        const telegramId = getTelegramUserId();
         
-        // Diagnostic logging in development
+        // Diagnostic logging
+        const tgExists = typeof window !== "undefined" && !!(window as any).Telegram;
+        const env = process.env.NODE_ENV || "unknown";
+        
         if (process.env.NODE_ENV === "development") {
-          const tgExists = typeof window !== "undefined" && !!(window as any).Telegram;
-          console.log("[ProfilePage] Telegram WebApp detected:", tgExists);
-          console.log("[ProfilePage] tgUser:", tgUser ? { id: tgUser.id, username: tgUser.username } : "null");
+          console.log("[ProfilePage] Diagnostics:", {
+            telegramWebApp: tgExists,
+            telegramUserId: telegramId,
+            env: env,
+          });
         }
 
-        if (!tgUser || !tgUser.id) {
-          const tgExists = typeof window !== "undefined" && !!(window as any).Telegram;
+        if (!telegramId || typeof telegramId !== "number") {
           setUserCheckStatus("error");
           setUserCheckError(
-            tgExists 
-              ? "Не удалось получить ID пользователя Telegram. Откройте приложение через Telegram бота."
-              : "Telegram WebApp недоступен. Откройте приложение через Telegram бота."
+            `Не удалось получить ID пользователя Telegram.\n\n` +
+            `Диагностика:\n` +
+            `- Telegram WebApp: ${tgExists ? "✅" : "❌"}\n` +
+            `- Окружение: ${env}\n\n` +
+            `Откройте приложение через Telegram бота.`
           );
           return;
         }
 
-        const telegramId = tgUser.id;
+        // Check cache first (optimization only)
+        const cached = getCachedUserCheck(telegramId);
+        if (cached === true) {
+          // Cache says user exists, but we still need to fetch full profile
+          // This is just for showing loading state faster
+        }
 
         if (process.env.NODE_ENV === "development") {
           console.log("[ProfilePage] Checking user by telegram_id:", telegramId);
         }
 
-        // Call API route to check if user exists
+        // ALWAYS re-check DB (real source of truth)
         const response = await fetch(`/api/user/profile?telegram_id=${telegramId}`);
         const data = await response.json();
 
@@ -116,13 +128,17 @@ function ProfilePageContent() {
         }
 
         if (data.exists && data.user) {
-          // User exists -> show dashboard (Personal Cabinet)
+          // User exists -> show dashboard (Personal Cabinet) - NEVER show onboarding
           if (process.env.NODE_ENV === "development") {
             console.log("[ProfilePage] User exists, showing Personal Cabinet");
           }
+          
+          // Update cache
+          setCachedUserCheck(telegramId, true);
+          
           setUserId(data.user.id);
           setUserCheckStatus("hasUser");
-          setNeedsOnboarding(false);
+          // NEVER show onboarding if user exists - user should always see cabinet
           
           // Store subscription info if available
           if (data.subscription) {
@@ -133,6 +149,10 @@ function ProfilePageContent() {
           if (process.env.NODE_ENV === "development") {
             console.log("[ProfilePage] User not found, redirecting to onboarding");
           }
+          
+          // Update cache
+          setCachedUserCheck(telegramId, false);
+          
           setUserCheckStatus("noUser");
           router.push("/registration");
         }
@@ -232,21 +252,10 @@ function ProfilePageContent() {
     loadSubscription();
   }, [userId, subscription]);
 
-  // Если профиль пустой — отправляем на онбординг
-  useEffect(() => {
-    if (!profile || !userId) return;
-    const requiredFilled =
-      profile.weightKg &&
-      profile.heightCm &&
-      profile.goal &&
-      profile.activityLevel &&
-      profile.gender &&
-      profile.age;
-    if (!requiredFilled) {
-      setNeedsOnboarding(true);
-      window.location.href = `/registration?id=${userId}`;
-    }
-  }, [profile, userId]);
+  // REMOVED: Profile completeness check that redirected to onboarding
+  // If user exists in DB (by telegram_id), they should ALWAYS see the cabinet
+  // Profile can be incomplete - user can edit it from the cabinet
+  // This prevents the "re-onboarding" issue when switching tabs
 
   // Функция для форматирования цели
   const formatGoal = (goal: string | null): string => {
@@ -514,7 +523,7 @@ function ProfilePageContent() {
   };
 
   // Debug panel (development only)
-  const tgUser = typeof window !== "undefined" ? getTgUser() : null;
+  const telegramId = typeof window !== "undefined" ? getTelegramUserId() : null;
   const tgExists = typeof window !== "undefined" && !!(window as any).Telegram;
 
   return (
@@ -526,10 +535,10 @@ function ProfilePageContent() {
           <div className="mb-4 p-3 bg-yellow-50 border border-yellow-200 rounded-lg text-xs">
             <div className="font-semibold mb-1">🔍 Debug Info:</div>
             <div>Telegram WebApp: {tgExists ? "✅" : "❌"}</div>
-            <div>tgUserId: {tgUser?.id || "null"}</div>
-            <div>username: {tgUser?.username || "—"}</div>
+            <div>telegramUserId: {telegramId || "null"}</div>
             <div>userCheckStatus: {userCheckStatus}</div>
             <div>userId: {userId || "null"}</div>
+            <div>hasProfile: {profile ? "✅" : "❌"}</div>
           </div>
         )}
 

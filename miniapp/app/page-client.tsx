@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
+import { getTelegramUserId, initTelegramWebApp } from "@/lib/telegram";
 
 type UserStatus = "loading" | "exists" | "not_exists" | "error";
 
@@ -10,34 +11,39 @@ export default function PageClient() {
   const searchParams = useSearchParams();
   const [status, setStatus] = useState<UserStatus>("loading");
   const [userId, setUserId] = useState<number | null>(null);
+  const [errorMessage, setErrorMessage] = useState<string | null>(null);
 
   useEffect(() => {
+    initTelegramWebApp(); // Initialize Telegram WebApp once
+    
     const checkUser = async () => {
       try {
-        // Get Telegram WebApp initData
-        const tg = (window as any).Telegram?.WebApp;
-        if (!tg) {
-          console.warn("[page-client] Telegram WebApp not available");
+        // Get Telegram user ID using helper
+        const telegramId = getTelegramUserId();
+        
+        // Diagnostics
+        const tgExists = typeof window !== "undefined" && !!(window as any).Telegram;
+        const env = process.env.NODE_ENV || "unknown";
+        
+        if (!telegramId) {
           setStatus("error");
+          setErrorMessage(
+            `Не удалось получить ID пользователя Telegram.\n\n` +
+            `Диагностика:\n` +
+            `- Telegram WebApp: ${tgExists ? "✅" : "❌"}\n` +
+            `- Окружение: ${env}\n\n` +
+            `Откройте приложение через Telegram бота.`
+          );
           return;
         }
 
-        const initData = tg.initData;
-        if (!initData) {
-          console.warn("[page-client] initData not available");
-          setStatus("error");
-          return;
-        }
-
-        // Call /api/me with initData
-        const response = await fetch("/api/me", {
-          method: "GET",
-          headers: {
-            "x-telegram-init-data": initData,
-          },
-        });
-
+        // Call API route to check if user exists
+        const response = await fetch(`/api/user/profile?telegram_id=${telegramId}`);
         const data = await response.json();
+
+        if (!response.ok) {
+          throw new Error(data.error || "Ошибка проверки пользователя");
+        }
 
         if (data.exists && data.user) {
           // User exists -> redirect to profile (cabinet)
@@ -48,39 +54,18 @@ export default function PageClient() {
           if (debug) params.set("debug", debug);
           if (debugKey) params.set("debugKey", debugKey);
           const queryString = params.toString();
-          router.push(`/profile?id=${data.user.id}${queryString ? `&${queryString}` : ""}`);
+          const profileUrl = `/profile${queryString ? `?${queryString}` : ""}`;
+          router.push(profileUrl as any);
           setStatus("exists");
         } else {
           // User doesn't exist -> redirect to registration (onboarding)
-          // Note: User should be created by bot on /start, but if they open Mini App directly,
-          // we'll redirect to registration which will handle the flow
           setStatus("not_exists");
-          // Extract telegram_user_id from initData for registration
-          try {
-            const urlParams = new URLSearchParams(initData);
-            const userParam = urlParams.get("user");
-            if (userParam) {
-              const user = JSON.parse(userParam);
-              const telegramUserId = user?.id;
-              if (telegramUserId) {
-                // Redirect to registration
-                // The registration page will need to handle user creation if needed
-                // For now, redirect without id - user should go through /start in bot first
-                router.push("/registration");
-              } else {
-                router.push("/registration");
-              }
-            } else {
-              router.push("/registration");
-            }
-          } catch (e) {
-            console.error("[page-client] Error parsing initData:", e);
-            router.push("/registration");
-          }
+          router.push("/registration");
         }
-      } catch (error) {
+      } catch (error: any) {
         console.error("[page-client] Error checking user:", error);
         setStatus("error");
+        setErrorMessage(error?.message || "Ошибка проверки пользователя. Попробуйте обновить страницу.");
       }
     };
 
@@ -107,7 +92,7 @@ export default function PageClient() {
     );
   }
 
-  // Show error state with retry button
+  // Show error state with retry button and diagnostics
   if (status === "error") {
     return (
       <div
@@ -122,12 +107,13 @@ export default function PageClient() {
         }}
       >
         <h1>Step One</h1>
-        <p style={{ marginBottom: "20px", color: "#666" }}>
-          Ошибка загрузки. Откройте приложение через Telegram бота.
+        <p style={{ marginBottom: "20px", color: "#666", whiteSpace: "pre-line" }}>
+          {errorMessage || "Ошибка загрузки. Откройте приложение через Telegram бота."}
         </p>
         <button
           onClick={() => {
             setStatus("loading");
+            setErrorMessage(null);
             window.location.reload();
           }}
           style={{
