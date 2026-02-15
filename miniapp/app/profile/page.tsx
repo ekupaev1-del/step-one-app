@@ -5,8 +5,7 @@ import { useState, useEffect, Suspense, useRef } from "react";
 import Link from "next/link";
 import "../globals.css";
 import AppLayout from "../components/AppLayout";
-import { getCurrentTelegramUser } from "@/lib/telegram";
-import { fetchUserProfile } from "@/lib/userProfile";
+import { getTgUser } from "@/lib/telegram";
 
 interface ProfileData {
   name: string | null;
@@ -81,36 +80,54 @@ function ProfilePageContent() {
       setUserCheckError(null);
 
       try {
-        // Get telegram user id directly from Telegram WebApp
-        const tg = (window as any).Telegram?.WebApp;
-        if (!tg) {
+        // Get Telegram user using helper
+        const tgUser = getTgUser();
+        
+        // Diagnostic logging in development
+        if (process.env.NODE_ENV === "development") {
+          const tgExists = typeof window !== "undefined" && !!(window as any).Telegram;
+          console.log("[ProfilePage] Telegram WebApp detected:", tgExists);
+          console.log("[ProfilePage] tgUser:", tgUser ? { id: tgUser.id, username: tgUser.username } : "null");
+        }
+
+        if (!tgUser || !tgUser.id) {
+          const tgExists = typeof window !== "undefined" && !!(window as any).Telegram;
           setUserCheckStatus("error");
-          setUserCheckError("Откройте приложение через Telegram бота.");
+          setUserCheckError(
+            tgExists 
+              ? "Не удалось получить ID пользователя Telegram. Откройте приложение через Telegram бота."
+              : "Telegram WebApp недоступен. Откройте приложение через Telegram бота."
+          );
           return;
         }
 
-        const telegramId = tg.initDataUnsafe?.user?.id;
-        if (!telegramId || typeof telegramId !== "number") {
-          setUserCheckStatus("error");
-          setUserCheckError("Не удалось получить ID пользователя Telegram. Откройте приложение через Telegram бота.");
-          return;
-        }
+        const telegramId = tgUser.id;
 
         if (process.env.NODE_ENV === "development") {
           console.log("[ProfilePage] Checking user by telegram_id:", telegramId);
         }
 
-        // Fetch user profile by telegram_id
-        const userProfile = await fetchUserProfile(telegramId);
+        // Call API route to check if user exists
+        const response = await fetch(`/api/user/profile?telegram_id=${telegramId}`);
+        const data = await response.json();
 
-        if (userProfile) {
+        if (!response.ok) {
+          throw new Error(data.error || "Ошибка проверки пользователя");
+        }
+
+        if (data.exists && data.user) {
           // User exists -> show dashboard (Personal Cabinet)
           if (process.env.NODE_ENV === "development") {
             console.log("[ProfilePage] User exists, showing Personal Cabinet");
           }
-          setUserId(userProfile.id);
+          setUserId(data.user.id);
           setUserCheckStatus("hasUser");
           setNeedsOnboarding(false);
+          
+          // Store subscription info if available
+          if (data.subscription) {
+            setSubscription(data.subscription);
+          }
         } else {
           // User doesn't exist -> show onboarding
           if (process.env.NODE_ENV === "development") {
@@ -139,52 +156,9 @@ function ProfilePageContent() {
     }
   }, [userIdParam, userCheckStatus]);
 
-  // STEP 3: Unified onboarding check (consent + profile completion) - only if user exists
+  // STEP 3: Load profile data if user exists (no onboarding check - user exists means show dashboard)
   useEffect(() => {
     if (!userId || userCheckStatus !== "hasUser") return;
-
-    const checkOnboarding = async () => {
-      setCheckingPrivacy(true);
-      try {
-        const response = await fetch(`/api/onboarding/status?userId=${userId}`);
-        const data = await response.json();
-
-        if (response.ok && data.ok) {
-          // Only redirect if consent is missing OR profile is incomplete
-          if (!data.hasConsent) {
-            // Consent missing -> redirect to consent page
-            router.push(`/privacy/consent?id=${userId}`);
-            return;
-          }
-          
-          if (!data.profileComplete) {
-            // Profile incomplete -> redirect to registration
-            router.push(`/registration?id=${userId}`);
-            return;
-          }
-          
-          // Both consent and profile are complete - allow access to dashboard
-          setNeedsOnboarding(false);
-        } else {
-          // If error, log but allow continue (graceful degradation)
-          console.warn("[ProfilePage] Ошибка проверки онбординга:", data.error);
-          setNeedsOnboarding(false);
-        }
-      } catch (err) {
-        console.error("[ProfilePage] Ошибка проверки онбординга:", err);
-        // При ошибке разрешаем продолжить
-        setNeedsOnboarding(false);
-      } finally {
-        setCheckingPrivacy(false);
-      }
-    };
-
-    checkOnboarding();
-  }, [userId, userCheckStatus, router]);
-
-  // Загрузка данных профиля
-  useEffect(() => {
-    if (!userId) return;
 
     const loadProfile = async () => {
       setLoading(true);
@@ -216,7 +190,7 @@ function ProfilePageContent() {
 
         setAvatarUrl(data.avatarUrl || null);
 
-        // Инициализируем поля редактирования
+        // Initialize edit fields
         setEditName(data.name || "");
         setEditWeight(data.weightKg?.toString() || "");
         setEditHeight(data.heightCm?.toString() || "");
@@ -229,15 +203,16 @@ function ProfilePageContent() {
         setError(err.message || "Ошибка загрузки профиля");
       } finally {
         setLoading(false);
+        setCheckingPrivacy(false);
       }
     };
 
     loadProfile();
-  }, [userId]);
+  }, [userId, userCheckStatus]);
 
-  // Load subscription status
+  // Load subscription status (if not already loaded from /api/user/profile)
   useEffect(() => {
-    if (!userId) return;
+    if (!userId || subscription) return;
 
     const loadSubscription = async () => {
       setSubscriptionLoading(true);
@@ -255,7 +230,7 @@ function ProfilePageContent() {
     };
 
     loadSubscription();
-  }, [userId]);
+  }, [userId, subscription]);
 
   // Если профиль пустой — отправляем на онбординг
   useEffect(() => {
@@ -538,10 +513,26 @@ function ProfilePageContent() {
     });
   };
 
+  // Debug panel (development only)
+  const tgUser = typeof window !== "undefined" ? getTgUser() : null;
+  const tgExists = typeof window !== "undefined" && !!(window as any).Telegram;
+
   return (
     <AppLayout>
       <div className="min-h-screen bg-background p-4 py-8">
       <div className="max-w-md mx-auto">
+        {/* Debug Panel - Development Only */}
+        {process.env.NODE_ENV === "development" && (
+          <div className="mb-4 p-3 bg-yellow-50 border border-yellow-200 rounded-lg text-xs">
+            <div className="font-semibold mb-1">🔍 Debug Info:</div>
+            <div>Telegram WebApp: {tgExists ? "✅" : "❌"}</div>
+            <div>tgUserId: {tgUser?.id || "null"}</div>
+            <div>username: {tgUser?.username || "—"}</div>
+            <div>userCheckStatus: {userCheckStatus}</div>
+            <div>userId: {userId || "null"}</div>
+          </div>
+        )}
+
         {/* Заголовок */}
         <div className="mb-6 text-center">
           <h1 className="text-2xl font-bold text-textPrimary">Личный кабинет</h1>

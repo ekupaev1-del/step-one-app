@@ -3,38 +3,77 @@
  * Helper functions to work with Telegram WebApp API
  */
 
-export interface TelegramUser {
-  telegramId: number;
-  username?: string;
-  firstName?: string;
-  lastName?: string;
-}
+export type TgUser = { 
+  id: number; 
+  username?: string; 
+  first_name?: string; 
+  last_name?: string;
+};
 
 /**
  * Gets current Telegram user from WebApp initDataUnsafe
  * Returns null if not in Telegram WebApp context
+ * Includes fallback parser for tgWebAppData from URL hash
  */
-export function getCurrentTelegramUser(): TelegramUser | null {
-  if (typeof window === "undefined") {
-    return null;
-  }
-
+export function getTgUser(): TgUser | null {
+  if (typeof window === "undefined") return null;
+  
   const tg = (window as any).Telegram?.WebApp;
-  if (!tg) {
-    return null;
+  if (!tg) return null;
+
+  try { 
+    tg.ready(); 
+  } catch {}
+
+  const u = tg.initDataUnsafe?.user;
+  if (u?.id) {
+    return { 
+      id: u.id, 
+      username: u.username, 
+      first_name: u.first_name, 
+      last_name: u.last_name 
+    };
   }
 
-  // Use initDataUnsafe for direct access (no validation needed on client)
-  const user = tg.initDataUnsafe?.user;
-  if (!user || !user.id) {
-    return null;
+  // fallback: try parse tgWebAppData from location.hash
+  const hash = window.location.hash || "";
+  if (hash.includes("tgWebAppData=")) {
+    const params = new URLSearchParams(hash.replace(/^#/, ""));
+    const data = params.get("tgWebAppData");
+    if (data) {
+      try {
+        const decoded = decodeURIComponent(data);
+        const p = new URLSearchParams(decoded);
+        const userStr = p.get("user");
+        if (userStr) {
+          const user = JSON.parse(userStr);
+          if (user?.id) {
+            return { 
+              id: user.id, 
+              username: user.username, 
+              first_name: user.first_name, 
+              last_name: user.last_name 
+            };
+          }
+        }
+      } catch {}
+    }
   }
 
+  return null;
+}
+
+/**
+ * Legacy export for backward compatibility
+ */
+export function getCurrentTelegramUser() {
+  const tgUser = getTgUser();
+  if (!tgUser) return null;
   return {
-    telegramId: Number(user.id),
-    username: user.username,
-    firstName: user.first_name,
-    lastName: user.last_name,
+    telegramId: tgUser.id,
+    username: tgUser.username,
+    firstName: tgUser.first_name,
+    lastName: tgUser.last_name,
   };
 }
 
