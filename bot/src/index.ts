@@ -602,7 +602,8 @@ async function handleQuestionnaireSaved(
     return;
   }
 
-  if (parsedData.action !== "questionnaire_saved") {
+  // Support both "questionnaire_saved" and "onboarding_saved" actions
+  if (parsedData.action !== "questionnaire_saved" && parsedData.action !== "onboarding_saved") {
     console.log("[bot] Неизвестное действие:", parsedData.action);
     return;
   }
@@ -610,6 +611,31 @@ async function handleQuestionnaireSaved(
   console.log("[bot] ========== ОБРАБОТКА QUESTIONNAIRE_SAVED ==========");
   console.log("[bot] Обработка questionnaire_saved для telegram_id:", telegram_id);
   console.log("[bot] Chat ID для отправки:", chat_id);
+
+  // Upsert user in users table using telegram_user_id as key
+  // This ensures the user exists even if they weren't created via /start
+  const telegramUserIdFromPayload = parsedData.telegram_user_id ? Number(parsedData.telegram_user_id) : null;
+  const telegramUserIdToUse = telegramUserIdFromPayload && Number.isFinite(telegramUserIdFromPayload) 
+    ? telegramUserIdFromPayload 
+    : telegram_id;
+
+  if (telegramUserIdToUse && Number.isFinite(telegramUserIdToUse) && telegramUserIdToUse > 0) {
+    try {
+      const { data: upserted, error: upsertError } = await supabase
+        .from("users")
+        .upsert({ telegram_id: telegramUserIdToUse }, { onConflict: "telegram_id", ignoreDuplicates: false })
+        .select("id")
+        .single();
+
+      if (upsertError) {
+        console.error("[bot] Ошибка upsert пользователя:", upsertError);
+      } else if (upserted) {
+        console.log(`[bot] ✅ Пользователь upserted: id=${upserted.id}, telegram_id=${telegramUserIdToUse}`);
+      }
+    } catch (upsertErr: any) {
+      console.error("[bot] Исключение при upsert пользователя:", upsertErr);
+    }
+  }
 
   // ВАЖНО: Получаем СВЕЖИЕ данные пользователя из БД после сохранения анкеты
   await new Promise((resolve) => setTimeout(resolve, 500));
@@ -623,7 +649,7 @@ async function handleQuestionnaireSaved(
     const { data: userData, error: userError } = await supabase
       .from("users")
       .select("id, calories")
-      .eq("telegram_id", telegram_id)
+      .eq("telegram_id", telegramUserIdToUse)
       .maybeSingle();
 
     if (userError) {
@@ -652,7 +678,7 @@ async function handleQuestionnaireSaved(
   console.log("[bot] Telegram ID:", telegram_id);
 
   // ШАГ 1: Отправляем подтверждение и главное меню
-  const confirmationMessage = "✅ Профиль сохранен. Что вы хотите сделать дальше?";
+  const confirmationMessage = "Анкета сохранена ✅ Что дальше?";
   const targetChatId = chat_id || telegram_id;
 
   try {

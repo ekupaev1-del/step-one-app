@@ -430,9 +430,26 @@ export function QuestionnaireFormContent({ initialUserId }: { initialUserId?: st
           console.log("[handleSubmit] window.Telegram:", typeof window !== "undefined" ? ((window as any).Telegram ? "exists" : "null") : "window undefined");
           
           if (webApp && typeof webApp.sendData === 'function') {
+            // Extract telegram_user_id from initData
+            let telegramUserId: number | null = null;
+            try {
+              const initData = webApp.initData;
+              if (initData) {
+                const urlParams = new URLSearchParams(initData);
+                const userParam = urlParams.get("user");
+                if (userParam) {
+                  const user = JSON.parse(userParam);
+                  telegramUserId = user?.id ? Number(user.id) : null;
+                }
+              }
+            } catch (e) {
+              console.warn("[handleSubmit] Could not extract telegram_user_id from initData:", e);
+            }
+            
             const dataToSend = JSON.stringify({
-              action: "questionnaire_saved",
-              userId: userId
+              action: "onboarding_saved",
+              userId: userId,
+              telegram_user_id: telegramUserId
             });
             console.log("[handleSubmit] Отправка данных в бот:", dataToSend);
             

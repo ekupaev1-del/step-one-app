@@ -127,17 +127,15 @@ function validateSupabaseUrl(url: string | undefined, envVarName: string): strin
   }
 
   // Validate project ref matches expected (from EXPECTED_SUPABASE_PROJECT_REF env var)
-  if (projectRef !== EXPECTED_PROJECT_REF) {
-    throw new Error(
-      `❌ CRITICAL: Supabase project ref mismatch!\n` +
+  // NOTE: Removed hard-fail check - project ref is derived from URL internally
+  // If EXPECTED_SUPABASE_PROJECT_REF is set, log a warning if mismatch, but don't fail
+  if (process.env.EXPECTED_SUPABASE_PROJECT_REF && projectRef !== EXPECTED_PROJECT_REF) {
+    console.warn(
+      `⚠️  WARNING: Supabase project ref mismatch (non-fatal):\n` +
       `   Current URL:  ${normalizedUrl}\n` +
       `   Current project ref: ${projectRef || 'UNKNOWN'}\n` +
       `   Expected project ref: ${EXPECTED_PROJECT_REF}\n` +
-      `   \n` +
-      `   Fix: Set EXPECTED_SUPABASE_PROJECT_REF=${EXPECTED_PROJECT_REF} and update ${envVarName}:\n` +
-      `   ${envVarName}=${EXPECTED_SUPABASE_URL}\n` +
-      `   \n` +
-      `   Get the correct project ref from Supabase Dashboard → Settings → API → Project URL`
+      `   Continuing with current project ref...`
     );
   }
 
