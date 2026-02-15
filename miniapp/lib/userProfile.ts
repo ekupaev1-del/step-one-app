@@ -4,6 +4,7 @@
  */
 
 import { getBrowserSupabaseClient } from "./supabase/client";
+import type { UserRow } from "./types";
 
 export interface UserProfile {
   id: number;
@@ -31,18 +32,25 @@ export async function fetchUserProfile(telegramId: number): Promise<UserProfile 
     .from("users")
     .select("*")
     .eq("telegram_id", telegramId)
-    .maybeSingle();
+    .maybeSingle<UserRow>();
 
   if (error) {
     console.error("[fetchUserProfile] Supabase error:", error);
     throw new Error(`Database error: ${error.message}`);
   }
 
-  if (user) {
+  if (user && user.telegram_id) {
     if (process.env.NODE_ENV === "development") {
       console.log("[fetchUserProfile] User exists:", { id: user.id, telegram_id: user.telegram_id });
     }
-    return user as UserProfile;
+    return {
+      id: user.id,
+      telegram_id: user.telegram_id,
+      name: user.name,
+      calories: user.calories,
+      privacy_accepted: user.privacy_accepted ?? false,
+      terms_accepted: user.terms_accepted ?? false,
+    } as UserProfile;
   }
 
   if (process.env.NODE_ENV === "development") {

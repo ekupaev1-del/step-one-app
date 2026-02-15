@@ -81,35 +81,32 @@ function ProfilePageContent() {
       setUserCheckError(null);
 
       try {
-        // Get Telegram user from WebApp
-        const telegramUser = getCurrentTelegramUser();
-        if (!telegramUser) {
-          console.warn("[ProfilePage] Telegram WebApp not available");
-          // Fallback to userIdParam if available
-          if (userIdParam) {
-            const n = Number(userIdParam);
-            if (Number.isFinite(n) && n > 0) {
-              setUserId(n);
-              setUserCheckStatus("hasUser");
-              return;
-            }
-          }
+        // Get telegram user id directly from Telegram WebApp
+        const tg = (window as any).Telegram?.WebApp;
+        if (!tg) {
           setUserCheckStatus("error");
-          setUserCheckError("Telegram WebApp недоступен. Откройте приложение через Telegram бота.");
+          setUserCheckError("Откройте приложение через Telegram бота.");
+          return;
+        }
+
+        const telegramId = tg.initDataUnsafe?.user?.id;
+        if (!telegramId || typeof telegramId !== "number") {
+          setUserCheckStatus("error");
+          setUserCheckError("Не удалось получить ID пользователя Telegram. Откройте приложение через Telegram бота.");
           return;
         }
 
         if (process.env.NODE_ENV === "development") {
-          console.log("[ProfilePage] Checking user by telegram_id:", telegramUser.telegramId);
+          console.log("[ProfilePage] Checking user by telegram_id:", telegramId);
         }
 
         // Fetch user profile by telegram_id
-        const userProfile = await fetchUserProfile(telegramUser.telegramId);
+        const userProfile = await fetchUserProfile(telegramId);
 
         if (userProfile) {
-          // User exists -> show dashboard
+          // User exists -> show dashboard (Personal Cabinet)
           if (process.env.NODE_ENV === "development") {
-            console.log("[ProfilePage] User exists, showing dashboard");
+            console.log("[ProfilePage] User exists, showing Personal Cabinet");
           }
           setUserId(userProfile.id);
           setUserCheckStatus("hasUser");

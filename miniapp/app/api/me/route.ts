@@ -7,6 +7,7 @@
 
 import { NextResponse } from "next/server";
 import { getServerSupabaseClient } from "@/lib/supabase/server";
+import type { UserRow } from "@/lib/types";
 import crypto from "crypto";
 
 export const dynamic = 'force-dynamic';
@@ -106,11 +107,13 @@ export async function GET(req: Request) {
 
     // Query Supabase users table by telegram_id
     const supabase = getServerSupabaseClient();
-    const { data: user, error } = await supabase
+    const { data: userData, error } = await supabase
       .from('users')
       .select('id, telegram_id, name, calories, privacy_accepted, terms_accepted')
       .eq('telegram_id', telegramUserId)
       .maybeSingle();
+    
+    const user = userData as UserRow | null;
 
     if (error) {
       console.error('[api/me] Supabase error:', error);
@@ -120,7 +123,7 @@ export async function GET(req: Request) {
       );
     }
 
-    if (user) {
+    if (user && user.telegram_id) {
       return NextResponse.json({
         exists: true,
         user: {
@@ -128,8 +131,8 @@ export async function GET(req: Request) {
           telegram_id: user.telegram_id,
           name: user.name,
           calories: user.calories,
-          privacy_accepted: user.privacy_accepted,
-          terms_accepted: user.terms_accepted,
+          privacy_accepted: user.privacy_accepted ?? false,
+          terms_accepted: user.terms_accepted ?? false,
         }
       });
     }
