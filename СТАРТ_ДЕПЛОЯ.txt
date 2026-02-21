@@ -1,27 +1,25 @@
 ╔══════════════════════════════════════════════════════════════╗
-║     🚀 АВТОМАТИЧЕСКИЙ ДЕПЛОЙ В VERCEL - ПРЯМО СЕЙЧАС         ║
+║     🚀 АВТОМАТИЧЕСКИЙ ДЕПЛОЙ В VERCEL - БЫСТРЫЙ СТАРТ       ║
 ╚══════════════════════════════════════════════════════════════╝
 
-📋 ЧТО НУЖНО СДЕЛАТЬ (3 минуты):
+📋 ЧТО НУЖНО СДЕЛАТЬ (5 минут):
 
 1. Откройте: https://vercel.com/new
 
 2. Нажмите "Import Git Repository"
-   → Выберите: ekupaev1-del/step-one-app
+   → Выберите ваш репозиторий step-one-app
    → Нажмите "Import"
 
-3. ВАЖНО - укажите настройки:
-   ⚠️  Root Directory: miniapp
-   → Production Branch: main
+3. В настройках проекта укажите:
+   ⚠️  Root Directory: miniapp  (ОБЯЗАТЕЛЬНО!)
 
 4. Добавьте переменные окружения:
-   → Нажмите "Environment Variables"
-   → Добавьте:
-     • SUPABASE_URL
-     • SUPABASE_SERVICE_ROLE_KEY
-     • NEXT_PUBLIC_SUPABASE_URL
-     • NEXT_PUBLIC_SUPABASE_ANON_KEY
-   → Выберите: ✅ Production, ✅ Preview, ✅ Development
+   SUPABASE_URL=...
+   SUPABASE_SERVICE_ROLE_KEY=...
+   NEXT_PUBLIC_SUPABASE_URL=...
+   NEXT_PUBLIC_SUPABASE_ANON_KEY=...
+   
+   Выберите: ✅ Production, ✅ Preview, ✅ Development
 
 5. Нажмите "Deploy"
 
@@ -29,9 +27,13 @@
 
 ✅ ПОСЛЕ НАСТРОЙКИ:
 
-Просто делайте push:
+Просто делайте push в GitHub:
    git push origin main  → автоматический production деплой
+   git push origin dev   → автоматический preview деплой
 
 Vercel автоматически задеплоит изменения!
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+📖 Подробная инструкция: АВТОМАТИЧЕСКИЙ_ДЕПЛОЙ.md
+🔍 Проверка готовности: .\check-deploy-ready.ps1

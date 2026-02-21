@@ -7,8 +7,8 @@
     "build": "next build",
     "start": "next start",
     "lint": "eslint",
-    "deploy": "echo '⚠️  Use Vercel Git integration instead. Push to GitHub main branch for automatic deployment.'",
-    "deploy:preview": "echo '⚠️  Use Vercel Git integration instead. Push to GitHub for automatic preview deployments.'",
+    "deploy": "vercel --prod",
+    "deploy:preview": "vercel",
     "db:link": "supabase link --project-ref $SUPABASE_PROJECT_REF",
     "db:push": "supabase db push",
     "db:reset": "echo 'Run supabase/FULL_RESET.sql in Supabase SQL Editor instead'"

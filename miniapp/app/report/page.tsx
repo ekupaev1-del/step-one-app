@@ -263,7 +263,7 @@ function ReportPageContent(): ReactElement {
     setLoadingDayReport(true);
     // КРИТИЧНО: Очищаем старые данные перед загрузкой
     setDayReport(null);
-    setError(null);
+    setReportError(null);
 
     try {
       const timestamp = Date.now();
@@ -287,7 +287,7 @@ function ReportPageContent(): ReactElement {
       const data = await response.json();
 
       if (!data.ok) {
-        setError(data.error || "Ошибка загрузки отчёта");
+        setReportError(data.error || "Ошибка загрузки отчёта");
         setDayReport(null);
         return;
       }
@@ -333,7 +333,7 @@ function ReportPageContent(): ReactElement {
       });
     } catch (err: any) {
       console.error("[loadDayReport] Ошибка:", err);
-      setError(err.message || "Ошибка загрузки отчёта");
+      setReportError(err.message || "Ошибка загрузки отчёта");
       setDayReport(null);
     } finally {
       setLoadingDayReport(false);
@@ -353,7 +353,7 @@ function ReportPageContent(): ReactElement {
     const dateToReload = selectedDate;
 
     setLoading(true);
-    setError(null);
+    setReportError(null);
 
     try {
       console.log("[updateMeal] Начинаем обновление:", { mealId, updates, dateToReload });
@@ -410,7 +410,7 @@ function ReportPageContent(): ReactElement {
         }
         
         console.error("[updateMeal] Ошибка в ответе API:", data.error);
-        setError(data.error || "Ошибка обновления");
+        setReportError(data.error || "Ошибка обновления");
         return;
       }
 
@@ -443,7 +443,7 @@ function ReportPageContent(): ReactElement {
       console.log("[updateMeal] ✅ Отчёт перезагружен, UI должен обновиться");
     } catch (err: any) {
       console.error("[updateMeal] Исключение:", err);
-      setError(err.message || "Ошибка обновления");
+      setReportError(err.message || "Ошибка обновления");
     } finally {
       setLoading(false);
     }
@@ -463,7 +463,7 @@ function ReportPageContent(): ReactElement {
     const dateToReload = selectedDate;
 
     setLoading(true);
-    setError(null);
+    setReportError(null);
 
     try {
       console.log("[deleteMeal] Начинаем удаление:", { mealId, dateToReload });
@@ -517,7 +517,7 @@ function ReportPageContent(): ReactElement {
         }
         
         console.error("[deleteMeal] Ошибка в ответе API:", data.error);
-        setError(data.error || "Ошибка удаления");
+        setReportError(data.error || "Ошибка удаления");
         return;
       }
 
@@ -550,7 +550,7 @@ function ReportPageContent(): ReactElement {
       console.log("[deleteMeal] ✅ Отчёт перезагружен, UI должен обновиться");
     } catch (err: any) {
       console.error("[deleteMeal] Исключение:", err);
-      setError(err.message || "Ошибка удаления");
+      setReportError(err.message || "Ошибка удаления");
     } finally {
       setLoading(false);
     }
@@ -582,7 +582,7 @@ function ReportPageContent(): ReactElement {
     
     // Загружаем отчёт за новый день
     setDayReport(null);
-    setError(null);
+    setReportError(null);
     setEditingMeal(null);
     loadDayReport(newDateKey, true);
     loadCalendar();
@@ -629,14 +629,6 @@ function ReportPageContent(): ReactElement {
     const month = currentMonth.getMonth() + 1;
     return `${year}-${String(month).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
   };
-
-  if (checkingPrivacy) {
-    return (
-      <div className="min-h-screen flex items-center justify-center p-4 bg-background">
-        <div className="text-textSecondary">Загрузка...</div>
-      </div>
-    );
-  }
 
   if (error && !userId) {
     return (
@@ -869,7 +861,7 @@ function ReportPageContent(): ReactElement {
                       onClick={async () => {
                         setShowCalendar(false);
                         setDayReport(null);
-                        setError(null);
+                        setReportError(null);
                         setEditingMeal(null);
                         await loadCalendar();
                         await loadDayReport(dateKey, true);
@@ -978,7 +970,7 @@ function ReportPageContent(): ReactElement {
                   onClick={async () => {
                     // КРИТИЧНО: Полностью очищаем состояние перед загрузкой
                     setDayReport(null);
-                    setError(null);
+                    setReportError(null);
                     setEditingMeal(null);
                     
                     // Обновляем календарь перед открытием отчёта
