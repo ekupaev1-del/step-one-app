@@ -8,6 +8,9 @@ import AppLayout from "../components/AppLayout";
 import { useUserSession } from "../providers/UserSessionProvider";
 import { withUserId } from "@/lib/user/withUserId";
 
+// Force dynamic rendering to avoid static generation issues with useSearchParams in AppNavigation/UserSessionProvider
+export const dynamic = 'force-dynamic';
+
 interface ProfileData {
   name: string | null;
   avatarUrl: string | null;
