@@ -56,13 +56,16 @@ export async function getEffectiveUserId(
         .eq("telegram_id", telegramId)
         .maybeSingle();
 
-      if (!error && user?.id) {
-        // Cache resolved user ID
-        try {
-          const entry: CacheEntry = { userId: user.id, timestamp: Date.now() };
-          localStorage.setItem(USER_ID_CACHE_KEY, JSON.stringify(entry));
-        } catch {}
-        return { userId: user.id, source: "telegram" };
+      if (!error && user) {
+        const userId = (user as { id: number }).id;
+        if (userId) {
+          // Cache resolved user ID
+          try {
+            const entry: CacheEntry = { userId, timestamp: Date.now() };
+            localStorage.setItem(USER_ID_CACHE_KEY, JSON.stringify(entry));
+          } catch {}
+          return { userId, source: "telegram" };
+        }
       }
     } catch (err) {
       console.error("[getEffectiveUserId] Error looking up user by telegram_id:", err);
