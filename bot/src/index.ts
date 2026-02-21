@@ -2584,7 +2584,7 @@ bot.command("отчет", async (ctx) => {
       allMeals.push(...mealsByDiaryUserId);
       console.log(`[bot] /отчет: Найдено ${mealsByDiaryUserId.length} записей по diaryUserId=${diaryUserId}`);
       // #region agent log
-      fetch('http://127.0.0.1:7242/ingest/43e8883f-375d-4d43-af6f-fef79b5ebbe3',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'bot/src/index.ts:1827',message:'HYP-A: Bot found meals by diaryUserId',data:{diaryUserId,count:mealsByDiaryUserId.length,mealIds:mealsByDiaryUserId.map(m=>m.id)},timestamp:Date.now(),sessionId:'debug-sync',runId:'run1',hypothesisId:'A'})}).catch(()=>{});
+      fetch('http://127.0.0.1:7242/ingest/43e8883f-375d-4d43-af6f-fef79b5ebbe3',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'bot/src/index.ts:1827',message:'HYP-A: Bot found meals by diaryUserId',data:{diaryUserId,count:mealsByDiaryUserId.length,mealIds:mealsByDiaryUserId.map((m: any)=>m.id)},timestamp:Date.now(),sessionId:'debug-sync',runId:'run1',hypothesisId:'A'})}).catch(()=>{});
       // #endregion
     }
 
@@ -2613,7 +2613,7 @@ bot.command("отчет", async (ctx) => {
         allMeals.push(...mealsById);
         console.log(`[bot] /отчет: Найдено дополнительных ${mealsById.length} записей по id=${user.id}`);
         // #region agent log
-        fetch('http://127.0.0.1:7242/ingest/43e8883f-375d-4d43-af6f-fef79b5ebbe3',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'bot/src/index.ts:1842',message:'HYP-B: Bot found meals in fallback search',data:{userId:user.id,count:mealsById.length,mealIds:mealsById.map(m=>m.id)},timestamp:Date.now(),sessionId:'debug-sync',runId:'run1',hypothesisId:'B'})}).catch(()=>{});
+        fetch('http://127.0.0.1:7242/ingest/43e8883f-375d-4d43-af6f-fef79b5ebbe3',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'bot/src/index.ts:1842',message:'HYP-B: Bot found meals in fallback search',data:{userId:user.id,count:mealsById.length,mealIds:mealsById.map((m: any)=>m.id)},timestamp:Date.now(),sessionId:'debug-sync',runId:'run1',hypothesisId:'B'})}).catch(()=>{});
         // #endregion
       }
     }
@@ -2632,7 +2632,7 @@ bot.command("отчет", async (ctx) => {
     const meals = Array.from(uniqueMealsMap.values())
       .sort((a, b) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime());
     // #region agent log
-    fetch('http://127.0.0.1:7242/ingest/43e8883f-375d-4d43-af6f-fef79b5ebbe3',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'bot/src/index.ts:1859',message:'HYP-C: Bot final result',data:{todayISO,endOfDayISO,mealsCount:meals.length,mealCreatedAts:meals.map(m=>m.created_at)},timestamp:Date.now(),sessionId:'debug-sync',runId:'run1',hypothesisId:'C'})}).catch(()=>{});
+    fetch('http://127.0.0.1:7242/ingest/43e8883f-375d-4d43-af6f-fef79b5ebbe3',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'bot/src/index.ts:1859',message:'HYP-C: Bot final result',data:{todayISO,endOfDayISO,mealsCount:meals.length,mealCreatedAts:meals.map((m: any)=>m.created_at)},timestamp:Date.now(),sessionId:'debug-sync',runId:'run1',hypothesisId:'C'})}).catch(()=>{});
     // #endregion
 
     if (error && allMeals.length === 0) {

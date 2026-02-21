@@ -39,5 +39,6 @@ export function getServerSupabaseClient(): any {
   return serverClient;
 }
 
-// Export a default instance for convenience
-export const supabase = getServerSupabaseClient();
+// DO NOT export a default instance - it would be initialized at import time
+// and crash the build if env vars are missing.
+// Always use getServerSupabaseClient() function instead.

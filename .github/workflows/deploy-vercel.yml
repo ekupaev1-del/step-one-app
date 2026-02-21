@@ -1,10 +1,11 @@
-# DEPRECATED: Используйте vercel-deploy-simple.yml или настройте Vercel Git Integration
-# Этот файл оставлен для обратной совместимости
+# DISABLED: Vercel Git Integration handles deployments automatically
+# This workflow is disabled - Vercel deploys on push via Git integration
 
-name: Deploy to Vercel (Legacy)
+name: Deploy to Vercel (Legacy - DISABLED)
 
 on:
-  workflow_dispatch: # Только ручной запуск (отключен автоматический триггер)
+  workflow_dispatch: # Only manual trigger - auto-deploy disabled
+  # push: # DISABLED - Vercel Git integration handles this
 
 jobs:
   deploy:
@@ -38,11 +39,13 @@ jobs:
           OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
       
-      - name: Deploy to Vercel
-        uses: amondnet/vercel-action@v25
-        with:
-          vercel-token: ${{ secrets.VERCEL_TOKEN }}
-          vercel-org-id: ${{ secrets.VERCEL_ORG_ID }}
-          vercel-project-id: ${{ secrets.VERCEL_PROJECT_ID }}
-          vercel-args: '--prod'
-          working-directory: ./miniapp
+      # DISABLED: Vercel Git Integration handles deployments automatically
+      # - name: Deploy to Vercel
+      #   if: false  # Always skip - Vercel Git integration handles this
+      #   uses: amondnet/vercel-action@v25
+      #   with:
+      #     vercel-token: ${{ secrets.VERCEL_TOKEN }}
+      #     vercel-org-id: ${{ secrets.VERCEL_ORG_ID }}
+      #     vercel-project-id: ${{ secrets.VERCEL_PROJECT_ID }}
+      #     vercel-args: '--prod'
+      #     working-directory: ./miniapp
