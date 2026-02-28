@@ -4,6 +4,11 @@ import { getServerSupabaseClient } from "@/lib/supabase/server";
 
 export const dynamic = 'force-dynamic';
 
+// Simple in-memory throttle to prevent spamming bot notifications
+// Key: telegram_id, Value: timestamp of last notification
+const notificationThrottle = new Map<number, number>();
+const THROTTLE_MS = 60000; // 1 minute
+
 // УДАЛЕНО: sendTelegramMessage больше не используется
 // Меню теперь отправляется только через бота после получения questionnaire_saved
 // Это гарантирует единую логику через sendMainMenu()
@@ -163,12 +168,47 @@ export async function POST(req: Request) {
   console.log("[/api/save] OK updated id:", numericId);
   console.log("[/api/save] Данные пользователя:", { id: user.id, telegram_id: user.telegram_id });
 
-  // ВАЖНО: НЕ отправляем меню из API - пусть бот сам отправляет меню после получения questionnaire_saved
-  // Это гарантирует единую логику отправки меню через sendMainMenu()
+  // Trigger bot follow-up message after onboarding save
   const isFullQuestionnaireSaved = user.telegram_id && isFirstTime && calories !== undefined && calories !== null;
   
   if (isFullQuestionnaireSaved) {
-    console.log("[/api/save] Полная анкета сохранена - бот отправит меню после получения questionnaire_saved");
+    // Throttle: only send notification once per minute per telegram_id
+    const now = Date.now();
+    const lastNotification = notificationThrottle.get(user.telegram_id);
+    const shouldThrottle = lastNotification && (now - lastNotification) < THROTTLE_MS;
+    
+    if (shouldThrottle) {
+      console.log("[/api/save] Пропускаем уведомление (throttle):", {
+        telegramId: user.telegram_id,
+        lastNotification: new Date(lastNotification!).toISOString(),
+      });
+    } else {
+      console.log("[/api/save] Полная анкета сохранена - отправляем сообщение боту");
+      
+      // Update throttle
+      notificationThrottle.set(user.telegram_id, now);
+      
+      // Call notify-bot API to send main menu
+      // Use fire-and-forget to avoid blocking the response
+      const baseUrl = process.env.NEXT_PUBLIC_APP_URL || 
+                      process.env.VERCEL_URL ? `https://${process.env.VERCEL_URL}` :
+                      req.url.split('/api')[0];
+      
+      fetch(`${baseUrl}/api/notify-bot`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          userId: user.id,
+          message: "✅ Профиль сохранен. Выберите, что делать дальше:",
+          sendMenu: true,
+        }),
+      }).catch((err) => {
+        // Log error but don't fail the save request
+        console.error("[/api/save] Ошибка отправки сообщения боту:", err);
+      });
+    }
   } else if (user.telegram_id && !isFirstTime) {
     console.log("[/api/save] Обновление анкеты - сообщение не отправляем");
   } else if (user.telegram_id && (calories === undefined || calories === null)) {

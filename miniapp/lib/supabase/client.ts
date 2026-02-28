@@ -39,5 +39,8 @@ export function getBrowserSupabaseClient() {
 // Legacy export name for compatibility
 export const getClientSupabaseClient = getBrowserSupabaseClient;
 
-// Export a default instance for convenience
-export const supabase = getBrowserSupabaseClient();
+// DO NOT export a default instance - it would be initialized at import time
+// and crash the build if env vars are missing.
+// Always use getBrowserSupabaseClient() function instead.
+// If you need a default instance, create it lazily:
+// const supabase = getBrowserSupabaseClient();

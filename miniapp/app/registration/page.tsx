@@ -3,6 +3,7 @@
 import { Suspense, useEffect, useState } from "react";
 import { useSearchParams, useRouter } from "next/navigation";
 import { QuestionnaireFormContent } from "../questionnaire";
+import { getTelegramUserId } from "@/lib/telegram";
 
 export const dynamic = "force-dynamic";
 
@@ -38,16 +39,44 @@ function RegistrationPageContent() {
     }
   }, [searchParams]);
 
-  // Не проверяем согласие здесь - пусть анкета сама покажет экран согласия
+  // Check if user already exists by telegram_id (cabinet gating)
   useEffect(() => {
-    if (!mounted || !userId) {
-      setCheckingPrivacy(false);
+    if (!mounted) {
       return;
     }
-    // Пропускаем проверку - анкета сама покажет экран согласия если нужно
+
+    const checkExistingUser = async () => {
+      const telegramId = getTelegramUserId();
+      
+      if (!telegramId) {
+        // No telegram ID - proceed with onboarding
         setPrivacyAccepted(true);
         setCheckingPrivacy(false);
-  }, [mounted, userId]);
+        return;
+      }
+
+      // Check if user exists by telegram_id
+      try {
+        const response = await fetch(`/api/user/by-telegram-id?telegramId=${telegramId}`);
+        const data = await response.json();
+
+        if (data.ok && data.found && data.userId) {
+          // User already exists - redirect to profile
+          router.push(`/profile?id=${data.userId}`);
+          return;
+        }
+      } catch (err: any) {
+        console.error("[registration] Error checking user by telegram_id:", err);
+        // On error, proceed with onboarding
+      }
+
+      // User doesn't exist or error - proceed with onboarding
+      setPrivacyAccepted(true);
+      setCheckingPrivacy(false);
+    };
+
+    checkExistingUser();
+  }, [mounted, router]);
 
   // Показываем контент сразу, не ждем Suspense
   if (!mounted || checkingPrivacy) {

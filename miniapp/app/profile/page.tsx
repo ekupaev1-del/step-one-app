@@ -7,6 +7,7 @@ import "../globals.css";
 import AppLayout from "../components/AppLayout";
 import { useUserSession } from "../providers/UserSessionProvider";
 import { withUserId } from "@/lib/user/withUserId";
+import { getTelegramUserId, getTelegramDiagnostics } from "@/lib/telegram";
 
 // Force dynamic rendering to avoid static generation issues with useSearchParams in AppNavigation/UserSessionProvider
 export const dynamic = 'force-dynamic';
@@ -54,11 +55,57 @@ function ProfilePageContent() {
   const [subscription, setSubscription] = useState<any>(null);
   const [subscriptionLoading, setSubscriptionLoading] = useState(false);
 
-  // Redirect to onboarding if user doesn't exist
+  // Cabinet gating logic: check by telegram_id if user doesn't exist by userId
   useEffect(() => {
-    if (!isLoading && !error && userId && !userExists) {
-      router.push("/registration");
+    // If user exists by userId, no need to check telegram_id
+    if (userExists && userId) {
+      return;
     }
+
+    // If still loading, wait
+    if (isLoading) {
+      return;
+    }
+
+    // If we have an error or no userId, check by telegram_id
+    const checkByTelegramId = async () => {
+      const telegramId = getTelegramUserId();
+      
+      if (!telegramId) {
+        // No telegram ID available - show diagnostics in development
+        if (process.env.NODE_ENV === "development") {
+          const diagnostics = getTelegramDiagnostics();
+          console.warn("[profile] No telegram ID available:", diagnostics);
+        }
+        // If we have userId but user doesn't exist, redirect to onboarding
+        if (userId && !userExists) {
+          router.push(`/registration?id=${userId}`);
+        } else if (!userId) {
+          router.push("/registration");
+        }
+        return;
+      }
+
+      // Check if user exists by telegram_id
+      try {
+        const response = await fetch(`/api/user/by-telegram-id?telegramId=${telegramId}`);
+        const data = await response.json();
+
+        if (data.ok && data.found && data.userId) {
+          // User exists by telegram_id - redirect to profile with correct userId
+          router.push(`/profile?id=${data.userId}`);
+        } else {
+          // User doesn't exist - redirect to onboarding
+          router.push("/registration");
+        }
+      } catch (err: any) {
+        console.error("[profile] Error checking user by telegram_id:", err);
+        // On error, redirect to onboarding
+        router.push("/registration");
+      }
+    };
+
+    checkByTelegramId();
   }, [isLoading, error, userId, userExists, router]);
 
   // Load profile data if user exists

@@ -1,139 +1,207 @@
-# Настройка автоматического деплоя в Vercel
+# ✅ Настройка автоматического деплоя на Vercel
 
 ## Текущий статус
 
-✅ Автоматический деплой уже настроен через GitHub Actions!
+✅ **Код исправлен:** Все ошибки сборки устранены
+✅ **GitHub Actions:** Удалены workflows, которые деплоили в Vercel
+✅ **Изменения запушены:** commit `38eb8b8` в ветку `main`
+✅ **Vercel Git Integration:** Должен работать автоматически
 
-Workflow файл: `.github/workflows/vercel-deploy.yml`
+---
 
-## Как это работает
+## Проверка настроек Vercel
 
-1. При каждом push в `main` → автоматический production деплой
-2. При создании PR → автоматический preview деплой
-3. Можно запустить вручную через GitHub Actions → Run workflow
+### 1. Vercel Dashboard → Project → Settings → General
 
-## Что нужно настроить (если еще не настроено)
+**Откройте:** https://vercel.com/dashboard → выберите проект → Settings → General
 
-### Шаг 1: Получите Vercel Credentials
+**Проверьте:**
+- ✅ **Root Directory:** `miniapp` (обязательно для монорепозитория)
+- ✅ **Framework Preset:** Next.js
+- ✅ **Build Command:** Можно оставить пустым (используется `vercel.json`) или `cd miniapp && npm install && npm run build`
+- ✅ **Output Directory:** Можно оставить пустым (используется `vercel.json`) или `miniapp/.next`
+- ✅ **Install Command:** Можно оставить пустым (используется `vercel.json`) или `cd miniapp && npm install`
 
-1. **VERCEL_TOKEN:**
-   - Откройте https://vercel.com/account/tokens
-   - Нажмите "Create Token"
-   - Скопируйте токен
+---
 
-2. **VERCEL_ORG_ID:**
-   - Откройте https://vercel.com/dashboard
-   - Settings → General
-   - Team ID (Organization ID)
+### 2. Vercel Dashboard → Project → Settings → Git
 
-3. **VERCEL_PROJECT_ID:**
-   - Откройте ваш проект в Vercel
-   - Settings → General
-   - Project ID
+**Откройте:** Settings → Git (tab)
 
-### Шаг 2: Добавьте Secrets в GitHub
+**Проверьте:**
+- ✅ **Production Branch:** `main` (должно совпадать с вашей веткой)
+- ✅ **Connected Repository:** Должно показывать `ekupaev1-del/step-one-app`
+- ✅ **Ignored Build Step:** ⚠️ **ДОЛЖНО БЫТЬ ПУСТЫМ** - если там есть команда, удалите её!
+- ✅ **Auto-assign Custom Domain:** Опционально
+- ✅ **Deployment Protection:** Должно быть отключено для автоматических деплоев
 
-1. Откройте ваш GitHub репозиторий
-2. Перейдите в **Settings** → **Secrets and variables** → **Actions**
-3. Нажмите **New repository secret**
-4. Добавьте каждый secret:
+**Если репозиторий НЕ подключен:**
+1. Нажмите "Connect Repository"
+2. Выберите `ekupaev1-del/step-one-app`
+3. Установите Root Directory: `miniapp`
+4. Установите Production Branch: `main`
+5. Нажмите "Connect"
 
-| Secret Name | Значение |
-|------------|----------|
-| `VERCEL_TOKEN` | Токен из Vercel (шаг 1.1) |
-| `VERCEL_ORG_ID` | Team ID из Vercel (шаг 1.2) |
-| `VERCEL_PROJECT_ID` | Project ID из Vercel (шаг 1.3) |
-| `NEXT_PUBLIC_SUPABASE_URL` | URL вашего Supabase проекта |
-| `NEXT_PUBLIC_SUPABASE_ANON_KEY` | Anon key из Supabase |
-| `SUPABASE_SERVICE_ROLE_KEY` | Service role key из Supabase |
-| `SUPABASE_URL` | URL вашего Supabase проекта (тот же что NEXT_PUBLIC_SUPABASE_URL) |
-| `OPENAI_API_KEY` | Ваш OpenAI API ключ |
-| `TELEGRAM_BOT_TOKEN` | Токен Telegram бота |
+---
 
-### Шаг 3: Проверьте деплой
+### 3. GitHub → Repository → Settings → Webhooks
 
-1. Сделайте любой commit и push в `main`:
-   ```bash
-   git add .
-   git commit -m "test: trigger deployment"
-   git push origin main
-   ```
+**Откройте:** https://github.com/ekupaev1-del/step-one-app/settings/hooks
 
-2. Проверьте GitHub Actions:
-   - Откройте GitHub → **Actions** tab
-   - Должен запуститься workflow "Deploy to Vercel"
-   - Дождитесь завершения (зеленая галочка)
+**Проверьте:**
+- ✅ Должен быть webhook с URL, содержащим `vercel.com` или `vercel.app`
+- ✅ Статус: **Active** (зеленая галочка)
+- ✅ События: Должен включать **push**
 
-3. Проверьте Vercel:
-   - Откройте Vercel Dashboard → **Deployments**
-   - Должен появиться новый деплой
-   - Статус: "Ready" (зеленый)
+**Проверка Recent Deliveries:**
+1. Кликните на webhook Vercel
+2. Перейдите на вкладку "Recent Deliveries"
+3. Должны быть недавние события push
+4. Статус должен быть `200` (успех)
+5. Если видите `4xx` или `5xx` ошибки → webhook сломан, нужно переподключить в Vercel
 
-## Альтернатива: Vercel Git Integration (проще)
+---
 
-Если не хотите настраивать GitHub Actions, используйте встроенную интеграцию Vercel:
+### 4. GitHub → Repository → Settings → Integrations → GitHub Apps
 
-1. Откройте https://vercel.com/dashboard
-2. Нажмите **Add New Project**
-3. Выберите ваш GitHub репозиторий
-4. Настройте:
-   - **Framework Preset**: Next.js
-   - **Root Directory**: `miniapp`
-   - **Build Command**: `npm run build`
-   - **Output Directory**: `.next`
-5. Добавьте Environment Variables (Settings → Environment Variables)
-6. Нажмите **Deploy**
+**Откройте:** https://github.com/ekupaev1-del/step-one-app/settings/installations
 
-После этого каждый push в `main` будет автоматически деплоиться через Vercel (без GitHub Actions).
+**Проверьте:**
+- ✅ Должно быть установлено приложение **Vercel**
+- ✅ Должен быть доступ к репозиторию `ekupaev1-del/step-one-app`
+- ✅ Права должны включать:
+  - ✅ Contents: Read
+  - ✅ Metadata: Read
+  - ✅ Pull requests: Read & Write
 
-## Проверка работы
+**Если приложение Vercel НЕ установлено:**
+- Переподключите Git в Vercel (шаг 2 выше)
+- Это автоматически установит GitHub App
 
-### После настройки:
+---
 
-1. **GitHub Actions** (если используете):
-   - GitHub → Actions → должен быть запущен workflow
-   - Статус: ✅ Success
+## Переменные окружения в Vercel
 
-2. **Vercel Dashboard**:
-   - Deployments → должен быть новый деплой
-   - Статус: ✅ Ready
+**Откройте:** Vercel Dashboard → Project → Settings → Environment Variables
 
-3. **Приложение**:
-   - Откройте URL из Vercel
-   - Должно работать без ошибок
+**Убедитесь, что установлены для Production и Preview:**
 
-## Troubleshooting
+- `NEXT_PUBLIC_SUPABASE_URL` - URL проекта Supabase
+- `NEXT_PUBLIC_SUPABASE_ANON_KEY` - Anon ключ Supabase
+- `SUPABASE_SERVICE_ROLE_KEY` - Service role ключ Supabase
+- `SUPABASE_URL` - (опционально, fallback на NEXT_PUBLIC_SUPABASE_URL)
 
-### Workflow не запускается
+**Если переменных нет:**
+1. Добавьте каждую переменную
+2. Выберите окружения: **Production**, **Preview** (и **Development** если нужно)
+3. Сохраните
 
-**Проблема**: GitHub Actions не запускается при push
+---
 
-**Решение**:
-- Проверьте что файл `.github/workflows/vercel-deploy.yml` существует
-- Проверьте что вы пушите в `main` branch
-- Проверьте что изменения в `miniapp/` директории (workflow триггерится только при изменениях в miniapp)
+## Тестирование автоматического деплоя
 
-### Деплой падает с ошибкой "Missing environment variables"
+### Вариант 1: Проверка текущего push
 
-**Проблема**: Не хватает переменных окружения
+После последнего push (`38eb8b8`) Vercel должен был автоматически создать деплой.
 
-**Решение**:
-- Проверьте что все secrets добавлены в GitHub (Settings → Secrets and variables → Actions)
-- Проверьте что названия secrets точно совпадают (чувствительны к регистру)
+**Проверьте:**
+1. Откройте: https://vercel.com/dashboard → ваш проект → Deployments
+2. Должен быть новый деплой с коммитом `38eb8b8`
+3. Статус: Building → Ready (или Error, но деплой ДОЛЖЕН появиться)
 
-### Деплой падает с ошибкой "Invalid Vercel token"
+### Вариант 2: Создать тестовый коммит
 
-**Проблема**: Неправильный VERCEL_TOKEN
+Если деплой не появился, создайте тестовый коммит:
 
-**Решение**:
-- Создайте новый токен в Vercel
-- Обновите secret `VERCEL_TOKEN` в GitHub
+```bash
+cd step-one-app/step-one-app
+echo "# Test auto-deploy $(date)" >> README.md
+git add README.md
+git commit -m "Test: trigger Vercel auto-deploy"
+git push origin main
+```
 
-## Итог
+**Ожидаемый результат:**
+- В течение 30-60 секунд в Vercel Dashboard → Deployments появится новый деплой
+- Источник: GitHub
+- Ветка: `main`
+- Коммит: ваш тестовый коммит
 
-✅ Автоматический деплой настроен  
-✅ При push в `main` → автоматический production деплой  
-✅ При PR → автоматический preview деплой  
-✅ Можно запускать вручную через GitHub Actions
+---
 
-Просто добавьте secrets в GitHub (если еще не добавлены) и все будет работать автоматически!
+## Если деплой не появляется автоматически
+
+### Проблема 1: Root Directory не установлен
+
+**Симптом:** Деплои не появляются или падают с ошибкой "Cannot find module"
+
+**Решение:**
+- Vercel Dashboard → Settings → General → Root Directory: `miniapp`
+
+### Проблема 2: Ignored Build Step блокирует деплои
+
+**Симптом:** Деплои не запускаются
+
+**Решение:**
+- Vercel Dashboard → Settings → Git → Ignored Build Step: **ОСТАВЬТЕ ПУСТЫМ**
+
+### Проблема 3: Webhook не работает
+
+**Симптом:** Push в GitHub не создает деплои
+
+**Решение:**
+1. Vercel Dashboard → Settings → Git → Disconnect
+2. Connect Repository → выберите `ekupaev1-del/step-one-app`
+3. Установите Root Directory: `miniapp`
+4. Установите Production Branch: `main`
+5. Connect
+
+### Проблема 4: Production Branch не совпадает
+
+**Симптом:** Деплои создаются, но не для production
+
+**Решение:**
+- Vercel Dashboard → Settings → Git → Production Branch: `main` (должно совпадать с вашей веткой)
+
+---
+
+## Текущая конфигурация проекта
+
+**Repository:** `ekupaev1-del/step-one-app`
+**Branch:** `main`
+**Root Directory:** `miniapp` (монорепозиторий)
+**Build Command:** `cd miniapp && npm install && npm run build` (из vercel.json)
+**Output Directory:** `miniapp/.next` (из vercel.json)
+
+**Файл `vercel.json`:**
+```json
+{
+  "buildCommand": "cd miniapp && npm install && npm run build",
+  "outputDirectory": "miniapp/.next",
+  "framework": "nextjs",
+  "installCommand": "cd miniapp && npm install",
+  "devCommand": "cd miniapp && npm run dev",
+  "rootDirectory": "miniapp"
+}
+```
+
+---
+
+## Итоговая проверка
+
+✅ **Код:** Все ошибки исправлены, сборка проходит
+✅ **Git:** Изменения запушены в `main`
+✅ **Vercel Settings:** Root Directory = `miniapp`, Production Branch = `main`
+✅ **GitHub Integration:** Webhook активен, GitHub App установлен
+✅ **Environment Variables:** Установлены в Vercel
+
+**После проверки всех пунктов выше, автоматический деплой должен работать!**
+
+---
+
+## Следующие шаги
+
+1. Проверьте Vercel Dashboard → Deployments (должен быть деплой из последнего push)
+2. Если деплоя нет → проверьте настройки по чеклисту выше
+3. Создайте тестовый коммит для проверки автоматического деплоя
+4. После успешного деплоя, все последующие push в `main` будут автоматически деплоиться

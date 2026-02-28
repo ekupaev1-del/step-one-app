@@ -72,7 +72,19 @@ function getEnvName(): string {
  * Validates and returns Supabase configuration for server-side use
  */
 export function getServerSupabaseEnv(): SupabaseEnvConfig {
-  const url = process.env.SUPABASE_URL || process.env.NEXT_PUBLIC_SUPABASE_URL;
+  // Primary: SUPABASE_URL or NEXT_PUBLIC_SUPABASE_URL
+  // Fallback: NEXT_PUBLIC_SUPABASE_URLL (typo) with warning
+  let url = process.env.SUPABASE_URL || process.env.NEXT_PUBLIC_SUPABASE_URL;
+  if (!url && process.env.NEXT_PUBLIC_SUPABASE_URLL) {
+    if (process.env.NODE_ENV === "development") {
+      console.warn(
+        `⚠️  WARNING: NEXT_PUBLIC_SUPABASE_URLL (typo) is being used instead of NEXT_PUBLIC_SUPABASE_URL.\n` +
+        `   Please fix the typo in your environment variables.`
+      );
+    }
+    url = process.env.NEXT_PUBLIC_SUPABASE_URLL;
+  }
+  
   let serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
   const anonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
 
@@ -134,7 +146,19 @@ export function getServerSupabaseEnv(): SupabaseEnvConfig {
  * Validates and returns Supabase configuration for client-side use
  */
 export function getClientSupabaseEnv(): SupabaseEnvConfig {
-  const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
+  // Primary: NEXT_PUBLIC_SUPABASE_URL
+  // Fallback: NEXT_PUBLIC_SUPABASE_URLL (typo) with warning
+  let url = process.env.NEXT_PUBLIC_SUPABASE_URL;
+  if (!url && process.env.NEXT_PUBLIC_SUPABASE_URLL) {
+    if (process.env.NODE_ENV === "development") {
+      console.warn(
+        `⚠️  WARNING: NEXT_PUBLIC_SUPABASE_URLL (typo) is being used instead of NEXT_PUBLIC_SUPABASE_URL.\n` +
+        `   Please fix the typo in your environment variables.`
+      );
+    }
+    url = process.env.NEXT_PUBLIC_SUPABASE_URLL;
+  }
+  
   const anonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
 
   if (!url) {
