@@ -1,16 +1,19 @@
 "use client";
 
-import { useSearchParams } from "next/navigation";
+import { useSearchParams, useRouter } from "next/navigation";
 import { useState, useEffect, Suspense } from "react";
 import "../globals.css";
 import AppLayout from "../components/AppLayout";
 import { resolveUserIdWithTrace } from "@/lib/resolveUserId";
+import { getTelegramUserId } from "@/lib/telegram";
+import { fetchUserByTelegramId } from "@/lib/userProfile";
 
 // Hardcoded Robokassa recurring subscription URL
 const ROBOKASSA_RECURRING_SUBSCRIPTION_URL = "https://auth.robokassa.ru/RecurringSubscriptionPage/Subscription/Subscribe?SubscriptionId=b718af89-10c1-4018-856d-558d592c0f40";
 
 function SubscriptionPageContent() {
   const searchParams = useSearchParams();
+  const router = useRouter();
   const userIdParam = searchParams.get("id");
   
   const [userId, setUserId] = useState<number | null>(null);
@@ -18,18 +21,57 @@ function SubscriptionPageContent() {
   const [error, setError] = useState<string | null>(null);
   const [subscription, setSubscription] = useState<any>(null);
 
-  // Initialize userId with tracing
+  // User exists gate: check by telegram_id on every load
   useEffect(() => {
+    const checkUserExists = async () => {
+      const telegramId = getTelegramUserId();
+      
+      if (!telegramId) {
+        router.push("/registration");
+        return;
+      }
+
+      try {
+        const user = await fetchUserByTelegramId(telegramId);
+        
+        if (user && user.id) {
+          // User exists - set userId and redirect if needed
+          if (!userId || userId !== user.id) {
+            setUserId(user.id);
+            router.push(`/subscription?id=${user.id}`);
+          } else {
+            setUserId(user.id);
+            setError(null);
+          }
+        } else {
+          // User doesn't exist - redirect to onboarding
+          router.push("/registration");
+        }
+      } catch (err: any) {
+        console.error("[subscription] Error checking user:", err);
+        router.push("/registration");
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    checkUserExists();
+  }, [router]);
+
+  // Initialize userId with tracing (fallback)
+  useEffect(() => {
+    if (userId) return; // Already set from checkUserExists
+    
     const trace = resolveUserIdWithTrace(searchParams);
     
     if (trace.userId) {
       setUserId(trace.userId);
       setError(null);
-    } else {
-      setError("ID не передан");
       setLoading(false);
+    } else if (!loading) {
+      setError("ID не передан");
     }
-  }, [userIdParam, searchParams]);
+  }, [userIdParam, searchParams, userId, loading]);
 
   // Load subscription status
   useEffect(() => {

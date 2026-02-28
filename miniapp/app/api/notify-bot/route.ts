@@ -101,9 +101,9 @@ export async function POST(req: Request) {
     return NextResponse.json({ ok: false, error: "telegram_id is missing for user" }, { status: 400 });
   }
 
-  // PART 4: Если передан message, отправляем его с меню
-  const messageText = body?.message || "Спасибо! Мы сохранили твои данные. Теперь вы можете отправлять фото, текст или аудио своих блюд — я всё проанализирую.";
-  const shouldSendMenu = body?.sendMenu === true || !body?.message; // PART 4: Отправлять меню если sendMenu=true или если нет кастомного сообщения
+  // Если передан message, отправляем его с меню
+  const messageText = body?.message || "Выберите, что делать дальше:";
+  const shouldSendMenu = body?.sendMenu !== false; // Отправлять меню по умолчанию, если sendMenu не false
 
   try {
     // Отправляем сообщение с меню

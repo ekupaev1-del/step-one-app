@@ -430,20 +430,31 @@ export function QuestionnaireFormContent({ initialUserId }: { initialUserId?: st
           console.log("[handleSubmit] window.Telegram:", typeof window !== "undefined" ? ((window as any).Telegram ? "exists" : "null") : "window undefined");
           
           if (webApp && typeof webApp.sendData === 'function') {
-            // Extract telegram_user_id from initData
+            // Extract telegram_user_id from initDataUnsafe (primary) or initData (fallback)
             let telegramUserId: number | null = null;
             try {
-              const initData = webApp.initData;
-              if (initData) {
-                const urlParams = new URLSearchParams(initData);
-                const userParam = urlParams.get("user");
-                if (userParam) {
-                  const user = JSON.parse(userParam);
-                  telegramUserId = user?.id ? Number(user.id) : null;
+              // Primary: use initDataUnsafe
+              const user = webApp.initDataUnsafe?.user;
+              if (user?.id && typeof user.id === "number") {
+                telegramUserId = user.id;
+              } else {
+                // Fallback: parse from initData query string
+                const initData = webApp.initData;
+                if (initData && typeof initData === "string") {
+                  const urlParams = new URLSearchParams(initData);
+                  const userParam = urlParams.get("user");
+                  if (userParam) {
+                    const parsedUser = JSON.parse(userParam);
+                    telegramUserId = parsedUser?.id ? Number(parsedUser.id) : null;
+                  }
                 }
               }
             } catch (e) {
-              console.warn("[handleSubmit] Could not extract telegram_user_id from initData:", e);
+              console.warn("[handleSubmit] Could not extract telegram_user_id:", e);
+            }
+            
+            if (!telegramUserId) {
+              console.warn("[handleSubmit] ⚠️ Could not extract telegram_user_id, bot may not receive notification");
             }
             
             const dataToSend = JSON.stringify({
@@ -495,104 +506,34 @@ export function QuestionnaireFormContent({ initialUserId }: { initialUserId?: st
         console.warn("[handleSubmit] ⚠️ sendData не удался, но продолжаем (бот может получить данные через API)");
       }
       
-      // Дополнительная задержка перед редиректом для гарантии доставки
+      // Дополнительная задержка перед закрытием для гарантии доставки
       // Даем боту время обработать web_app_data
-      await new Promise(resolve => setTimeout(resolve, 1000));
+      await new Promise(resolve => setTimeout(resolve, 1500));
 
-      // After saving, redirect to dashboard instead of closing
-      // Get user profile to get the user id for redirect
+      // Close Mini App after sending data to bot
+      // Bot will send the menu message via web_app_data handler
       try {
         const webApp = webAppRef.current || (typeof window !== "undefined" ? (window as any).Telegram?.WebApp : null);
-        if (webApp) {
-          const initData = webApp.initData;
-          if (initData) {
-            const urlParams = new URLSearchParams(initData);
-            const userParam = urlParams.get("user");
-            if (userParam) {
-              const user = JSON.parse(userParam);
-              const telegramUserId = user?.id ? Number(user.id) : null;
-              
-              // Fetch user profile to get internal user id
-              if (telegramUserId) {
-                const profileResponse = await fetch(`/api/me`, {
-                  method: "GET",
-                  headers: {
-                    "x-telegram-init-data": initData,
-                  },
-                });
-                const profileData = await profileResponse.json();
-                
-                if (profileData.exists && profileData.user && profileData.user.id) {
-                  // Redirect to dashboard
-                  console.log("[handleSubmit] Redirecting to dashboard with user id:", profileData.user.id);
-                  window.location.href = `/profile?id=${profileData.user.id}`;
-                  return;
-                }
-              }
-            }
+        if (webApp && typeof webApp.close === 'function') {
+          console.log("[handleSubmit] Закрываем Mini App, бот отправит меню");
+          webApp.close();
+        } else {
+          // Fallback: redirect to profile if close is not available
+          console.log("[handleSubmit] webApp.close недоступен, редирект на профиль");
+          if (userId) {
+            window.location.href = `/profile?id=${userId}`;
           }
         }
-      } catch (redirectError) {
-        console.error("[handleSubmit] Error redirecting to dashboard:", redirectError);
+      } catch (closeError) {
+        console.error("[handleSubmit] Ошибка закрытия Mini App:", closeError);
+        // Fallback: redirect to profile
+        if (userId) {
+          window.location.href = `/profile?id=${userId}`;
+        }
       }
-
-      // Fallback: close Mini App if redirect failed
-      const closeMiniApp = (attempt = 0) => {
-        try {
-          // Функция для получения WebApp
-          const getWebApp = () => {
-            // Способ 1: через ref
-            if (webAppRef.current) {
-              return webAppRef.current;
-            }
-            
-            // Способ 2: через window.Telegram.WebApp
-            if (typeof window !== "undefined") {
-              const tg = (window as any).Telegram;
-              if (tg?.WebApp) {
-                webAppRef.current = tg.WebApp; // Сохраняем в ref
-                return tg.WebApp;
-              }
-            }
-            
-            return null;
-          };
-          
-          const webApp = getWebApp();
-          
-          if (webApp && typeof webApp.close === 'function') {
-            try {
-              webApp.close();
-              console.log("[questionnaire] ✅ Mini App закрыт (попытка " + (attempt + 1) + ")");
-              return true;
-            } catch (closeError) {
-              console.error("[questionnaire] Ошибка при вызове close():", closeError);
-            }
-          }
-          
-          // Если не получилось и попыток меньше 5, пробуем еще раз
-          if (attempt < 4) {
-            console.log(`[questionnaire] Попытка ${attempt + 1} не удалась, пробуем еще раз...`);
-            console.log("[questionnaire] webAppRef.current:", webAppRef.current);
-            console.log("[questionnaire] window.Telegram:", typeof window !== "undefined" ? (window as any).Telegram : "window недоступен");
-            return false; // Вернем false, чтобы вызвать через setTimeout
-          } else {
-            console.error("[questionnaire] ❌ Не удалось закрыть Mini App после 5 попыток");
-            return false;
-          }
-        } catch (e) {
-          console.error("[questionnaire] ❌ Ошибка при закрытии:", e);
-          return false;
-        }
-      };
       
-      // Вызываем сразу и через задержки для гарантии
-      if (!closeMiniApp(0)) {
-        setTimeout(() => closeMiniApp(1), 500);
-        setTimeout(() => closeMiniApp(2), 1000);
-        setTimeout(() => closeMiniApp(3), 2000);
-        setTimeout(() => closeMiniApp(4), 3000);
-      }
+      // Mini App will be closed above, bot will send menu message
+      return;
     } catch (err) {
       console.error("[handleSubmit] Ошибка отправки формы:", err);
       setError("Не удалось отправить данные. Попробуйте позже.");

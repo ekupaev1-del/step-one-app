@@ -68,11 +68,23 @@ export async function GET(req: NextRequest) {
     const supabase = createServerSupabaseClient();
 
     // Get subscription for user
+    // Define subscription type to avoid "never" errors
+    interface SubscriptionRow {
+      id: number;
+      user_id: number;
+      status: string | null;
+      current_period_end?: string | null;
+      active_until?: string | null;
+      next_charge_at?: string | null;
+      plan_code?: string | null;
+      [key: string]: any;
+    }
+    
     const { data: subscription, error } = await supabase
       .from("subscriptions")
       .select("*")
       .eq("user_id", userId)
-      .maybeSingle();
+      .maybeSingle() as { data: SubscriptionRow | null; error: any };
 
     if (error) {
       console.error(`[subscription/status:${requestId}] DB error:`, error);

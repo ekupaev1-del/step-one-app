@@ -8,6 +8,7 @@ import AppLayout from "../components/AppLayout";
 import { useUserSession } from "../providers/UserSessionProvider";
 import { withUserId } from "@/lib/user/withUserId";
 import { getTelegramUserId, getTelegramDiagnostics } from "@/lib/telegram";
+import { fetchUserByTelegramId } from "@/lib/userProfile";
 
 // Force dynamic rendering to avoid static generation issues with useSearchParams in AppNavigation/UserSessionProvider
 export const dynamic = 'force-dynamic';
@@ -55,20 +56,16 @@ function ProfilePageContent() {
   const [subscription, setSubscription] = useState<any>(null);
   const [subscriptionLoading, setSubscriptionLoading] = useState(false);
 
-  // Cabinet gating logic: check by telegram_id if user doesn't exist by userId
+  // Cabinet gating logic: check by telegram_id on every load
+  // This ensures we always verify user exists in DB, not just rely on cached state
   useEffect(() => {
-    // If user exists by userId, no need to check telegram_id
-    if (userExists && userId) {
-      return;
-    }
-
     // If still loading, wait
     if (isLoading) {
       return;
     }
 
-    // If we have an error or no userId, check by telegram_id
-    const checkByTelegramId = async () => {
+    // Always check by telegram_id to ensure fresh state from DB
+    const checkUserExists = async () => {
       const telegramId = getTelegramUserId();
       
       if (!telegramId) {
@@ -77,23 +74,21 @@ function ProfilePageContent() {
           const diagnostics = getTelegramDiagnostics();
           console.warn("[profile] No telegram ID available:", diagnostics);
         }
-        // If we have userId but user doesn't exist, redirect to onboarding
-        if (userId && !userExists) {
-          router.push(`/registration?id=${userId}`);
-        } else if (!userId) {
-          router.push("/registration");
-        }
+        // Redirect to onboarding
+        router.push("/registration");
         return;
       }
 
-      // Check if user exists by telegram_id
+      // Check if user exists by telegram_id (fresh DB query)
       try {
-        const response = await fetch(`/api/user/by-telegram-id?telegramId=${telegramId}`);
-        const data = await response.json();
-
-        if (data.ok && data.found && data.userId) {
-          // User exists by telegram_id - redirect to profile with correct userId
-          router.push(`/profile?id=${data.userId}`);
+        const user = await fetchUserByTelegramId(telegramId);
+        
+        if (user && user.id) {
+          // User exists - redirect to profile with correct userId if needed
+          if (!userId || userId !== user.id) {
+            router.push(`/profile?id=${user.id}`);
+          }
+          // If userId matches, stay on page
         } else {
           // User doesn't exist - redirect to onboarding
           router.push("/registration");
@@ -105,8 +100,8 @@ function ProfilePageContent() {
       }
     };
 
-    checkByTelegramId();
-  }, [isLoading, error, userId, userExists, router]);
+    checkUserExists();
+  }, [isLoading, router]); // Remove userId and userExists from deps to always check fresh
 
   // Load profile data if user exists
   useEffect(() => {

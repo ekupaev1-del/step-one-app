@@ -34,7 +34,10 @@ export function initTelegramWebApp(): void {
  * 
  * Priority:
  * 1. window.Telegram?.WebApp?.initDataUnsafe?.user?.id (primary)
- * 2. URL query params (?tg_id=123, ?telegram_id=123, ?id=123) for local debugging
+ * 2. Parse initData query string from window.Telegram.WebApp.initData
+ * 3. URL query params (?telegram_id= or ?chat_id=) ONLY for development/testing
+ * 
+ * In production, if Telegram WebApp is present but user ID is missing, shows clear error.
  * 
  * Returns number or null
  */
@@ -42,6 +45,7 @@ export function getTelegramUserId(): number | null {
   if (typeof window === "undefined") return null;
   
   const tg = (window as any).Telegram?.WebApp;
+  const hasWebApp = !!tg;
   
   // Primary source: Telegram WebApp initDataUnsafe
   if (tg) {
@@ -84,25 +88,34 @@ export function getTelegramUserId(): number | null {
         }
       } catch {}
     }
+    
+    // If WebApp is present but we couldn't get user ID, don't use URL fallback in production
+    if (process.env.NODE_ENV === "production") {
+      console.error(
+        "[getTelegramUserId] Telegram WebApp is present but user ID is missing.\n" +
+        "Diagnostics: hasWebApp=true, hasInitDataUnsafe=" + !!tg.initDataUnsafe + 
+        ", hasUser=" + !!tg.initDataUnsafe?.user
+      );
+      return null;
+    }
   }
 
-  // Fallback for local debugging: parse URL query params
-  // Only use if Telegram WebApp is not present or doesn't have user data
-  try {
-    const urlParams = new URLSearchParams(window.location.search);
-    // Try tg_id first, then telegram_id, then id
-    const tgId = urlParams.get("tg_id") || urlParams.get("telegram_id") || urlParams.get("id");
-    if (tgId) {
-      const parsed = Number(tgId);
-      if (Number.isFinite(parsed) && parsed > 0) {
-        // Log warning in development if using URL fallback
-        if (process.env.NODE_ENV === "development") {
-          console.warn("[getTelegramUserId] Using URL query param fallback:", tgId);
+  // Fallback for local debugging/testing: parse URL query params
+  // ONLY in development mode
+  if (process.env.NODE_ENV === "development" || process.env.NODE_ENV !== "production") {
+    try {
+      const urlParams = new URLSearchParams(window.location.search);
+      // Try telegram_id first, then chat_id, then id
+      const tgId = urlParams.get("telegram_id") || urlParams.get("chat_id") || urlParams.get("id");
+      if (tgId) {
+        const parsed = Number(tgId);
+        if (Number.isFinite(parsed) && parsed > 0) {
+          console.warn("[getTelegramUserId] Using URL query param fallback (dev only):", tgId);
+          return parsed;
         }
-        return parsed;
       }
-    }
-  } catch {}
+    } catch {}
+  }
 
   return null;
 }

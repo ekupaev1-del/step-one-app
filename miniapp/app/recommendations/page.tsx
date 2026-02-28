@@ -1,9 +1,12 @@
 "use client";
 
 import { useState, useEffect, Suspense, type ReactElement } from "react";
+import { useRouter } from "next/navigation";
 import "../globals.css";
 import AppLayout from "../components/AppLayout";
 import { useUserSession } from "../providers/UserSessionProvider";
+import { getTelegramUserId } from "@/lib/telegram";
+import { fetchUserByTelegramId } from "@/lib/userProfile";
 
 interface Recommendation {
   type: "protein" | "fat" | "carbs" | "calories" | "water";
@@ -25,10 +28,44 @@ function LoadingFallback() {
 
 function RecommendationsPageContent(): ReactElement {
   const { userId, isLoading, error, userExists } = useUserSession();
+  const router = useRouter();
   const [recommendationsError, setRecommendationsError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [recommendations, setRecommendations] = useState<Recommendation[]>([]);
   const [days, setDays] = useState<number>(1);
+
+  // User exists gate: check by telegram_id on every load
+  useEffect(() => {
+    if (isLoading) return;
+
+    const checkUserExists = async () => {
+      const telegramId = getTelegramUserId();
+      
+      if (!telegramId) {
+        router.push("/registration");
+        return;
+      }
+
+      try {
+        const user = await fetchUserByTelegramId(telegramId);
+        
+        if (user && user.id) {
+          // User exists - redirect with correct userId if needed
+          if (!userId || userId !== user.id) {
+            router.push(`/recommendations?id=${user.id}`);
+          }
+        } else {
+          // User doesn't exist - redirect to onboarding
+          router.push("/registration");
+        }
+      } catch (err: any) {
+        console.error("[recommendations] Error checking user:", err);
+        router.push("/registration");
+      }
+    };
+
+    checkUserExists();
+  }, [isLoading, router]);
 
   // Load recommendations when userId is available
   useEffect(() => {

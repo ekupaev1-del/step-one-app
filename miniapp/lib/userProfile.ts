@@ -18,16 +18,26 @@ export interface UserProfile {
 
 /**
  * Fetches user profile from Supabase by telegram_id
- * Returns null if user doesn't exist
- * Throws error if query fails
+ * Returns null if user doesn't exist (0 rows)
+ * Throws error only if query fails (not for 0 rows)
+ * 
+ * This is the single source of truth for checking if user exists.
+ * Use this on every protected page to gate access.
  */
-export async function fetchUserProfile(telegramId: number): Promise<UserProfile | null> {
+export async function fetchUserByTelegramId(telegramId: number): Promise<UserProfile | null> {
   if (process.env.NODE_ENV === "development") {
-    console.log("[fetchUserProfile] Fetching user profile for telegram_id:", telegramId);
+    console.log("[fetchUserByTelegramId] Fetching user for telegram_id:", telegramId);
+  }
+
+  if (!Number.isFinite(telegramId) || telegramId <= 0) {
+    console.error("[fetchUserByTelegramId] Invalid telegram_id:", telegramId);
+    return null;
   }
 
   const supabase = getBrowserSupabaseClient();
 
+  // Use .maybeSingle() to handle 0 rows as null (not throw)
+  // Explicitly type the result to avoid "never" errors
   const { data: user, error } = await supabase
     .from("users")
     .select("*")
@@ -35,13 +45,22 @@ export async function fetchUserProfile(telegramId: number): Promise<UserProfile 
     .maybeSingle<UserRow>();
 
   if (error) {
-    console.error("[fetchUserProfile] Supabase error:", error);
-    throw new Error(`Database error: ${error.message}`);
+    // Only throw if it's a real error, not "no rows found"
+    if (error.code !== 'PGRST116') { // PGRST116 = no rows returned
+      console.error("[fetchUserByTelegramId] Supabase error:", error);
+      throw new Error(`Database error: ${error.message}`);
+    }
+    // PGRST116 means no rows found - this is expected, return null
+    if (process.env.NODE_ENV === "development") {
+      console.log("[fetchUserByTelegramId] User not found (0 rows) for telegram_id:", telegramId);
+    }
+    return null;
   }
 
-  if (user && user.telegram_id) {
+  // Type guard: ensure user has required fields
+  if (user && typeof user.id === 'number' && user.telegram_id) {
     if (process.env.NODE_ENV === "development") {
-      console.log("[fetchUserProfile] User exists:", { id: user.id, telegram_id: user.telegram_id });
+      console.log("[fetchUserByTelegramId] User exists:", { id: user.id, telegram_id: user.telegram_id });
     }
     return {
       id: user.id,
@@ -54,8 +73,14 @@ export async function fetchUserProfile(telegramId: number): Promise<UserProfile 
   }
 
   if (process.env.NODE_ENV === "development") {
-    console.log("[fetchUserProfile] User not found for telegram_id:", telegramId);
+    console.log("[fetchUserByTelegramId] User not found for telegram_id:", telegramId);
   }
 
   return null;
 }
+
+/**
+ * Legacy export for backward compatibility
+ * @deprecated Use fetchUserByTelegramId instead
+ */
+export const fetchUserProfile = fetchUserByTelegramId;

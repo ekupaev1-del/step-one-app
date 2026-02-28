@@ -127,15 +127,17 @@ function validateSupabaseUrl(url: string | undefined, envVarName: string): strin
   }
 
   // Validate project ref matches expected (from EXPECTED_SUPABASE_PROJECT_REF env var)
-  // NOTE: Removed hard-fail check - project ref is derived from URL internally
+  // NOTE: EXPECTED_SUPABASE_PROJECT_REF is optional and only used for validation/warning
   // If EXPECTED_SUPABASE_PROJECT_REF is set, log a warning if mismatch, but don't fail
+  // This allows switching Supabase projects without blocking startup
   if (process.env.EXPECTED_SUPABASE_PROJECT_REF && projectRef !== EXPECTED_PROJECT_REF) {
     console.warn(
       `⚠️  WARNING: Supabase project ref mismatch (non-fatal):\n` +
       `   Current URL:  ${normalizedUrl}\n` +
       `   Current project ref: ${projectRef || 'UNKNOWN'}\n` +
-      `   Expected project ref: ${EXPECTED_PROJECT_REF}\n` +
-      `   Continuing with current project ref...`
+      `   Expected project ref (from env): ${EXPECTED_PROJECT_REF}\n` +
+      `   Continuing with current project ref...\n` +
+      `   To silence this warning, remove EXPECTED_SUPABASE_PROJECT_REF or update it to match current project.`
     );
   }
 

@@ -678,7 +678,7 @@ async function handleQuestionnaireSaved(
   console.log("[bot] Telegram ID:", telegram_id);
 
   // ШАГ 1: Отправляем подтверждение и главное меню
-  const confirmationMessage = "Анкета сохранена ✅ Что дальше?";
+  const confirmationMessage = "Выберите, что делать дальше:";
   const targetChatId = chat_id || telegram_id;
 
   try {

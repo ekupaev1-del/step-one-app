@@ -1,10 +1,13 @@
 "use client";
 
 import { useState, useEffect, Suspense, useRef, type ReactElement } from "react";
+import { useRouter } from "next/navigation";
 import "../globals.css";
 import AppLayout from "../components/AppLayout";
 import DayNutritionInfographic from "../components/DayNutritionInfographic";
 import { useUserSession } from "../providers/UserSessionProvider";
+import { getTelegramUserId } from "@/lib/telegram";
+import { fetchUserByTelegramId } from "@/lib/userProfile";
 
 interface Meal {
   id: number;
@@ -60,6 +63,7 @@ function LoadingFallback() {
 
 function ReportPageContent(): ReactElement {
   const { userId, isLoading, error, userExists } = useUserSession();
+  const router = useRouter();
   const [reportError, setReportError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
 
@@ -112,6 +116,39 @@ function ReportPageContent(): ReactElement {
       </AppLayout>
     );
   }
+
+  // User exists gate: check by telegram_id on every load
+  useEffect(() => {
+    if (isLoading) return;
+
+    const checkUserExists = async () => {
+      const telegramId = getTelegramUserId();
+      
+      if (!telegramId) {
+        router.push("/registration");
+        return;
+      }
+
+      try {
+        const user = await fetchUserByTelegramId(telegramId);
+        
+        if (user && user.id) {
+          // User exists - redirect to report with correct userId if needed
+          if (!userId || userId !== user.id) {
+            router.push(`/report?id=${user.id}`);
+          }
+        } else {
+          // User doesn't exist - redirect to onboarding
+          router.push("/registration");
+        }
+      } catch (err: any) {
+        console.error("[report] Error checking user:", err);
+        router.push("/registration");
+      }
+    };
+
+    checkUserExists();
+  }, [isLoading, router]);
 
   // Redirect to onboarding if user doesn't exist
   if (!userId || !userExists) {

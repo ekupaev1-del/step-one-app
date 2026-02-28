@@ -201,7 +201,7 @@ export async function POST(req: Request) {
         },
         body: JSON.stringify({
           userId: user.id,
-          message: "✅ Профиль сохранен. Выберите, что делать дальше:",
+          message: "Выберите, что делать дальше:",
           sendMenu: true,
         }),
       }).catch((err) => {
