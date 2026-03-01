@@ -458,6 +458,9 @@ export function QuestionnaireFormContent({ initialUserId }: { initialUserId?: st
       setLoading(false);
       console.log("ONBOARDING_SAVE_SUCCESS", { userId, timestamp: new Date().toISOString() });
       console.log("[handleSubmit] Данные успешно сохранены");
+      
+      // Log right after save success (as requested)
+      console.log("[handleSubmit] About to send web_app_data to bot");
 
       // КРИТИЧЕСКИ ВАЖНО: Отправляем данные в бот ПЕРЕД закрытием Mini App
       // Бот должен получить уведомление о завершении регистрации
