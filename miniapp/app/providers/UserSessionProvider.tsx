@@ -4,6 +4,7 @@ import { createContext, useContext, useEffect, useState, ReactNode } from "react
 import { useSearchParams } from "next/navigation";
 import { getEffectiveUserId, clearUserIdCache } from "@/lib/user/getEffectiveUserId";
 import { getTelegramUserIdSync } from "@/lib/telegram/getTelegramUserId";
+import { resolveUserId, setUserId } from "@/lib/user/userIdResolver";
 
 interface UserSessionContextValue {
   userId: number | null;
@@ -51,10 +52,16 @@ export function UserSessionProvider({ children }: UserSessionProviderProps) {
         setTelegramUserId(tgId);
         setQueryUserId(queryId);
 
-        // Get effective user ID
-        const { userId: effectiveUserId, source } = await getEffectiveUserId(queryId);
+        // Get effective user ID (with localStorage fallback)
+        const resolvedId = resolveUserId();
+        const { userId: effectiveUserId, source } = await getEffectiveUserId(queryId || (resolvedId ? String(resolvedId) : null));
 
         if (!mounted) return;
+
+        // If userId resolved from URL, save to localStorage
+        if (effectiveUserId && queryId) {
+          setUserId(effectiveUserId);
+        }
 
         let resolvedUserExists = false;
 

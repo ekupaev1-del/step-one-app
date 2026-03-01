@@ -1,18 +1,26 @@
 "use client";
 
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
-import { memo } from "react";
+import { memo, useEffect, useState } from "react";
 import { useUserSession } from "../providers/UserSessionProvider";
 import { withUserId } from "@/lib/user/withUserId";
+import { resolveUserId } from "@/lib/user/userIdResolver";
 
 function AppNavigation() {
   const pathname = usePathname();
   const router = useRouter();
   const searchParams = useSearchParams();
   const { userId, queryUserId } = useUserSession();
+  const [resolvedId, setResolvedId] = useState<string | null>(null);
   
-  // Preserve userId from query params or context
-  const currentUserId = queryUserId || (userId ? String(userId) : null);
+  // Resolve userId from URL or localStorage on mount and when URL changes
+  useEffect(() => {
+    const id = resolveUserId();
+    setResolvedId(id ? String(id) : null);
+  }, [searchParams]);
+  
+  // Preserve userId from query params, context, or localStorage
+  const currentUserId = queryUserId || (userId ? String(userId) : null) || resolvedId;
 
   // Определяем активный таб на основе pathname
   const isReportsActive = pathname === "/report" || pathname.startsWith("/report");
