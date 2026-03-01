@@ -50,7 +50,7 @@ export default function ConsentPageContent() {
       }
 
       // Перенаправляем на регистрацию/онбординг
-      router.push(`/registration?id=${userId}`);
+      router.push(`/registration?id=${userId}` as any);
     } catch (err: any) {
       console.error("[handleAccept] Ошибка:", err);
       setError(err.message || "Не удалось сохранить согласие. Попробуйте позже.");
