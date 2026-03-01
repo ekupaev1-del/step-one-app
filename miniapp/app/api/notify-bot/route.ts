@@ -5,11 +5,20 @@ import { createClient } from "@supabase/supabase-js";
 const BASE_URL = (process.env.MINIAPP_BASE_URL || "https://step-one-app-git-dev-emins-projects-4717eabc.vercel.app").trim().replace(/\/$/, "");
 const TELEGRAM_BOT_TOKEN = process.env.TELEGRAM_BOT_TOKEN;
 
-function getMainMenuKeyboard(userId: number | null = null) {
-  const reportUrl = userId ? `${BASE_URL}/report?id=${userId}` : undefined;
-  const profileUrl = userId ? `${BASE_URL}/profile?id=${userId}` : undefined;
-
-  const subscriptionUrl = userId ? `${BASE_URL}/subscription?id=${userId}` : undefined;
+function getMainMenuKeyboard(userId: number | null = null, telegramId: number | null = null) {
+  // Always include telegram_id in URLs for fallback
+  const buildUrl = (path: string) => {
+    if (!userId) return undefined;
+    const params = new URLSearchParams({ id: String(userId) });
+    if (telegramId) {
+      params.set('telegram_id', String(telegramId));
+    }
+    return `${BASE_URL}${path}?${params.toString()}`;
+  };
+  
+  const reportUrl = buildUrl('/report');
+  const profileUrl = buildUrl('/profile');
+  const subscriptionUrl = buildUrl('/subscription');
   
   return {
     keyboard: [
@@ -106,8 +115,8 @@ export async function POST(req: Request) {
   const shouldSendMenu = body?.sendMenu !== false; // Отправлять меню по умолчанию, если sendMenu не false
 
   try {
-    // Отправляем сообщение с меню
-    const menuKeyboard = shouldSendMenu ? getMainMenuKeyboard(user.id) : undefined;
+    // Отправляем сообщение с меню (include telegram_id in URLs)
+    const menuKeyboard = shouldSendMenu ? getMainMenuKeyboard(user.id, user.telegram_id) : undefined;
     await sendTelegramMessage(user.telegram_id, messageText, menuKeyboard);
     
     // PART 4: Меню отправляется сразу (no restart required)

@@ -35,7 +35,7 @@ export function initTelegramWebApp(): void {
  * Priority:
  * 1. window.Telegram?.WebApp?.initDataUnsafe?.user?.id (primary)
  * 2. Parse initData query string from window.Telegram.WebApp.initData
- * 3. URL query params (?telegram_id= or ?id=) as fallback ONLY if present
+ * 3. URL query params (?telegram_id= or ?tg_user_id=) as fallback (set by bot)
  * 
  * Returns number or null
  */
@@ -94,17 +94,15 @@ export function getTelegramUserId(): number | null {
     }
   }
 
-  // Fallback: parse URL query params (telegram_id or id)
-  // Only use if WebApp is not present or user ID not found in WebApp
+  // Fallback: parse URL query params (telegram_id or tg_user_id) - set by bot
+  // This is the fallback when Telegram WebApp initData is missing
   try {
     const urlParams = new URLSearchParams(window.location.search);
-    const tgId = urlParams.get("telegram_id") || urlParams.get("id");
+    const tgId = urlParams.get("telegram_id") || urlParams.get("tg_user_id");
     if (tgId) {
       const parsed = Number(tgId);
       if (Number.isFinite(parsed) && parsed > 0) {
-        if (process.env.NODE_ENV === "development") {
-          console.log("[getTelegramUserId] Using URL query param fallback:", tgId);
-        }
+        console.log("[getTelegramUserId] Using URL query param fallback (telegram_id):", tgId);
         return parsed;
       }
     }

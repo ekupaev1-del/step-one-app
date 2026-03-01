@@ -77,10 +77,10 @@ export async function getTelegramUserIdAsync(): Promise<number | null> {
     }
   }
 
-  // Final fallback: URL query params (telegram_id or id)
+  // Final fallback: URL query params (telegram_id or tg_user_id) - set by bot
   try {
     const urlParams = new URLSearchParams(window.location.search);
-    const tgId = urlParams.get("telegram_id") || urlParams.get("id");
+    const tgId = urlParams.get("telegram_id") || urlParams.get("tg_user_id");
     if (tgId) {
       const parsed = Number(tgId);
       if (Number.isFinite(parsed) && parsed > 0) {
@@ -88,6 +88,7 @@ export async function getTelegramUserIdAsync(): Promise<number | null> {
         try {
           sessionStorage.setItem(STORAGE_KEY, String(parsed));
         } catch {}
+        console.log("[getTelegramUserIdAsync] Using URL query param fallback (telegram_id):", tgId);
         return parsed;
       }
     }
