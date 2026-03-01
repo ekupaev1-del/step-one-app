@@ -307,8 +307,142 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ ok: true }); // Return 200 to avoid Telegram retries
     }
 
+    // STEP 1.5: Handle web_app_data (onboarding_saved)
+    const webAppData = message?.web_app_data?.data;
+    if (webAppData) {
+      console.log(`[WEB_APP_DATA:${requestId}] Raw payload:`, webAppData);
+      
+      let parsedData: any;
+      try {
+        // Try parsing as JSON first
+        if (typeof webAppData === 'string') {
+          parsedData = JSON.parse(webAppData);
+        } else if (typeof webAppData === 'object') {
+          parsedData = webAppData;
+        } else {
+          // If it's just "onboarding_saved" string, treat as type
+          parsedData = { type: webAppData };
+        }
+      } catch (e) {
+        // If parsing fails, treat raw string as type
+        parsedData = { type: webAppData };
+      }
+      
+      console.log(`[WEB_APP_DATA:${requestId}] Parsed payload:`, JSON.stringify(parsedData, null, 2));
+      
+      const eventType = parsedData.type || parsedData.action;
+      if (eventType === "onboarding_saved") {
+        console.log(`[WEB_APP_DATA:${requestId}] Processing onboarding_saved for telegram_id:`, telegramUserId);
+        
+        // Extract telegram_id from payload or use from message
+        const payloadTelegramId = parsedData.telegram_id || parsedData.telegram_user_id;
+        const telegramIdToUse = payloadTelegramId && Number.isFinite(Number(payloadTelegramId)) && Number(payloadTelegramId) > 0
+          ? Number(payloadTelegramId)
+          : telegramUserId;
+        
+        console.log(`[WEB_APP_DATA:${requestId}] Resolved telegram_id:`, telegramIdToUse);
+        console.log(`[WEB_APP_DATA:${requestId}] Chat ID:`, chatId);
+        
+        // Query user by telegram_id with retries
+        let user = null;
+        let attempts = 0;
+        const maxAttempts = 3;
+        const delays = [0, 300, 800, 1500];
+        
+        while (!user && attempts < maxAttempts) {
+          if (attempts > 0) {
+            await new Promise(resolve => setTimeout(resolve, delays[attempts]));
+          }
+          
+          const { data: userData, error: userError } = await supabase
+            .from("users")
+            .select("id, telegram_id")
+            .eq("telegram_id", telegramIdToUse)
+            .maybeSingle();
+          
+          if (userError) {
+            console.error(`[WEB_APP_DATA:${requestId}] Error querying user (attempt ${attempts + 1}):`, userError);
+          }
+          
+          if (userData && userData.id) {
+            user = userData;
+            console.log(`[WEB_APP_DATA:${requestId}] User found: id=${user.id}, telegram_id=${user.telegram_id}`);
+            break;
+          }
+          
+          attempts++;
+          if (attempts < maxAttempts) {
+            console.log(`[WEB_APP_DATA:${requestId}] User not found, retry ${attempts + 1}/${maxAttempts}...`);
+          }
+        }
+        
+        if (!user) {
+          console.warn(`[WEB_APP_DATA:${requestId}] User not found after ${maxAttempts} attempts`);
+          const errorMsg = "Профиль ещё сохраняется, нажмите /start";
+          await sendTelegramMessage(chatId, errorMsg, requestId);
+          return NextResponse.json({ ok: true });
+        }
+        
+        // Send main menu
+        try {
+          const { getServerSupabaseClient } = await import("@/lib/supabase/server");
+          const serverSupabase = getServerSupabaseClient();
+          
+          // Get main menu keyboard function from notify-bot
+          const BASE_URL = (process.env.MINIAPP_BASE_URL || process.env.NEXT_PUBLIC_APP_URL || "https://step-one-app-emins-projects-4717eabc.vercel.app").trim().replace(/\/$/, "");
+          
+          const buildUrl = (path: string) => {
+            const params = new URLSearchParams({ id: String(user.id) });
+            params.set('telegram_id', String(user.telegram_id));
+            return `${BASE_URL}${path}?${params.toString()}`;
+          };
+          
+          const keyboard = {
+            keyboard: [
+              [{ text: "👤 Личный кабинет", web_app: { url: buildUrl('/profile') } }],
+              [{ text: "📊 Получить отчёт", web_app: { url: buildUrl('/report') } }],
+              [{ text: "💎 Подписка", web_app: { url: buildUrl('/subscription') } }],
+              [{ text: "⏰ Напомнить о приёме пищи" }]
+            ],
+            resize_keyboard: true,
+            one_time_keyboard: false
+          };
+          
+          // Send message with menu keyboard
+          const telegramApiUrl = getTelegramApiUrl();
+          const menuResponse = await fetch(`${telegramApiUrl}/sendMessage`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              chat_id: chatId,
+              text: "Выберите действие:",
+              reply_markup: keyboard
+            }),
+          });
+          
+          if (!menuResponse.ok) {
+            const errorText = await menuResponse.text();
+            throw new Error(`Telegram API error: ${menuResponse.status} - ${errorText}`);
+          }
+          
+          console.log(`[WEB_APP_DATA:${requestId}] MAIN_MENU_SENT`, { userId: user.id, telegram_id: telegramIdToUse, chat_id: chatId });
+          
+          await logEvent("info", "onboarding_saved_menu_sent", {
+            requestId,
+            telegramUserId: String(telegramIdToUse),
+            payload: { userId: user.id, chatId, message: "onboarding_saved -> sent main menu" },
+          });
+        } catch (menuError: any) {
+          console.error(`[WEB_APP_DATA:${requestId}] Error sending menu:`, menuError);
+          await logError("onboarding_saved_menu_error", menuError, { requestId, telegramUserId: String(telegramIdToUse) });
+        }
+        
+        return NextResponse.json({ ok: true });
+      }
+    }
+
     if (!text) {
-      // Not a text message, ignore
+      // Not a text message and not web_app_data, ignore
       return NextResponse.json({ ok: true });
     }
 

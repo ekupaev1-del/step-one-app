@@ -497,11 +497,11 @@ export function QuestionnaireFormContent({ initialUserId }: { initialUserId?: st
             }
             
             const dataToSend = JSON.stringify({
-              type: "questionnaire_saved",
+              type: "onboarding_saved",
               telegram_id: telegramUserId,
               user_id: userId
             });
-            console.log("[handleSubmit] Отправка данных в бот:", dataToSend);
+            console.log("[handleSubmit] Sending web_app_data to bot:", dataToSend);
             
             // ВАЖНО: sendData должен быть вызван синхронно
             // Telegram WebApp API отправляет данные немедленно, но мы даем время на обработку
