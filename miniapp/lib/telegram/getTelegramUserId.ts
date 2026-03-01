@@ -1,12 +1,13 @@
 "use client";
 
 /**
- * Robust Telegram User ID helper with caching
+ * Robust Telegram User ID helper with caching and retry logic
  * Single source of truth for Telegram user identification
  */
 
 const STORAGE_KEY = "tg_user_id";
-const RETRY_DELAY_MS = 150;
+const RETRY_DELAY_MS = 200;
+const MAX_RETRIES = 5;
 
 /**
  * Gets Telegram user ID from WebApp with retry logic
@@ -27,55 +28,72 @@ export async function getTelegramUserIdAsync(): Promise<number | null> {
   } catch {}
 
   const tg = (window as any).Telegram?.WebApp;
-  if (!tg) return null;
+  
+  // Retry loop: try up to MAX_RETRIES times
+  for (let attempt = 0; attempt < MAX_RETRIES; attempt++) {
+    if (tg) {
+      // Call ready() on first attempt
+      if (attempt === 0 && typeof tg.ready === "function") {
+        try {
+          tg.ready();
+        } catch {}
+      }
 
-  // Try to initialize if not ready
-  if (typeof tg.ready === "function") {
-    try {
-      tg.ready();
-    } catch {}
-  }
+      // Try initDataUnsafe first (primary source)
+      const u = tg.initDataUnsafe?.user;
+      if (u?.id && typeof u.id === "number") {
+        const userId = u.id;
+        // Cache it
+        try {
+          sessionStorage.setItem(STORAGE_KEY, String(userId));
+        } catch {}
+        return userId;
+      }
 
-  // Try initDataUnsafe first (primary source)
-  let userId: number | null = null;
-  const u = tg.initDataUnsafe?.user;
-  if (u?.id && typeof u.id === "number") {
-    userId = u.id;
-  } else {
-    // Fallback: try parsing from initData querystring
-    const initData = tg.initData;
-    if (initData && typeof initData === "string") {
-      try {
-        const params = new URLSearchParams(initData);
-        const userStr = params.get("user");
-        if (userStr) {
-          const user = JSON.parse(userStr);
-          if (user?.id && typeof user.id === "number") {
-            userId = user.id;
+      // Fallback: try parsing from initData querystring
+      const initData = tg.initData;
+      if (initData && typeof initData === "string") {
+        try {
+          const params = new URLSearchParams(initData);
+          const userStr = params.get("user");
+          if (userStr) {
+            const user = JSON.parse(userStr);
+            if (user?.id && typeof user.id === "number") {
+              const userId = user.id;
+              // Cache it
+              try {
+                sessionStorage.setItem(STORAGE_KEY, String(userId));
+              } catch {}
+              return userId;
+            }
           }
-        }
-      } catch {}
+        } catch {}
+      }
+    }
+
+    // If not found and not last attempt, wait and retry
+    if (attempt < MAX_RETRIES - 1) {
+      await new Promise((resolve) => setTimeout(resolve, RETRY_DELAY_MS));
     }
   }
 
-  // If still not found, retry once after delay
-  if (!userId) {
-    await new Promise((resolve) => setTimeout(resolve, RETRY_DELAY_MS));
-    
-    const u2 = tg.initDataUnsafe?.user;
-    if (u2?.id && typeof u2.id === "number") {
-      userId = u2.id;
+  // Final fallback: URL query params (telegram_id or id)
+  try {
+    const urlParams = new URLSearchParams(window.location.search);
+    const tgId = urlParams.get("telegram_id") || urlParams.get("id");
+    if (tgId) {
+      const parsed = Number(tgId);
+      if (Number.isFinite(parsed) && parsed > 0) {
+        // Cache it
+        try {
+          sessionStorage.setItem(STORAGE_KEY, String(parsed));
+        } catch {}
+        return parsed;
+      }
     }
-  }
+  } catch {}
 
-  // Cache if found
-  if (userId) {
-    try {
-      sessionStorage.setItem(STORAGE_KEY, String(userId));
-    } catch {}
-  }
-
-  return userId;
+  return null;
 }
 
 /**

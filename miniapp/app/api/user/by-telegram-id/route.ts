@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { getServerSupabaseClient } from "@/lib/supabase/server";
+import type { UserRow } from "@/lib/types";
 
 export const dynamic = 'force-dynamic';
 
@@ -30,12 +31,12 @@ export async function GET(req: Request) {
       );
     }
 
-    // Query user by telegram_id
+    // Query user by telegram_id with proper typing
     const { data: user, error } = await supabase
       .from("users")
       .select("id")
       .eq("telegram_id", telegramId)
-      .maybeSingle();
+      .maybeSingle() as { data: Pick<UserRow, "id"> | null; error: any };
 
     if (error) {
       console.error("[/api/user/by-telegram-id] Supabase error:", error);
@@ -45,7 +46,7 @@ export async function GET(req: Request) {
       );
     }
 
-    if (!user) {
+    if (!user || !user.id) {
       return NextResponse.json({
         ok: true,
         found: false,

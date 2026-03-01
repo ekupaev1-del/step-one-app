@@ -93,6 +93,42 @@ export function QuestionnaireFormContent({ initialUserId }: { initialUserId?: st
     });
   }, []);
 
+  // Check if user exists by telegram_id BEFORE showing onboarding
+  // This prevents showing onboarding if user already has a profile
+  const userExistsCheckedRef = useRef(false);
+  useEffect(() => {
+    if (userExistsCheckedRef.current) return;
+
+    const checkUserExists = async () => {
+      try {
+        const { getTelegramUserIdAsync } = await import("@/lib/telegram/getTelegramUserId");
+        const { fetchUserByTelegramId } = await import("@/lib/userProfile");
+        
+        const telegramId = await getTelegramUserIdAsync();
+        if (!telegramId) {
+          userExistsCheckedRef.current = true;
+          return; // No telegram ID, proceed with onboarding
+        }
+
+        const user = await fetchUserByTelegramId(telegramId);
+        if (user && user.id) {
+          // User exists - redirect to profile, don't show onboarding
+          userExistsCheckedRef.current = true;
+          if (typeof window !== "undefined") {
+            window.location.href = `/profile?id=${user.id}`;
+          }
+          return;
+        }
+      } catch (err) {
+        console.error("[QuestionnaireFormContent] Error checking user existence:", err);
+        // On error, proceed with onboarding
+      }
+      userExistsCheckedRef.current = true;
+    };
+
+    checkUserExists();
+  }, []);
+
   // Unified onboarding check (consent + profile completion)
   useEffect(() => {
     if (!userId) {
@@ -458,7 +494,7 @@ export function QuestionnaireFormContent({ initialUserId }: { initialUserId?: st
             }
             
             const dataToSend = JSON.stringify({
-              action: "onboarding_saved",
+              action: "profile_saved",
               userId: userId,
               telegram_user_id: telegramUserId
             });

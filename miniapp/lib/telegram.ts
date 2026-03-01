@@ -29,15 +29,13 @@ export function initTelegramWebApp(): void {
 }
 
 /**
- * Gets Telegram user ID from WebApp
+ * Gets Telegram user ID from WebApp with retry logic
  * Single source of truth for Telegram user identification
  * 
  * Priority:
  * 1. window.Telegram?.WebApp?.initDataUnsafe?.user?.id (primary)
  * 2. Parse initData query string from window.Telegram.WebApp.initData
- * 3. URL query params (?telegram_id= or ?chat_id=) ONLY for development/testing
- * 
- * In production, if Telegram WebApp is present but user ID is missing, shows clear error.
+ * 3. URL query params (?telegram_id= or ?id=) as fallback ONLY if present
  * 
  * Returns number or null
  */
@@ -45,10 +43,16 @@ export function getTelegramUserId(): number | null {
   if (typeof window === "undefined") return null;
   
   const tg = (window as any).Telegram?.WebApp;
-  const hasWebApp = !!tg;
   
   // Primary source: Telegram WebApp initDataUnsafe
   if (tg) {
+    // Try to initialize if not ready
+    if (typeof tg.ready === "function") {
+      try {
+        tg.ready();
+      } catch {}
+    }
+
     const u = tg.initDataUnsafe?.user;
     if (u?.id && typeof u.id === "number") {
       return u.id;
@@ -88,34 +92,87 @@ export function getTelegramUserId(): number | null {
         }
       } catch {}
     }
+  }
+
+  // Fallback: parse URL query params (telegram_id or id)
+  // Only use if WebApp is not present or user ID not found in WebApp
+  try {
+    const urlParams = new URLSearchParams(window.location.search);
+    const tgId = urlParams.get("telegram_id") || urlParams.get("id");
+    if (tgId) {
+      const parsed = Number(tgId);
+      if (Number.isFinite(parsed) && parsed > 0) {
+        if (process.env.NODE_ENV === "development") {
+          console.log("[getTelegramUserId] Using URL query param fallback:", tgId);
+        }
+        return parsed;
+      }
+    }
+  } catch {}
+
+  return null;
+}
+
+/**
+ * Async version with retry logic (5 tries, 200ms delay)
+ * Use this when you need to wait for Telegram WebApp to initialize
+ */
+export async function getTelegramUserIdAsync(): Promise<number | null> {
+  if (typeof window === "undefined") return null;
+
+  const MAX_RETRIES = 5;
+  const RETRY_DELAY_MS = 200;
+
+  for (let attempt = 0; attempt < MAX_RETRIES; attempt++) {
+    const tg = (window as any).Telegram?.WebApp;
     
-    // If WebApp is present but we couldn't get user ID, don't use URL fallback in production
-    if (process.env.NODE_ENV === "production") {
-      console.error(
-        "[getTelegramUserId] Telegram WebApp is present but user ID is missing.\n" +
-        "Diagnostics: hasWebApp=true, hasInitDataUnsafe=" + !!tg.initDataUnsafe + 
-        ", hasUser=" + !!tg.initDataUnsafe?.user
-      );
-      return null;
+    if (tg) {
+      // Call ready() on first attempt
+      if (attempt === 0 && typeof tg.ready === "function") {
+        try {
+          tg.ready();
+        } catch {}
+      }
+
+      // Try initDataUnsafe first
+      const u = tg.initDataUnsafe?.user;
+      if (u?.id && typeof u.id === "number") {
+        return u.id;
+      }
+
+      // Try parsing from initData
+      const initData = tg.initData;
+      if (initData && typeof initData === "string") {
+        try {
+          const params = new URLSearchParams(initData);
+          const userStr = params.get("user");
+          if (userStr) {
+            const user = JSON.parse(userStr);
+            if (user?.id && typeof user.id === "number") {
+              return user.id;
+            }
+          }
+        } catch {}
+      }
+    }
+
+    // If not found and not last attempt, wait and retry
+    if (attempt < MAX_RETRIES - 1) {
+      await new Promise(resolve => setTimeout(resolve, RETRY_DELAY_MS));
     }
   }
 
-  // Fallback for local debugging/testing: parse URL query params
-  // ONLY in development mode
-  if (process.env.NODE_ENV === "development" || process.env.NODE_ENV !== "production") {
-    try {
-      const urlParams = new URLSearchParams(window.location.search);
-      // Try telegram_id first, then chat_id, then id
-      const tgId = urlParams.get("telegram_id") || urlParams.get("chat_id") || urlParams.get("id");
-      if (tgId) {
-        const parsed = Number(tgId);
-        if (Number.isFinite(parsed) && parsed > 0) {
-          console.warn("[getTelegramUserId] Using URL query param fallback (dev only):", tgId);
-          return parsed;
-        }
+  // Final fallback: URL query params
+  try {
+    const urlParams = new URLSearchParams(window.location.search);
+    const tgId = urlParams.get("telegram_id") || urlParams.get("id");
+    if (tgId) {
+      const parsed = Number(tgId);
+      if (Number.isFinite(parsed) && parsed > 0) {
+        return parsed;
       }
-    } catch {}
-  }
+    }
+  } catch {}
 
   return null;
 }

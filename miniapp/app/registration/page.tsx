@@ -1,9 +1,10 @@
 "use client";
 
-import { Suspense, useEffect, useState } from "react";
+import { Suspense, useEffect, useState, useRef } from "react";
 import { useSearchParams, useRouter } from "next/navigation";
 import { QuestionnaireFormContent } from "../questionnaire";
-import { getTelegramUserId } from "@/lib/telegram";
+import { getTelegramUserIdAsync } from "@/lib/telegram/getTelegramUserId";
+import { fetchUserByTelegramId } from "@/lib/userProfile";
 
 export const dynamic = "force-dynamic";
 
@@ -23,6 +24,7 @@ function RegistrationPageContent() {
   const [mounted, setMounted] = useState(false);
   const [checkingPrivacy, setCheckingPrivacy] = useState(true);
   const [privacyAccepted, setPrivacyAccepted] = useState<boolean | null>(null);
+  const userCheckDoneRef = useRef(false); // Cache: prevent re-checking on tab switches
 
   // Быстро получаем userId из URL при монтировании
   useEffect(() => {
@@ -40,29 +42,32 @@ function RegistrationPageContent() {
   }, [searchParams]);
 
   // Check if user already exists by telegram_id (cabinet gating)
+  // Cached: only runs once per session
   useEffect(() => {
-    if (!mounted) {
+    if (!mounted || userCheckDoneRef.current) {
       return;
     }
 
     const checkExistingUser = async () => {
-      const telegramId = getTelegramUserId();
+      // Use async version with retry logic
+      const telegramId = await getTelegramUserIdAsync();
       
       if (!telegramId) {
         // No telegram ID - proceed with onboarding
         setPrivacyAccepted(true);
         setCheckingPrivacy(false);
+        userCheckDoneRef.current = true;
         return;
       }
 
       // Check if user exists by telegram_id
       try {
-        const response = await fetch(`/api/user/by-telegram-id?telegramId=${telegramId}`);
-        const data = await response.json();
+        const user = await fetchUserByTelegramId(telegramId);
 
-        if (data.ok && data.found && data.userId) {
+        if (user && user.id) {
           // User already exists - redirect to profile
-          router.push(`/profile?id=${data.userId}`);
+          userCheckDoneRef.current = true;
+          router.push(`/profile?id=${user.id}`);
           return;
         }
       } catch (err: any) {
@@ -73,6 +78,7 @@ function RegistrationPageContent() {
       // User doesn't exist or error - proceed with onboarding
       setPrivacyAccepted(true);
       setCheckingPrivacy(false);
+      userCheckDoneRef.current = true;
     };
 
     checkExistingUser();

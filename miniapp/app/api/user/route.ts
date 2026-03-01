@@ -1,30 +1,11 @@
 import { NextResponse } from "next/server";
-import { createClient } from "@supabase/supabase-js";
+import { getServerSupabaseClient } from "@/lib/supabase/server";
+import type { UserRow } from "@/lib/types";
 
 export const dynamic = 'force-dynamic';
 
 export async function GET(req: Request) {
-  const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
-  const supabaseKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
-
-  if (!supabaseUrl) {
-    console.error("[/api/user] NEXT_PUBLIC_SUPABASE_URL не установлен");
-    return NextResponse.json(
-      { ok: false, error: "supabaseUrl is required. Please configure NEXT_PUBLIC_SUPABASE_URL in Vercel environment variables." },
-      { status: 500 }
-    );
-  }
-
-  if (!supabaseKey) {
-    console.error("[/api/user] SUPABASE_SERVICE_ROLE_KEY не установлен");
-    return NextResponse.json(
-      { ok: false, error: "Supabase service key is required. Please configure SUPABASE_SERVICE_ROLE_KEY in Vercel environment variables." },
-      { status: 500 }
-    );
-  }
-
   // Используем единый источник правды с проверкой URL
-  const { getServerSupabaseClient } = await import("@/lib/supabase/server");
   const supabase = getServerSupabaseClient();
 
   const url = new URL(req.url);
@@ -48,12 +29,12 @@ export async function GET(req: Request) {
     }, { status: 400 });
   }
 
-  // Получаем данные пользователя (полный профиль)
+  // Получаем данные пользователя (полный профиль) с правильной типизацией
   const { data: user, error } = await supabase
     .from("users")
     .select("weight, height, goal, activity, gender, age, calories, protein, fat, carbs, water_goal_ml, avatar_url, name, telegram_id")
     .eq("id", numericId)
-    .maybeSingle();
+    .maybeSingle() as { data: Pick<UserRow, "weight" | "height" | "goal" | "activity" | "gender" | "age" | "calories" | "protein" | "fat" | "carbs" | "water_goal_ml" | "avatar_url" | "name" | "telegram_id"> | null; error: any };
 
   if (error) {
     console.error("[/api/user] Ошибка:", error);
