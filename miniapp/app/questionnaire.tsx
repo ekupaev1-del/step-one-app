@@ -494,8 +494,9 @@ export function QuestionnaireFormContent({ initialUserId }: { initialUserId?: st
             }
             
             const dataToSend = JSON.stringify({
-              type: "onboarding_complete",
-              telegram_id: telegramUserId
+              type: "onboarding_saved",
+              telegram_id: telegramUserId,
+              user_id: userId
             });
             console.log("[handleSubmit] Отправка данных в бот:", dataToSend);
             
