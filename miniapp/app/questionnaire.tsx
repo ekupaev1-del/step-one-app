@@ -408,6 +408,7 @@ export function QuestionnaireFormContent({ initialUserId }: { initialUserId?: st
       return;
     }
 
+    console.log("ONBOARDING_SAVE_START", { userId, timestamp: new Date().toISOString() });
     console.log("[handleSubmit] Начало сохранения:", { userId, calories, protein, fat, carbs, waterGoal, activity, goal });
 
     setLoading(true);
@@ -447,6 +448,7 @@ export function QuestionnaireFormContent({ initialUserId }: { initialUserId?: st
       console.log("[handleSubmit] Ответ сервера:", data);
 
       if (!response.ok) {
+        console.error("ONBOARDING_SAVE_ERROR", { error: data.error, userId });
         setError(data.error || "Ошибка сохранения данных");
         setLoading(false);
         return;
@@ -454,6 +456,7 @@ export function QuestionnaireFormContent({ initialUserId }: { initialUserId?: st
 
       setSaved(true);
       setLoading(false);
+      console.log("ONBOARDING_SAVE_SUCCESS", { userId, timestamp: new Date().toISOString() });
       console.log("[handleSubmit] Данные успешно сохранены");
 
       // КРИТИЧЕСКИ ВАЖНО: Отправляем данные в бот ПЕРЕД закрытием Mini App
@@ -503,6 +506,7 @@ export function QuestionnaireFormContent({ initialUserId }: { initialUserId?: st
             // ВАЖНО: sendData должен быть вызван синхронно
             // Telegram WebApp API отправляет данные немедленно, но мы даем время на обработку
             webApp.sendData(dataToSend);
+            console.log("ONBOARDING_SENDDATA_SENT", { telegram_id: telegramUserId, user_id: userId, timestamp: new Date().toISOString() });
             console.log("[handleSubmit] ✅ sendData вызван");
             
             // КРИТИЧЕСКИ ВАЖНО: Даем достаточно времени Telegram API обработать сообщение
@@ -551,6 +555,7 @@ export function QuestionnaireFormContent({ initialUserId }: { initialUserId?: st
       try {
         const webApp = webAppRef.current || (typeof window !== "undefined" ? (window as any).Telegram?.WebApp : null);
         if (webApp && typeof webApp.close === 'function') {
+          console.log("ONBOARDING_CLOSE", { userId, timestamp: new Date().toISOString() });
           console.log("[handleSubmit] Закрываем Mini App, бот отправит меню");
           webApp.close();
         } else {
