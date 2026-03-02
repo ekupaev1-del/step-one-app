@@ -72,13 +72,19 @@ function getMainMenuKeyboard(userId: number | null = null, telegramId: number | 
   const keyboard = {
     keyboard: [
       [
-        { text: "👤 Личный кабинет", web_app: profileUrl ? { url: profileUrl } : undefined }
+        profileUrl 
+          ? { text: "👤 Личный кабинет", web_app: { url: profileUrl } }
+          : { text: "👤 Личный кабинет" }
       ],
       [
-        { text: "📊 Получить отчёт", web_app: reportUrl ? { url: reportUrl } : undefined }
+        reportUrl 
+          ? { text: "📊 Получить отчёт", web_app: { url: reportUrl } }
+          : { text: "📊 Получить отчёт" }
       ],
       [
-        { text: "💎 Подписка", web_app: subscriptionUrl ? { url: subscriptionUrl } : undefined }
+        subscriptionUrl 
+          ? { text: "💎 Подписка", web_app: { url: subscriptionUrl } }
+          : { text: "💎 Подписка" }
       ],
       [
         { text: "⏰ Напомнить о приёме пищи" }
@@ -129,12 +135,10 @@ async function sendMainMenu(
     console.log("[sendMainMenu] Отправка меню для userId:", userId);
     console.log("[sendMainMenu] MINIAPP_BASE_URL:", MINIAPP_BASE_URL);
     console.log("[sendMainMenu] Chat ID:", targetChatId);
+    console.log("[sendMainMenu] Menu keyboard:", JSON.stringify(menu, null, 2));
     
     await ctx.telegram.sendMessage(targetChatId, message, {
-      reply_markup: {
-        ...menu,
-        replace_keyboard: true // Принудительно заменяем старое меню
-      }
+      reply_markup: menu
     });
     
     console.log("[sendMainMenu] ✅ Меню отправлено успешно");
@@ -591,6 +595,7 @@ bot.on("message", async (ctx, next) => {
     return next();
   }
 
+  console.log("[bot] Received web_app_data:", data);
   await handleQuestionnaireSaved(ctx, data, "message");
   // Если это web_app_data, не передаем дальше
   return;
@@ -617,15 +622,42 @@ bot.catch((err, ctx) => {
   console.error("[bot] Необработанная ошибка:", err);
 });
 
+// Глобальные обработчики ошибок
+process.on("unhandledRejection", (err) => {
+  console.error("UNHANDLED REJECTION:", err);
+  process.exit(1);
+});
+
+process.on("uncaughtException", (err) => {
+  console.error("UNCAUGHT EXCEPTION:", err);
+  process.exit(1);
+});
+
 // Корректное завершение
 process.once("SIGINT", () => bot.stop("SIGINT"));
 process.once("SIGTERM", () => bot.stop("SIGTERM"));
 
-// Запуск бота
-console.log("🚀 Запуск бота...");
-bot.launch().then(() => {
-  console.log("✅ Бот запущен успешно");
-}).catch((error) => {
-  console.error("❌ Ошибка запуска бота:", error);
-  process.exit(1);
-});
+// Запуск бота в async IIFE
+(async () => {
+  try {
+    console.log("Starting bot...");
+    
+    // Verify bot token before starting polling
+    await bot.telegram.getMe().then((me) => {
+      console.log(`Bot @${me.username} verified`);
+    }).catch((err) => {
+      throw new Error(`Failed to verify bot token: ${err instanceof Error ? err.message : String(err)}`);
+    });
+    
+    // Start polling after verification
+    bot.startPolling({
+      dropPendingUpdates: false,
+      allowedUpdates: ['message', 'callback_query']
+    });
+    
+    console.log("Bot started");
+  } catch (err) {
+    console.error("Failed to launch bot:", err);
+    process.exit(1);
+  }
+})();
