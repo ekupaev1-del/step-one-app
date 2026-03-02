@@ -5,7 +5,7 @@
  * Includes: requestId, route/handler, telegramUserId, userId, operation, table, project ref, and full error details.
  */
 
-import { extractProjectRef } from './dbDiagnostics';
+import { extractProjectRef } from './dbDiagnostics.js';
 
 export interface DBLogContext {
   requestId: string;

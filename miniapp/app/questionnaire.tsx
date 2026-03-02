@@ -459,121 +459,47 @@ export function QuestionnaireFormContent({ initialUserId }: { initialUserId?: st
       console.log("ONBOARDING_SAVE_SUCCESS", { userId, timestamp: new Date().toISOString() });
       console.log("[handleSubmit] Данные успешно сохранены");
       
-      // Log right after save success (as requested)
-      console.log("[handleSubmit] About to send web_app_data to bot");
-
       // КРИТИЧЕСКИ ВАЖНО: Отправляем данные в бот ПЕРЕД закрытием Mini App
       // Бот должен получить уведомление о завершении регистрации
-      const sendDataToBot = async (): Promise<boolean> => {
+      const tg = (globalThis as any)?.Telegram?.WebApp || (typeof window !== "undefined" ? (window as any)?.Telegram?.WebApp : null);
+      
+      if (tg && typeof tg.sendData === 'function') {
+        // Extract telegram_user_id from initDataUnsafe
+        let telegramUserId: number | null = null;
         try {
-          const webApp = webAppRef.current || (typeof window !== "undefined" ? (window as any).Telegram?.WebApp : null);
-          console.log("[handleSubmit] Попытка отправки sendData в бот");
-          console.log("[handleSubmit] webAppRef.current:", webAppRef.current ? "exists" : "null");
-          console.log("[handleSubmit] window.Telegram:", typeof window !== "undefined" ? ((window as any).Telegram ? "exists" : "null") : "window undefined");
-          
-          if (webApp && typeof webApp.sendData === 'function') {
-            // Extract telegram_user_id from initDataUnsafe (primary) or initData (fallback)
-            let telegramUserId: number | null = null;
-            try {
-              // Primary: use initDataUnsafe
-              const user = webApp.initDataUnsafe?.user;
-              if (user?.id && typeof user.id === "number") {
-                telegramUserId = user.id;
-              } else {
-                // Fallback: parse from initData query string
-                const initData = webApp.initData;
-                if (initData && typeof initData === "string") {
-                  const urlParams = new URLSearchParams(initData);
-                  const userParam = urlParams.get("user");
-                  if (userParam) {
-                    const parsedUser = JSON.parse(userParam);
-                    telegramUserId = parsedUser?.id ? Number(parsedUser.id) : null;
-                  }
-                }
-              }
-            } catch (e) {
-              console.warn("[handleSubmit] Could not extract telegram_user_id:", e);
-            }
-            
-            if (!telegramUserId) {
-              console.warn("[handleSubmit] ⚠️ Could not extract telegram_user_id, bot may not receive notification");
-            }
-            
-            const dataToSend = JSON.stringify({
-              type: "onboarding_saved",
-              telegram_id: telegramUserId,
-              user_id: userId
-            });
-            console.log("[handleSubmit] Sending web_app_data to bot:", dataToSend);
-            
-            // ВАЖНО: sendData должен быть вызван синхронно
-            // Telegram WebApp API отправляет данные немедленно, но мы даем время на обработку
-            webApp.sendData(dataToSend);
-            console.log("ONBOARDING_SENDDATA_SENT", { telegram_id: telegramUserId, user_id: userId, timestamp: new Date().toISOString() });
-            console.log("[handleSubmit] ✅ sendData вызван");
-            
-            // КРИТИЧЕСКИ ВАЖНО: Даем достаточно времени Telegram API обработать сообщение
-            // Минимум 1000ms для гарантии доставки
-            await new Promise(resolve => setTimeout(resolve, 1000));
-            
-            console.log("[handleSubmit] ✅ Данные отправлены в бот через sendData");
-            return true;
-          } else {
-            console.warn("[handleSubmit] ⚠️ Telegram.WebApp.sendData недоступен");
-            return false;
+          const user = tg.initDataUnsafe?.user;
+          if (user?.id && typeof user.id === "number") {
+            telegramUserId = user.id;
           }
-        } catch (sendDataError) {
-          console.error("[handleSubmit] Ошибка отправки данных в бот:", sendDataError);
-          return false;
+        } catch (e) {
+          console.warn("[handleSubmit] Could not extract telegram_user_id:", e);
         }
-      };
-      
-      // КРИТИЧЕСКИ ВАЖНО: Сначала отправляем данные через sendData
-      // Это основной способ передачи данных в бот
-      console.log("[handleSubmit] Отправка данных в бот через Telegram.WebApp.sendData...");
-      
-      let sendDataSuccess = false;
-      for (let attempt = 0; attempt < 3; attempt++) {
-        sendDataSuccess = await sendDataToBot();
-        if (sendDataSuccess) {
-          console.log(`[handleSubmit] ✅ sendData отправлен успешно с попытки ${attempt + 1}`);
-          break;
-        }
-        if (attempt < 2) {
-          console.log(`[handleSubmit] Попытка ${attempt + 1} не удалась, повтор через 300ms...`);
-          await new Promise(resolve => setTimeout(resolve, 300));
-        }
+        
+        const dataToSend = JSON.stringify({
+          type: "onboarding_saved",
+          ...(telegramUserId && { telegram_id: telegramUserId }),
+          ...(userId && { user_id: userId })
+        });
+        
+        console.log("[handleSubmit] About to send web_app_data to bot:", dataToSend);
+        tg.sendData(dataToSend);
+        console.log("ONBOARDING_SENDDATA_SENT", { telegram_id: telegramUserId, user_id: userId, timestamp: new Date().toISOString() });
+      } else {
+        console.warn("[handleSubmit] ⚠️ Telegram.WebApp.sendData недоступен");
       }
       
-      if (!sendDataSuccess) {
-        console.warn("[handleSubmit] ⚠️ sendData не удался, но продолжаем (бот может получить данные через API)");
-      }
-      
-      // Дополнительная задержка перед закрытием для гарантии доставки
-      // Даем боту время обработать web_app_data
-      await new Promise(resolve => setTimeout(resolve, 1500));
-
       // Close Mini App after sending data to bot
       // Bot will send the menu message via web_app_data handler
       try {
-        const webApp = webAppRef.current || (typeof window !== "undefined" ? (window as any).Telegram?.WebApp : null);
-        if (webApp && typeof webApp.close === 'function') {
+        if (tg && typeof tg.close === 'function') {
           console.log("ONBOARDING_CLOSE", { userId, timestamp: new Date().toISOString() });
           console.log("[handleSubmit] Закрываем Mini App, бот отправит меню");
-          webApp.close();
+          tg.close();
         } else {
-          // Fallback: redirect to profile if close is not available
-          console.log("[handleSubmit] webApp.close недоступен, редирект на профиль");
-          if (userId) {
-            window.location.href = `/profile?id=${userId}`;
-          }
+          console.warn("[handleSubmit] ⚠️ Telegram.WebApp.close недоступен");
         }
       } catch (closeError) {
         console.error("[handleSubmit] Ошибка закрытия Mini App:", closeError);
-        // Fallback: redirect to profile
-        if (userId) {
-          window.location.href = `/profile?id=${userId}`;
-        }
       }
       
       // Mini App will be closed above, bot will send menu message

@@ -6,7 +6,7 @@
  */
 
 import { createClient } from "@supabase/supabase-js";
-import { getBotSupabaseEnv } from "./env";
+import { getBotSupabaseEnv } from "./env.js";
 
 let botClient: any = null;
 
